@@ -62,6 +62,8 @@ public final class BpmnReader {
     private static final JsonNodeFactory F = JsonNodeFactory.instance;
     private static final Pattern APPROVAL_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.(approved|rejected)\\(execution, '([^']*)'\\)\\}$");
+    private static final Pattern POLL_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.polled\\(execution, '([^']*)', '(met|failed|timedOut)'\\)\\}$");
     private static final Pattern CONDITION_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.condition\\(execution, '([^']*)'\\)\\}$");
     private static final Set<String> FLOW_ELEMENTS = Set.of("startEvent", "userTask", "serviceTask",
@@ -603,7 +605,7 @@ public final class BpmnReader {
         String delegate = el.attr(FLOWABLE_NS, "delegateExpression");
         String kind = delegate == null ? null : switch (delegate) {
             case "${orqixDecisionTask}" -> "decision";
-            case "${orqixHttpTask}" -> "http";
+            case "${orqixHttpTask}", "${orqixPollTask}" -> "http";
             case "${orqixGenerateDocumentTask}" -> "generateDocument";
             case "${orqixExternalTask}" -> "externalTask";
             case "${orqixNotificationTask}" -> "notification";
@@ -652,6 +654,15 @@ public final class BpmnReader {
                 }
                 // Opt-in (S71): a known failure raises this business error for the section's error route.
                 putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
+                // S129: "Keep checking until..." travels as canonical JSON.
+                El poll = ext.child(ORQIX_NS, "poll");
+                if (poll != null) {
+                    JsonNode settings = base64Json(id, poll.attr("configBase64"));
+                    if (settings == null) {
+                        return null;
+                    }
+                    config.set("poll", settings);
+                }
             }
             case "compensate" -> {
                 // Nothing to read: the undo entries are recomputed from the calls marked as automatic undo calls.
@@ -792,6 +803,24 @@ public final class BpmnReader {
         if (callback != null) {
             config.putObject("externalCallback").put("tokenValidFor", callback);
         }
+        String fallback = message.attr("fallbackCheckBase64");
+        if (fallback != null) {
+            JsonNode settings = base64Json(id, fallback);
+            if (settings != null) {
+                config.set("fallbackCheck", settings);
+            }
+        }
+    }
+
+    /** S129: settings written as Base64 canonical JSON; null (and reported) when they cannot be read. */
+    private JsonNode base64Json(String id, String text) {
+        try {
+            return com.orqix.compiler.internal.json.StrictJson.parse(new String(java.util.Base64.getDecoder()
+                    .decode(text == null ? "" : text), java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            unsupported(id, "The checking settings of '" + id + "' are not readable Base64 JSON.");
+            return null;
+        }
     }
 
     private static El ext(El el, String name) {
@@ -830,6 +859,7 @@ public final class BpmnReader {
             case BpmnGenerator.APPROVAL_OUT, BpmnGenerator.APPROVAL_ROUTE -> type.equals("approval");
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
             case BpmnGenerator.FAILED_BOUNDARY -> type.equals("http") || type.equals("startWorkflow");
+            case BpmnGenerator.POLL_ROUTE, "__toPollRoute" -> type.equals("http");
             case BpmnGenerator.MESSAGE_CATCH, "__toMessage", "__toTimeout" -> type.equals("waitForMessage");
             default -> false;
         };
@@ -898,6 +928,18 @@ public final class BpmnReader {
                 }
                 case "__timeout" -> on = "timedOut";
                 case BpmnGenerator.FAILED_BOUNDARY -> on = "failed";
+                case BpmnGenerator.POLL_ROUTE -> {
+                    Matcher m = expression == null ? null : POLL_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the checks of '" + from + "' must carry the generated "
+                                + "met/failed/timedOut condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = switch (m.group(2)) {
+                        case "met" -> "next";
+                        default -> m.group(2);
+                    };
+                }
                 case BpmnGenerator.MESSAGE_CATCH -> on = "next";
                 default -> {
                     unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which no connection can "

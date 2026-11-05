@@ -106,7 +106,10 @@ final class GraphRules {
                         ? Set.of(Route.CONDITION, Route.DEFAULT) : Set.of(Route.NEXT);
                 case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                         ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
-                case HTTP, START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
+                // S129: a call that keeps checking until done also gives up (timedOut); PollRules counts that path.
+                case HTTP -> ((Node.Http) n).polls() ? Set.of(Route.NEXT, Route.FAILED, Route.TIMED_OUT)
+                        : Set.of(Route.NEXT, Route.FAILED);
+                case START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
                 // A raised error ends the path; the section or handler that catches it decides what happens (S59).
                 case RAISE_ERROR -> Set.of();
                 default -> Set.of(Route.NEXT);
@@ -134,6 +137,8 @@ final class GraphRules {
                     String hint = t.on() == Route.TIMED_OUT ? (n.kind() == NodeKind.WAIT_FOR_MESSAGE
                             ? " Set a time limit on this step to add a path for when the message does not arrive in"
                             + " time, or remove this path."
+                            : n.kind() == NodeKind.HTTP ? " Turn on \"Keep checking until...\" to add a path for when"
+                            + " the checks give up, or remove this path."
                             : " Set a time limit on this step to add a path for when"
                             + " nobody decides in time, or remove this path.") : "";
                     rc.issues().blocker("WF_OUTGOING_INVALID", t.path() + "/on", n.id(), t.id(), n.label() + " ("

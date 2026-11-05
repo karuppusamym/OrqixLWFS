@@ -21,6 +21,7 @@ public final class Rules {
         ParallelRules.check(rc);
         TimerRules.check(rc);
         MessageRules.check(rc);
+        PollRules.check(rc);
         DocumentRules.check(rc);
         ExternalRules.check(rc);
         AdapterStepRules.check(rc);

@@ -1319,6 +1319,10 @@
             "raiseErrorOnFailure": {
               "description": "Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it.",
               "$ref": "#/$defs/errorCode"
+            },
+            "poll": {
+              "description": "Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set.",
+              "$ref": "#/$defs/pollSettings"
             }
           },
           "required": [
@@ -1368,6 +1372,180 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "pollInterval": {
+      "description": "ISO-8601 duration in days, hours, minutes and seconds (for example PT30S, PT15M, PT2H, P1D). Bounds are compiler rules (WF_POLL_INTERVAL, WF_POLL_BACKOFF, WF_POLL_DEADLINE).",
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^P(?=\\d|T\\d)(\\d{1,3}D)?(T(?=\\d)(\\d{1,4}H)?(\\d{1,5}M)?(\\d{1,6}S)?)?$"
+    },
+    "pollSettings": {
+      "type": "object",
+      "properties": {
+        "firstCheck": {
+          "description": "immediate (default): the first check runs when the step starts; afterInterval: after 'every'.",
+          "enum": [
+            "immediate",
+            "afterInterval"
+          ]
+        },
+        "every": {
+          "description": "Interval before the second check, PT10S to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "backoff": {
+          "type": "object",
+          "properties": {
+            "multiplier": {
+              "description": "Each interval is the previous one times this, 1 to 4.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "maxInterval": {
+              "description": "Cap of the interval: at least 'every', at most P1D (WF_POLL_BACKOFF).",
+              "$ref": "#/$defs/pollInterval"
+            }
+          },
+          "required": [
+            "multiplier",
+            "maxInterval"
+          ],
+          "additionalProperties": false
+        },
+        "jitterPercent": {
+          "description": "Random spread of each interval, 0 to 30 percent; default 10.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "until": {
+          "description": "True means the remote work is done (route next). Over this step's mapped result fields (/steps/<this step>/<field>) and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "failWhen": {
+          "description": "Optional: true means the remote work failed for good (route failed). Must not overlap 'until' (WF_POLL_OVERLAP).",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "giveUpAfter": {
+          "description": "Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "maxChecks": {
+          "description": "Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "onCheckError": {
+          "type": "object",
+          "properties": {
+            "maxConsecutive": {
+              "description": "Consecutive failing checks (timeouts, 5xx, 429, unreachable) tolerated, 1 to 20; default 5.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "then": {
+              "description": "needsAttention (default): the request stops for an operator. timedOut: take the timedOut route.",
+              "enum": [
+                "needsAttention",
+                "timedOut"
+              ]
+            }
+          },
+          "required": [
+            "maxConsecutive"
+          ],
+          "additionalProperties": false
+        },
+        "finalCheckAtDeadline": {
+          "description": "One last check exactly at the deadline (default true).",
+          "type": "boolean"
+        },
+        "showWhileWaiting": {
+          "description": "Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW).",
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      },
+      "required": [
+        "every",
+        "until",
+        "giveUpAfter"
+      ],
+      "additionalProperties": false
+    },
+    "fallbackCheck": {
+      "description": "Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D.",
+      "type": "object",
+      "properties": {
+        "connectionRef": {
+          "$ref": "#/$defs/key"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "inputMapping": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        },
+        "resultMapping": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "description": "JSON Pointer (RFC 6901) into the response body.",
+            "type": "string",
+            "pattern": "^(/([^~/]|~[01])*)+$"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "every": {
+          "description": "Check interval, PT1M to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "until": {
+          "description": "True means the work is done; over the mapped fields as /steps/<this step>/<field> and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "jitterPercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "maxChecks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "connectionRef",
+        "operation",
+        "inputMapping",
+        "resultMapping",
+        "timeoutSeconds",
+        "every",
+        "until"
+      ],
       "additionalProperties": false
     },
     "duration": {
@@ -1648,6 +1826,10 @@
                 "tokenValidFor"
               ],
               "additionalProperties": false
+            },
+            "fallbackCheck": {
+              "description": "Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed.",
+              "$ref": "#/$defs/fallbackCheck"
             }
           },
           "required": [

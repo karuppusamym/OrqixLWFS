@@ -159,7 +159,8 @@ public final class ModelReader {
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
                     c.has("compensates") ? c.get("compensates").stringValue() : null,
                     "automatic".equals(c.path("compensation").asString("manual")),
-                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
+                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null,
+                    c.has("poll") ? readPoll(c.get("poll")) : null);
             case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),
@@ -186,7 +187,8 @@ public final class ModelReader {
             case WAIT_FOR_MESSAGE -> new Node.WaitForMessage(index, id, label, c.get("message").stringValue(),
                     c.get("correlationField").stringValue(),
                     c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")),
-                    c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null);
+                    c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null,
+                    c.has("fallbackCheck") ? readFallback(c.get("fallbackCheck")) : null);
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
             case RAISE_ERROR -> new Node.RaiseError(index, id, label, c.get("errorCode").stringValue());
@@ -200,6 +202,32 @@ public final class ModelReader {
                     text(c, "subject"), text(c, "body"), text(c, "title"), text(c, "text"), text(c, "topic"),
                     text(c, "key"), stringMap(c.get("inputMapping")));
         };
+    }
+
+    /** S129: "Keep checking until..." settings with their defaults filled in. */
+    private static Node.Poll readPoll(JsonNode p) {
+        JsonNode backoff = p.get("backoff");
+        JsonNode errors = p.get("onCheckError");
+        List<String> shown = new ArrayList<>();
+        p.path("showWhileWaiting").forEach(v -> shown.add(v.stringValue()));
+        String every = p.get("every").stringValue();
+        return new Node.Poll(!"afterInterval".equals(p.path("firstCheck").asString("immediate")), every,
+                backoff == null ? BigDecimal.ONE : backoff.get("multiplier").decimalValue(),
+                backoff == null ? every : backoff.get("maxInterval").stringValue(),
+                p.path("jitterPercent").asInt(10), readCondition(p.get("until"), true),
+                p.has("failWhen") ? readCondition(p.get("failWhen"), true) : null,
+                p.get("giveUpAfter").stringValue(), p.has("maxChecks") ? p.get("maxChecks").intValue() : null,
+                errors == null ? 5 : errors.get("maxConsecutive").intValue(),
+                errors != null && "timedOut".equals(errors.path("then").asString("needsAttention")),
+                p.path("finalCheckAtDeadline").asBoolean(true), List.copyOf(shown), p);
+    }
+
+    /** S129: the safety-net check of a message wait. */
+    private static Node.FallbackCheck readFallback(JsonNode f) {
+        return new Node.FallbackCheck(f.get("connectionRef").stringValue(), f.get("operation").stringValue(),
+                stringMap(f.get("inputMapping")), stringMap(f.get("resultMapping")), f.get("timeoutSeconds").intValue(),
+                f.get("every").stringValue(), f.path("jitterPercent").asInt(10), readCondition(f.get("until"), true),
+                f.has("maxChecks") ? f.get("maxChecks").intValue() : null, f);
     }
 
     private static List<Node.PayloadField> payloadFields(JsonNode payload) {

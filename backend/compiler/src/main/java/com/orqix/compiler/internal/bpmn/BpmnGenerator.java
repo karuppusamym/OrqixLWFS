@@ -390,6 +390,10 @@ public final class BpmnGenerator {
                         .attr("leaseSeconds", Integer.toString(e.leaseSeconds()))
                         .attr("maxAttempts", Integer.toString(d.execution().maxAttempts()))
                         .attr("retryDelaySeconds", Integer.toString(d.execution().retryDelaySeconds()));
+                if (e.raiseOnFailure() != null) {
+                    // S132 (CG-E10): a worker business error becomes this error for the section's error boundary.
+                    x.attr("raiseOnFailure", e.raiseOnFailure());
+                }
                 e.inputMapping().forEach((name, fieldRef) ->
                         x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
                 for (Node.PayloadField f : e.result()) {
@@ -399,6 +403,8 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
                 x.close();
+                // A worker business error takes the step's failed route (S132, CG-E10).
+                failureBoundary(x, map, d, e);
             }
             case Node.SendAdapter a -> {
                 // Like a call to a system: an async job whose delegate uses the effect journal, so a retry never resends

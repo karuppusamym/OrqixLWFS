@@ -106,7 +106,7 @@ final class GraphRules {
                         ? Set.of(Route.CONDITION, Route.DEFAULT) : Set.of(Route.NEXT);
                 case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                         ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
-                case HTTP, START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
+                case HTTP, START_WORKFLOW, EXTERNAL_TASK -> Set.of(Route.NEXT, Route.FAILED);
                 // A raised error ends the path; the section or handler that catches it decides what happens (S59).
                 case RAISE_ERROR -> Set.of();
                 default -> Set.of(Route.NEXT);
@@ -129,7 +129,7 @@ final class GraphRules {
                 if (t.on() == Route.FAILED && !allowed.contains(Route.FAILED)) {
                     rc.issues().blocker("WF_FAILURE_ROUTE_KIND", t.path() + "/on", n.id(), t.id(), n.label() + " ("
                             + n.kind().businessLabel() + ") cannot have a path for when it fails. Only a call to a"
-                            + " system, an AI agent or another workflow can.");
+                            + " system, an AI agent, an external worker or another workflow can.");
                 } else if (!allowed.contains(t.on())) {
                     String hint = t.on() == Route.TIMED_OUT ? (n.kind() == NodeKind.WAIT_FOR_MESSAGE
                             ? " Set a time limit on this step to add a path for when the message does not arrive in"

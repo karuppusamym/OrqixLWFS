@@ -15,7 +15,7 @@ export const SIGNAL_PATTERN = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
 export const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,39}$/
 
 /** Steps a section or handler can hold (the compiler checks the rest: WF_SUBPROCESS_STEP_KIND). */
-const SECTION_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'])
+const SECTION_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate', 'externalTask'])
 const HANDLER_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'sendSignal', 'compensate', 'end'])
 
 export function SignalInspector({ node }: { node: WorkflowNode }) {
@@ -172,6 +172,8 @@ export function CallFailureErrorFields({ node }: { node: WorkflowNode }) {
   const caught = !on || (section?.onError && (!section.onError.errorCode || section.onError.errorCode === code))
   const target = section?.onError ? def.nodes.find((n) => n.id === section.onError?.to) : undefined
   const id = `call-raise-${node.id}`
+  // S132: work by an external worker raises the error when the worker reports a business error.
+  const worker = node.type === 'externalTask'
   return (
     <InspectorSection title="When it fails">
       <div className="flex items-start gap-3">
@@ -182,10 +184,12 @@ export function CallFailureErrorFields({ node }: { node: WorkflowNode }) {
           onCheckedChange={(v) => store.getState().apply((d) => setRaiseOnFailure(d, node.id, v === true ? (section?.onError?.errorCode ?? DEFAULT_CALL_ERROR) : undefined))}
         />
         <div>
-          <Label htmlFor={id}>Raise an error for the section&apos;s error route when this call fails for good</Label>
+          <Label htmlFor={id}>{worker ? "Raise an error for the section's error route when the worker reports a business error" : "Raise an error for the section's error route when this call fails for good"}</Label>
           <p className="text-xs text-muted-foreground">
             {section && target ? `The section ${section.label} then stops and the request continues at ${target.label}. ` : ''}
-            Only when the system rejects the request, or a read returns an unusable answer. If the system does not answer, or nobody knows whether the call was done, the request still needs attention. Turning this on removes the call&apos;s Failed route.
+            {worker
+              ? "Only when the worker reports a business error code (the work was done and the answer is no). A worker that stops responding or reports a temporary failure is retried, and then the request needs attention. Turning this on removes the step's Failed route."
+              : "Only when the system rejects the request, or a read returns an unusable answer. If the system does not answer, or nobody knows whether the call was done, the request still needs attention. Turning this on removes the call's Failed route."}
           </p>
         </div>
       </div>

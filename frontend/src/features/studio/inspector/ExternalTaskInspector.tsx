@@ -8,6 +8,7 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
+import { CallFailureErrorFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
 import type { PayloadField } from './MessageInspector'
 
@@ -107,6 +108,13 @@ export function ExternalTaskInspector({ node }: { node: WorkflowNode }) {
       </ul>
       {readOnly || result.length >= 10 ? null : <Button variant="secondary" onClick={() => setResult([...result, { name: `result${result.length + 1}`, type: 'string' }])}><Plus className="size-4" aria-hidden="true" /> Add a result value</Button>}
     </InspectorSection>
+
+    <InspectorSection title="Business errors">
+      <p className="text-sm text-muted-foreground" data-testid="external-business-errors">
+        A worker can report a business error with a code, such as ADDRESS_UNKNOWN, when the work was done and the answer is no. Draw a Failed route to handle it: on that route the step gives failureKind (workerError), failureCode and failureMessage. Without a Failed route or a section error route, the request needs attention.
+      </p>
+    </InspectorSection>
+    <CallFailureErrorFields node={node} />
     <Advanced><StepIdField node={node} /></Advanced>
   </>
 }

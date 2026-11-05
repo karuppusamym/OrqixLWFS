@@ -71,6 +71,8 @@ public class FlowableEngineConfiguration {
             List<FlowableEventListener> listeners = configuration.getEventListeners() == null
                     ? new java.util.ArrayList<>() : new java.util.ArrayList<>(configuration.getEventListeners());
             listeners.add(projectionListener);
+            // Cancels the open worker job when the engine cancels its step (S132).
+            listeners.add(orqixExternalTask);
             configuration.setEventListeners(listeners);
 
             configuration.setFailedJobCommandFactory(failedJobCommandFactory);

@@ -333,7 +333,7 @@ final class TypeRules {
             }
         }
         if (FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             for (Node end : g.ends()) {
                 if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
                         failureFact ? com.orqix.compiler.internal.model.Enums.Route.FAILED

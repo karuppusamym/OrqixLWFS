@@ -15,6 +15,28 @@ Map only the necessary scalar inputs and declare the returned values in Studio. 
 example profiles, declare required numeric output `score`. The workflow server checks the
 returned field names and types before resuming the engine.
 
+## Business errors
+
+A handler can say "the work was done and the answer is no" with a business error code
+(docs/build/S132):
+
+```python
+from orqix_worker import BusinessError
+
+def check_supplier(job):
+    if job.input["supplier"] in blocked:
+        raise BusinessError("SUPPLIER_BLOCKED", "The supplier is on the sanctions list")
+    return {"score": 0.9}
+```
+
+`worker.fail_with_error(job, "SUPPLIER_BLOCKED", "...")` does the same outside a handler. A
+business error is final (never retried). In Studio, give the step a **Failed** route (its
+outputs `failureKind` = `workerError`, `failureCode` and `failureMessage` exist only on that
+route), or put it in a section with an error route and turn on **Raise an error for the
+section's error route**. Without either, the request needs attention as for any final failure.
+Codes look like `ADDRESS_UNKNOWN` (`^[A-Z][A-Z0-9_]{1,39}$`); `ORQIX_` is reserved.
+`JobFailed` keeps its meaning: a technical failure, retried unless `retryable=False`.
+
 ## Start a gateway
 
 Copy [the example configuration](native-agent-gateway.example.json) to a private deployment

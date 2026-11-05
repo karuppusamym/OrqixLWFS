@@ -209,6 +209,9 @@ public class ConnectionAdminService {
                 "/auth/secretRef", "reserved", "References starting with webhook- are reserved."));
         if ("oauth-token-keyring".equals(auth.secretRef())) errors.add(new ApiException.FieldError(
                 "/auth/secretRef", "reserved", "This reference is reserved for platform encryption."));
+        if (auth.secretRef() != null && !com.orqix.integration.secrets.SecretRef.valid(auth.secretRef())) errors.add(
+                new ApiException.FieldError("/auth/secretRef", "pattern", "Name a mounted secret, or a vault:, aws-sm:,"
+                        + " azure-kv: or gcp-sm: reference with a store path (no '..', '//' or trailing '/')."));
         if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isMicrosoftGraph())
                 && !"bearerToken".equals(auth.type()) && !"oauth2ClientCredentials".equals(auth.type()) && !"oauth2AuthorizationCode".equals(auth.type())) {
             errors.add(new ApiException.FieldError("/auth/type", "enum",

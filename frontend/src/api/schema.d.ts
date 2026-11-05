@@ -3884,9 +3884,31 @@ export interface paths {
         put?: never;
         /**
          * Report that a leased job could not be done
-         * @description A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay) until the attempt limit; otherwise the request needs attention and an operator decides.
+         * @description A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay) until the attempt limit; otherwise the request needs attention and an operator decides. With `errorCode` (a business error, docs/build/S132) the step takes its failed route or raises its section error when the workflow declares one; 422 when `errorCode` comes with `retryable: true` or uses the ORQIX_ prefix.
          */
         post: operations["failExternalJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/secret-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * How often each secret reference was resolved, by provider
+         * @description Sums the secret-access audit of this workspace over the last `days` UTC days (today included): resolutions (cache hits included), cache hits, references the store did not have, and failures (provider off or unreachable), with the connection bindings that use each reference. No value, hash or length of a secret is recorded (docs/build/S132).
+         */
+        get: operations["getSecretAccess"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7946,8 +7968,15 @@ export interface components {
                     result?: {
                         [key: string]: unknown;
                     };
-                    /** @enum {string} */
-                    failure?: "failed";
+                    /**
+                     * @description failed - every attempt fails; businessError - the worker reports errorCode (S132)
+                     * @enum {string}
+                     */
+                    failure?: "failed" | "businessError";
+                    /** @description For businessError; default WORKER_ERROR */
+                    errorCode?: string;
+                    /** @description For businessError */
+                    message?: string;
                     delaySeconds?: number;
                 };
             };
@@ -8891,6 +8920,8 @@ export interface components {
             message: string;
             retryable: boolean;
             retryAfterSeconds?: number;
+            /** @description A business error (docs/build/S132): the work was done and the answer is no. Final (send retryable false); codes starting with ORQIX_ are reserved. The step takes its failed route (outputs failureKind workerError, failureCode, failureMessage) or raises its section error when it is set to; otherwise the request needs attention. */
+            errorCode?: string;
         };
         SendBackOpen: {
             id: components["schemas"]["Uuid"];
@@ -9245,7 +9276,7 @@ export interface components {
             /** @enum {string} */
             type: "none" | "bearerToken" | "apiKeyHeader" | "oauth2ClientCredentials" | "oauth2AuthorizationCode";
             headerName?: string;
-            /** @description Name of a mounted secret, never the secret value */
+            /** @description Where the secret lives, never the secret value (docs/build/S132): a plain name is a mounted secret file; `vault:<mount>/<path>#<key>` (HashiCorp Vault KV v2), `aws-sm:<secret id>#<json key>`, `azure-kv:<vault>/<secret>[/<version>]#<json key>` and `gcp-sm:<project>/<secret>[/<version>]#<json key>` name a secret in an external store; the `#key` part is optional. */
             secretRef?: string;
         };
         PutConnectionBindingRequest: {
@@ -10725,6 +10756,8 @@ export interface components {
                 result: components["schemas"]["messagePayloadField"][];
                 /** @description How long a worker holds a job before it must extend the lease or lose it. */
                 leaseSeconds?: number;
+                /** @description Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it. */
+                raiseErrorOnFailure?: components["schemas"]["errorCode"];
             };
         } & components["schemas"]["nodeBase"];
         raiseErrorNode: {
@@ -11489,6 +11522,8 @@ export interface components {
                         result: components["schemas"]["messagePayloadField"][];
                         /** @description How long a worker holds a job before it must extend the lease or lose it. */
                         leaseSeconds?: number;
+                        /** @description Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it. */
+                        raiseErrorOnFailure?: components["schemas"]["errorCode"];
                     };
                 } & components["schemas"]["nodeBase"];
                 arrayFormField: {
@@ -18502,6 +18537,52 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getSecretAccess: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        since: string;
+                        items: {
+                            secretRef: string;
+                            /** @enum {string} */
+                            provider: "file" | "vault" | "aws-sm" | "azure-kv" | "gcp-sm";
+                            connectionKeys: components["schemas"]["Key"][];
+                            resolutions: number;
+                            cacheHits: number;
+                            notFound: number;
+                            failures: number;
+                            /** Format: date-time */
+                            lastResolvedAt?: string | null;
+                            /** Format: date-time */
+                            lastFailedAt?: string | null;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     retryRun: {

@@ -59,8 +59,18 @@ public final class ExternalJobDtos {
             @NotNull @Valid Map<String, JsonNode> result) {
     }
 
+    /**
+     * {@code errorCode} (S132, CG-E10) marks a business error: the work was done and the answer is "no". It is final
+     * ({@code retryable} must be false) and takes the step's failed route or raises its section error when the
+     * workflow declares one; otherwise the request needs attention as for any final failure.
+     */
     public record FailRequest(@NotBlank @Size(max = 100) String workerId, @NotNull @Min(1) Integer fence,
             @NotBlank @Size(max = 500) String message, @NotNull Boolean retryable,
-            @Min(0) @Max(86400) Integer retryAfterSeconds) {
+            @Min(0) @Max(86400) Integer retryAfterSeconds,
+            @jakarta.validation.constraints.Pattern(regexp = "^[A-Z][A-Z0-9_]{1,39}$") String errorCode) {
+
+        public FailRequest(String workerId, Integer fence, String message, Boolean retryable, Integer retryAfterSeconds) {
+            this(workerId, fence, message, retryable, retryAfterSeconds, null);
+        }
     }
 }

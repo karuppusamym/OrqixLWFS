@@ -104,6 +104,11 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_WAIT_CHOICE` | B | A wait has exactly one of `duration` and `untilField` |
 | `WF_WAIT_FIELD_TYPE` | B | `untilField` must name a date field |
 | `WF_WAIT_FIELD_OPTIONAL` | B | A request-form date used by a wait must be required |
+| `WF_RETRY_DELAY_INVALID` | B | A step retry `delay` or `maxDelay` is not a `PT..H..M..S` duration ([S131](S131-retry-and-circuit-breaker.md)) |
+| `WF_RETRY_DELAY_TOO_SHORT` | B | A step retry `delay` is under 5 seconds (S131) |
+| `WF_RETRY_DELAY_TOO_LONG` | B | A step retry `delay` is over 1 hour (S131) |
+| `WF_RETRY_MAX_DELAY_TOO_LONG` | B | A step retry `maxDelay` is over 6 hours (S131) |
+| `WF_RETRY_MAX_DELAY_BELOW_DELAY` | B | A step retry `maxDelay` is shorter than its `delay` (S131) |
 | `WF_MESSAGE_CORRELATION_UNKNOWN` | B | The field that identifies the request of a "Wait for a message" step does not exist (S16) |
 | `WF_MESSAGE_CORRELATION_TYPE` | B | That field is not text or a whole number |
 | `WF_MESSAGE_CORRELATION_OPTIONAL` | B | An optional request field cannot identify a request |

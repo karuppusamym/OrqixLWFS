@@ -84,6 +84,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'EXTERNAL_JOB_PUBLISHED':
     case 'EXTERNAL_JOB_CALLBACK_REGISTERED':
     case 'EXTERNAL_JOB_RETRY_SCHEDULED':
+    case 'EFFECT_DEFERRED':
       return 'waiting'
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
@@ -246,6 +247,12 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const next = retryTime(event.data.nextRetryAt, now)
       const attemptText = attempt !== undefined ? ` Attempt ${attempt}${max !== undefined ? ` of ${max}` : ''}.` : ''
       return `${failureText(classifyFailure(event.data), label, event.data)}${attemptText}${next ? ` Next retry at ${next}.` : ''}`
+    }
+    case 'EFFECT_DEFERRED': {
+      // CG-W04 (S131): the call waited for its connection; no attempt was used.
+      const next = retryTime(event.data.until, now)
+      const why = str(event.data.reason) === 'RATE_LIMITED' ? 'the connection request limit was reached' : 'calls to the system are paused after repeated failures'
+      return `${label} is waiting because ${why}. No attempt was used${next ? `; it tries again at ${next}` : ''}.`
     }
     case 'EFFECT_UNKNOWN':
     case 'RUN_NEEDS_ATTENTION':

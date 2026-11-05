@@ -38,6 +38,7 @@ tags:
   - name: Tasks
   - name: Notifications
   - name: Connections
+  - name: ConnectionHealth
   - name: Adapters
   - name: Agent write tools
   - name: Access
@@ -6529,6 +6530,83 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '409': { $ref: '#/components/responses/FeatureDisabled' }
 
+  # ---- ConnectionHealth (CG-W04, CG-C09, docs/build/S131): health, circuit state and binding request limits ----
+  /workspaces/{workspaceId}/connection-health:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectionHealth]
+      operationId: listConnectionHealth
+      summary: Health of every connection binding (calls, success rate, latency, circuit, limits, notices)
+      description: |
+        Per binding over the last hour and day: calls and success rate, p50 and p95 latency, HTTP 429 count, token
+        refresh failures, deferred calls and the last error code, plus the circuit state and the request limit.
+        Notices are derived from thresholds (open circuit, failing token refresh, success rate under 90 percent over
+        at least 10 calls, 429 answers, deferred calls). Never payloads, headers or secrets.
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Health by connection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealthList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/health:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    get:
+      tags: [ConnectionHealth]
+      operationId: getConnectionHealth
+      summary: Health, circuit state and request limit of one connection binding
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Connection health
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealth' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/rate-limit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    put:
+      tags: [ConnectionHealth]
+      operationId: putConnectionRateLimit
+      summary: Set or clear the binding's maxRequestsPerMinute
+      description: |
+        Enforced on each pod as the limit divided by the live pods (at least 1 a minute per pod). A call over the
+        limit waits until a slot is free without using one of the step's attempts. null removes the limit.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.rate-limit.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [maxRequestsPerMinute]
+              properties:
+                maxRequestsPerMinute: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+      responses:
+        '200':
+          description: Saved; the binding's health with the new limit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealth' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end ConnectionHealth paths ----
+
   /workspaces/{workspaceId}/features:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -12717,6 +12795,82 @@ components:
         summary:
           type: [string, 'null']
           description: Agent test only. The business sentence the run timeline would show.
+
+    # ---- ConnectionHealth schemas (CG-W04, CG-C09, docs/build/S131) ----
+    ConnectionHealthList:
+      type: object
+      additionalProperties: false
+      required: [items, noticeCount]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ConnectionHealth' } }
+        noticeCount: { type: integer, minimum: 0 }
+    ConnectionHealth:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, name, bound, enabled, lastHour, lastDay, lastError, circuit, rateLimit, notices, asOf]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        bound: { type: boolean }
+        enabled: { type: boolean }
+        lastHour: { $ref: '#/components/schemas/ConnectionHealthWindow' }
+        lastDay: { $ref: '#/components/schemas/ConnectionHealthWindow' }
+        lastError:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [errorCode, httpStatus, outcome, at]
+              properties:
+                errorCode: { type: [string, 'null'], description: 'e.g. RATE_LIMITED, HTTP_503, TIMEOUT, CONNECT_FAILED, TOKEN_REFRESH_FAILED' }
+                httpStatus: { type: [integer, 'null'] }
+                outcome: { type: string, enum: [retryable, permanent, unknown, tokenFailure] }
+                at: { $ref: '#/components/schemas/Timestamp' }
+        circuit:
+          type: object
+          additionalProperties: false
+          required: [state, consecutiveFailures, failureThreshold, openedAt, openUntil, reason, timesOpened]
+          properties:
+            state: { type: string, enum: [closed, open, halfOpen] }
+            consecutiveFailures: { type: integer, minimum: 0 }
+            failureThreshold: { type: integer, minimum: 1 }
+            openedAt: { type: [string, 'null'], format: date-time }
+            openUntil: { type: [string, 'null'], format: date-time, description: End of the cool-down while open or half-open }
+            reason: { type: [string, 'null'] }
+            timesOpened: { type: integer, minimum: 0 }
+        rateLimit:
+          type: object
+          additionalProperties: false
+          required: [maxRequestsPerMinute, perPod, livePods]
+          properties:
+            maxRequestsPerMinute: { type: [integer, 'null'] }
+            perPod: { type: [integer, 'null'], description: The share each live pod enforces }
+            livePods: { type: integer, minimum: 1 }
+        notices:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, severity, message]
+            properties:
+              code: { type: string, enum: [CIRCUIT_OPEN, CIRCUIT_TRIAL, TOKEN_REFRESH_FAILING, LOW_SUCCESS_RATE, RATE_LIMITED_BY_SYSTEM, CALLS_DEFERRED] }
+              severity: { type: string, enum: [info, warning, critical] }
+              message: { type: string }
+        asOf: { $ref: '#/components/schemas/Timestamp' }
+    ConnectionHealthWindow:
+      type: object
+      additionalProperties: false
+      required: [calls, succeeded, successRate, p50Ms, p95Ms, rateLimited, tokenRefreshFailures, deferred]
+      properties:
+        calls: { type: integer, minimum: 0, description: Calls that went out }
+        succeeded: { type: integer, minimum: 0 }
+        successRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        p50Ms: { type: [integer, 'null'] }
+        p95Ms: { type: [integer, 'null'] }
+        rateLimited: { type: integer, minimum: 0, description: Answers with HTTP 429 }
+        tokenRefreshFailures: { type: integer, minimum: 0 }
+        deferred: { type: integer, minimum: 0, description: Calls that waited for an open circuit or the request limit }
+    # ---- end ConnectionHealth schemas ----
 
     RoleBinding:
       type: object

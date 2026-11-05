@@ -35,7 +35,7 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
      * Semantic version of the generated output (S4 section 9): minor for new constructs, patch for formatting-only
      * changes. Changing it changes the golden files ({@code orqix:release compilerVersion}).
      */
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
 
     private final Pipeline pipeline;
 

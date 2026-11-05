@@ -110,6 +110,13 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
     for (const type of ['EFFECT_FAILED', 'EFFECT_UNKNOWN', 'RUN_NEEDS_ATTENTION']) expect(eventTone(event(type))).toBe('danger')
   })
 
+  it('EFFECT_DEFERRED says the call waited without using an attempt (CG-W04, S131)', () => {
+    const deferred = (reason: string) => event('EFFECT_DEFERRED', { nodeId: 'procure', data: { reason, connectionKey: 'procurement', until: '2026-10-08T10:15:00Z' } })
+    expect(describeEvent(deferred('CIRCUIT_OPEN'), ctx)).toMatch(/^Create purchase order is waiting because calls to the system are paused after repeated failures\. No attempt was used; it tries again at .+\.$/)
+    expect(describeEvent(deferred('RATE_LIMITED'), ctx)).toMatch(/^Create purchase order is waiting because the connection request limit was reached\. No attempt was used/)
+    expect(eventTone(deferred('CIRCUIT_OPEN'))).toBe('waiting')
+  })
+
   it('operator actions, completion and cancellation', () => {
     const actor = { id: 'o', displayName: 'Olga Operator' }
     expect(describeEvent(event('OPERATOR_RETRY', { nodeId: 'procure', actor }), ctx)).toBe('Olga Operator retried Create purchase order')

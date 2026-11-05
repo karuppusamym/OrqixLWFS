@@ -533,6 +533,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     "enabled", true);
             case "finishConnectionOAuth" -> Map.of("state", "a".repeat(43), "code", "foreign-code");
             case "testConnection" -> Map.of("version", 1, "operation", "health");
+            // CG-W04 (S131): a valid request limit, so a 404 cannot be explained by the body.
+            case "putConnectionRateLimit" -> Map.of("maxRequestsPerMinute", 60);
             case "reviewOpenApiConnection" -> Map.of("source", "{}");
             case "createAdapter" -> Map.of("key", "foreign-adapter", "kind", "kafka", "name", "Foreign", "secretRef", "foreign-ref",
                     "config", Map.of("allowedTopics", List.of("foreign.topic")));

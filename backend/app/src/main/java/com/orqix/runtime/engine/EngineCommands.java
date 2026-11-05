@@ -15,6 +15,7 @@ import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.bpmn.model.FlowElement;
 import org.flowable.job.api.Job;
 import org.flowable.task.api.TaskInfo;
 import org.springframework.stereotype.Component;
@@ -181,7 +182,20 @@ public class EngineCommands {
     }
 
     public void moveDeadLetterToExecutable(String jobId, int retries) {
-        wrap(() -> managementService.moveDeadLetterJobToExecutableJob(jobId, retries));
+        // A step with its own retry policy (CG-W04, S131) gets its own attempts back, not the workflow's.
+        int attempts = stepAttempts(jobId).orElse(retries);
+        wrap(() -> managementService.moveDeadLetterJobToExecutableJob(jobId, attempts));
+    }
+
+    private Optional<Integer> stepAttempts(String jobId) {
+        Job job = managementService.createDeadLetterJobQuery().jobId(jobId).singleResult();
+        if (job == null || job.getProcessDefinitionId() == null || job.getElementId() == null) {
+            return Optional.empty();
+        }
+        // Outside a Flowable command: read the deployed model through the repository service.
+        FlowElement element = repositoryService.getBpmnModel(job.getProcessDefinitionId()).getFlowElement(job.getElementId());
+        return element == null ? Optional.empty() : OrqixModel.extension(element, "retry")
+                .map(x -> OrqixModel.attribute(x, "maxAttempts")).filter(v -> v != null).map(Integer::parseInt);
     }
 
     public boolean hasExecutableOrTimerJob(String processInstanceId) {

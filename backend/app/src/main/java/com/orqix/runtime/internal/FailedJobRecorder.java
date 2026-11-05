@@ -51,6 +51,24 @@ public class FailedJobRecorder {
         this.clock = clock;
     }
 
+    /**
+     * A call that waits for its connection's circuit or request rate (CG-W04, S131): no attempt was used, so the run
+     * stays running and only {@code EFFECT_DEFERRED} is written.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deferred(UUID workspaceId, UUID runId, String nodeId, String reason, String connectionKey,
+            Instant until) {
+        RunStore.RunRow run = runs.find(workspaceId, runId).orElse(null);
+        if (run == null || !run.isActive()) {
+            return;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("reason", reason);
+        data.put("connectionKey", connectionKey);
+        data.put("until", until.toString());
+        events.append(workspaceId, runId, "EFFECT_DEFERRED", nodeId, null, data);
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(Failure f) {
         JobFailure failure = f.failure();

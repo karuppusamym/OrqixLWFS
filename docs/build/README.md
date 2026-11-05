@@ -120,3 +120,4 @@ Case designer page: case type drafts with a check before publishing, Cases page 
 Shared forms: a form (questions, rules and groups) as a fourth kind of shared asset, inserted with version pins and copy-on-insert: [S128](S128-shared-forms.md) (V207, additive contract change).
 Workspace feature switches (administrators turn AI, cases, import, agents, apps and Kafka on or off per workspace; `409 FEATURE_DISABLED`): [S127](S127-workspace-feature-switches.md) (V208).
 Generated test cases for every path (Test tab, docs/26): [S122](S122-generated-test-cases.md) (frontend only).
+Step retry policy with backoff, jitter and `Retry-After`; circuit breaker and request limit per binding; connection health in Settings (CG-W04, CG-C09): [S131](S131-retry-and-circuit-breaker.md) (V220, compiler 0.3.0, additive contract change).

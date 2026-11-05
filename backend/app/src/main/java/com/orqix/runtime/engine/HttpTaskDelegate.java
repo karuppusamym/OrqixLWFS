@@ -130,7 +130,8 @@ public class HttpTaskDelegate implements JavaDelegate {
             throw new BpmnError(error);
         }
         throw new JobFailure(failed.retryable(), failed.attentionReason(), failed.errorCode(), failed.classification(),
-                failed.httpStatus(), failed.attempt(), failed.effectId(), failed.businessMessage());
+                failed.httpStatus(), failed.attempt(), failed.effectId(), failed.businessMessage())
+                .withRetryAfter(failed.retryAfter());
     }
 
     /**

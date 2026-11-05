@@ -27,13 +27,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import com.orqix.integration.CallDeferredException;
 import com.orqix.runtime.internal.FailedJobRecorder;
 import com.orqix.runtime.internal.JobFailure;
+import com.orqix.runtime.internal.StepRetryPolicy;
 
 /**
  * Custom failed-job command (S5 section 6.4, BD-24). Same retry-cycle semantics as Flowable's {@code JobRetryCmd}
  * (spike S-4: {@code R<n>} yields exactly n attempts) plus: non-retryable Orqix failures dead-letter immediately with
  * retries 0, and the Orqix projection (events, needsAttention, notification) is updated in the same transaction.
+ * <p>
+ * CG-W04 (docs/build/S131): a step with its own {@code <orqix:retry>} waits {@link StepRetryPolicy#nextDelay}
+ * (exponential backoff with jitter, or the server's {@code Retry-After}) instead of the cycle's fixed delay; a call
+ * deferred by an open circuit or a used-up request rate is rescheduled to the end of the wait with its retries
+ * unchanged, so it does not use an attempt.
  */
 @Component
 public class OrqixFailedJobCommandFactory implements FailedJobCommandFactory {
@@ -84,6 +91,8 @@ public class OrqixFailedJobCommandFactory implements FailedJobCommandFactory {
             }
 
             JobFailure failure = JobFailure.find(exception);
+            CallDeferredException deferred = CallDeferredException.find(exception);
+            StepRetryPolicy policy = element == null ? null : stepPolicy(element);
             boolean nonRetryable = (failure != null && !failure.retryable())
                     || containsCause(exception, FlowableUnrecoverableJobException.class);
 
@@ -108,7 +117,18 @@ public class OrqixFailedJobCommandFactory implements FailedJobCommandFactory {
                 execution.setActive(false);
             }
 
+            if (deferred != null) {
+                return defer(configuration, jobService, timerJobService, job, execution, retries, deferred);
+            }
             boolean deadLetter = nonRetryable || retries <= 1;
+            if (policy != null && !deadLetter) {
+                // retries is the count before this failure; the first failure of a 6-attempt step has retries 6.
+                int attempt = failure != null && failure.attempt() > 0 ? failure.attempt()
+                        : Math.max(1, policy.maxAttempts() - retries + 1);
+                java.time.Duration delay = policy.nextDelay(attempt, failure == null ? null : failure.retryAfter(),
+                        java.util.concurrent.ThreadLocalRandom.current()::nextDouble);
+                nextDue = Date.from(configuration.getClock().getCurrentTime().toInstant().plus(delay));
+            }
             AbstractRuntimeJobEntity moved;
             if (deadLetter) {
                 moved = jobService.moveJobToDeadLetterJob(job);
@@ -141,6 +161,37 @@ public class OrqixFailedJobCommandFactory implements FailedJobCommandFactory {
                         deadLetter ? 0 : retries - 1, exception);
             }
             return null;
+        }
+
+        /**
+         * Moves the job back to a timer at the end of the deferral with its retries unchanged (S131). The first time
+         * a job fails, its retries start from the cycle's repetitions, exactly as for a failure.
+         */
+        private Object defer(ProcessEngineConfigurationImpl configuration, JobService jobService,
+                TimerJobService timerJobService, JobEntity job, ExecutionEntity execution, int retries,
+                CallDeferredException deferred) {
+            Instant now = configuration.getClock().getCurrentTime().toInstant();
+            Instant due = deferred.until() == null || deferred.until().isBefore(now.plusSeconds(1))
+                    ? now.plusSeconds(1) : deferred.until();
+            AbstractRuntimeJobEntity moved = timerJobService.moveJobToTimerJob(job);
+            moved.setRetries(Math.max(1, retries));
+            moved.setDuedate(Date.from(due));
+            moved.setExceptionMessage(exceptionMessage());
+            moved.setExceptionStacktrace(null);
+            if (execution != null && execution.getVariable(ProcessData.RUN_ID) != null) {
+                recorder.deferred(ProcessData.workspaceId(execution), ProcessData.runId(execution),
+                        job.getElementId() == null ? execution.getActivityId() : job.getElementId(),
+                        deferred.reason(), deferred.connectionKey(), due);
+            }
+            return null;
+        }
+
+        /** The step's own retry policy (S131), or null when it uses the workflow defaults. */
+        private static StepRetryPolicy stepPolicy(FlowElement element) {
+            return OrqixModel.extension(element, "retry").map(x -> StepRetryPolicy.of(
+                    OrqixModel.attribute(x, "maxAttempts"), OrqixModel.attribute(x, "delay"),
+                    OrqixModel.attribute(x, "multiplier"), OrqixModel.attribute(x, "maxDelay"),
+                    OrqixModel.attribute(x, "honorRetryAfter"))).orElse(null);
         }
 
         /** Never null: a null message would make Flowable treat the next failure as the first one. */

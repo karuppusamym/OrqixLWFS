@@ -147,6 +147,8 @@ public class AuditWriter {
             Map.entry("effect.reconciled", Set.of("effectId", "resolution", "remoteReference")),
             Map.entry("connection.version.created", Set.of("key", "version", "definitionHash")),
             Map.entry("connection.binding.updated", Set.of("key", "host", "authType", "secretRef", "enabled", "revision")),
+            // CG-W04 (S131): a binding's request limit.
+            Map.entry("connection.rate-limit.updated", Set.of("key", "maxRequestsPerMinute", "revision")),
             Map.entry("connection.oauth.started", Set.of("key")),
             Map.entry("connection.oauth.connected", Set.of("key")),
             Map.entry("connection.oauth.disconnected", Set.of("key")),

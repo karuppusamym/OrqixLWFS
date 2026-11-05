@@ -4885,6 +4885,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/connection-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Health of every connection binding (calls, success rate, latency, circuit, limits, notices)
+         * @description Per binding over the last hour and day: calls and success rate, p50 and p95 latency, HTTP 429 count, token
+         *     refresh failures, deferred calls and the last error code, plus the circuit state and the request limit.
+         *     Notices are derived from thresholds (open circuit, failing token refresh, success rate under 90 percent over
+         *     at least 10 calls, 429 answers, deferred calls). Never payloads, headers or secrets.
+         */
+        get: operations["listConnectionHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        /** Health, circuit state and request limit of one connection binding */
+        get: operations["getConnectionHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/rate-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set or clear the binding's maxRequestsPerMinute
+         * @description Enforced on each pod as the limit divided by the live pods (at least 1 a minute per pod). A call over the
+         *     limit waits until a slot is free without using one of the step's attempts. null removes the limit.
+         */
+        put: operations["putConnectionRateLimit"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/features": {
         parameters: {
             query?: never;
@@ -9276,6 +9345,68 @@ export interface components {
             /** @description Agent test only. The business sentence the run timeline would show. */
             summary?: string | null;
         };
+        ConnectionHealthList: {
+            items: components["schemas"]["ConnectionHealth"][];
+            noticeCount: number;
+        };
+        ConnectionHealth: {
+            connectionKey: components["schemas"]["Key"];
+            name: string;
+            bound: boolean;
+            enabled: boolean;
+            lastHour: components["schemas"]["ConnectionHealthWindow"];
+            lastDay: components["schemas"]["ConnectionHealthWindow"];
+            lastError: null | {
+                /** @description e.g. RATE_LIMITED, HTTP_503, TIMEOUT, CONNECT_FAILED, TOKEN_REFRESH_FAILED */
+                errorCode: string | null;
+                httpStatus: number | null;
+                /** @enum {string} */
+                outcome: "retryable" | "permanent" | "unknown" | "tokenFailure";
+                at: components["schemas"]["Timestamp"];
+            };
+            circuit: {
+                /** @enum {string} */
+                state: "closed" | "open" | "halfOpen";
+                consecutiveFailures: number;
+                failureThreshold: number;
+                /** Format: date-time */
+                openedAt: string | null;
+                /**
+                 * Format: date-time
+                 * @description End of the cool-down while open or half-open
+                 */
+                openUntil: string | null;
+                reason: string | null;
+                timesOpened: number;
+            };
+            rateLimit: {
+                maxRequestsPerMinute: number | null;
+                /** @description The share each live pod enforces */
+                perPod: number | null;
+                livePods: number;
+            };
+            notices: {
+                /** @enum {string} */
+                code: "CIRCUIT_OPEN" | "CIRCUIT_TRIAL" | "TOKEN_REFRESH_FAILING" | "LOW_SUCCESS_RATE" | "RATE_LIMITED_BY_SYSTEM" | "CALLS_DEFERRED";
+                /** @enum {string} */
+                severity: "info" | "warning" | "critical";
+                message: string;
+            }[];
+            asOf: components["schemas"]["Timestamp"];
+        };
+        ConnectionHealthWindow: {
+            /** @description Calls that went out */
+            calls: number;
+            succeeded: number;
+            successRate: number | null;
+            p50Ms: number | null;
+            p95Ms: number | null;
+            /** @description Answers with HTTP 429 */
+            rateLimited: number;
+            tokenRefreshFailures: number;
+            /** @description Calls that waited for an open circuit or the request limit */
+            deferred: number;
+        };
         RoleBinding: {
             id: components["schemas"]["Uuid"];
             role: components["schemas"]["WorkspaceRole"];
@@ -10381,6 +10512,19 @@ export interface components {
             recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
             supervisorGroupRef?: components["schemas"]["key"];
         };
+        /** @description This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*). */
+        stepRetry: {
+            /** @description Total attempts, the first included. */
+            maxAttempts: number;
+            /** @description Delay before the second attempt: hours, minutes and seconds, for example PT10S. */
+            delay: string;
+            /** @description Each later delay is the previous one times this (1 keeps the delay constant). */
+            multiplier?: number;
+            /** @description Longest delay between attempts and the cap of Retry-After; at most PT6H. Unset means PT6H. */
+            maxDelay?: string;
+            /** @description Use the Retry-After of a 429 or 503 response for the next attempt (default true). */
+            honorRetryAfter?: boolean;
+        };
         /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
         errorCode: string;
         messagePayloadField: {
@@ -10555,6 +10699,7 @@ export interface components {
                 resultMapping: {
                     [key: string]: string;
                 };
+                retry?: components["schemas"]["stepRetry"];
                 timeoutSeconds: number;
                 /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                 compensates?: components["schemas"]["id"];
@@ -10723,6 +10868,7 @@ export interface components {
                 };
                 /** @description Values the worker must return. Each becomes an output of this step; a field that is not required may be missing. */
                 result: components["schemas"]["messagePayloadField"][];
+                retry?: components["schemas"]["stepRetry"];
                 /** @description How long a worker holds a job before it must extend the lease or lose it. */
                 leaseSeconds?: number;
             };
@@ -10793,6 +10939,7 @@ export interface components {
                 topic?: string;
                 /** @description Kafka only, optional: the message key. */
                 key?: string;
+                retry?: components["schemas"]["stepRetry"];
                 /** @description Request or earlier-step values used by this step, by name. */
                 inputMapping: {
                     [key: string]: components["schemas"]["fieldRef"];
@@ -11016,6 +11163,19 @@ export interface components {
                 sourceReference?: string;
             };
             $defs: {
+                /** @description This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*). */
+                stepRetry: {
+                    /** @description Total attempts, the first included. */
+                    maxAttempts: number;
+                    /** @description Delay before the second attempt: hours, minutes and seconds, for example PT10S. */
+                    delay: string;
+                    /** @description Each later delay is the previous one times this (1 keeps the delay constant). */
+                    multiplier?: number;
+                    /** @description Longest delay between attempts and the cap of Retry-After; at most PT6H. Unset means PT6H. */
+                    maxDelay?: string;
+                    /** @description Use the Retry-After of a 429 or 503 response for the next attempt (default true). */
+                    honorRetryAfter?: boolean;
+                };
                 key: string;
                 stage: {
                     id: components["schemas"]["key"];
@@ -11219,6 +11379,7 @@ export interface components {
                         resultMapping: {
                             [key: string]: string;
                         };
+                        retry?: components["schemas"]["stepRetry"];
                         timeoutSeconds: number;
                         /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                         compensates?: components["schemas"]["id"];
@@ -11487,6 +11648,7 @@ export interface components {
                         };
                         /** @description Values the worker must return. Each becomes an output of this step; a field that is not required may be missing. */
                         result: components["schemas"]["messagePayloadField"][];
+                        retry?: components["schemas"]["stepRetry"];
                         /** @description How long a worker holds a job before it must extend the lease or lose it. */
                         leaseSeconds?: number;
                     };
@@ -11637,6 +11799,7 @@ export interface components {
                         topic?: string;
                         /** @description Kafka only, optional: the message key. */
                         key?: string;
+                        retry?: components["schemas"]["stepRetry"];
                         /** @description Request or earlier-step values used by this step, by name. */
                         inputMapping: {
                             [key: string]: components["schemas"]["fieldRef"];
@@ -20055,6 +20218,90 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["FeatureDisabled"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listConnectionHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Health by connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHealthList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getConnectionHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection health */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHealth"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putConnectionRateLimit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    maxRequestsPerMinute: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved; the binding's health with the new limit */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHealth"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };
     };

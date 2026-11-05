@@ -18,6 +18,8 @@ public class JobFailure extends RuntimeException {
     private final int attempt;
     private final UUID effectId;
     private final String businessMessage;
+    /** The server's {@code Retry-After} for a 429 or 503 (CG-W04, S131); set before the failure is thrown. */
+    private java.time.Duration retryAfter;
 
     public JobFailure(boolean retryable, String attentionReason, String errorCode, String classification,
             Integer httpStatus, int attempt, UUID effectId, String businessMessage) {
@@ -64,6 +66,17 @@ public class JobFailure extends RuntimeException {
 
     public String businessMessage() {
         return businessMessage;
+    }
+
+    /** @return the server's requested delay before the next attempt, or null */
+    public java.time.Duration retryAfter() {
+        return retryAfter;
+    }
+
+    /** Carries the server's {@code Retry-After} to the failed-job command (S131); returns this failure. */
+    public JobFailure withRetryAfter(java.time.Duration value) {
+        this.retryAfter = value;
+        return this;
     }
 
     public static JobFailure find(Throwable error) {

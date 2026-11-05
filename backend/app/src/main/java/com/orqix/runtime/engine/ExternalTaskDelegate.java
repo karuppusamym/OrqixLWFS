@@ -5,6 +5,7 @@ import org.flowable.engine.delegate.JavaDelegate;
 import org.springframework.stereotype.Component;
 
 import com.orqix.runtime.internal.ExternalJobService;
+import com.orqix.runtime.internal.StepRetryPolicy;
 import com.orqix.shared.json.Json;
 
 /**
@@ -36,6 +37,11 @@ public class ExternalTaskDelegate implements JavaDelegate {
                 OrqixModel.attribute(external, "topic"), input,
                 Integer.parseInt(OrqixModel.attribute(external, "leaseSeconds")),
                 Integer.parseInt(OrqixModel.attribute(external, "maxAttempts")),
-                Integer.parseInt(OrqixModel.attribute(external, "retryDelaySeconds")));
+                Integer.parseInt(OrqixModel.attribute(external, "retryDelaySeconds")),
+                // CG-W04 (S131): the step's own backoff, when it has one.
+                OrqixModel.extension(execution.getCurrentFlowElement(), "retry").map(x -> StepRetryPolicy.of(
+                        OrqixModel.attribute(x, "maxAttempts"), OrqixModel.attribute(x, "delay"),
+                        OrqixModel.attribute(x, "multiplier"), OrqixModel.attribute(x, "maxDelay"),
+                        OrqixModel.attribute(x, "honorRetryAfter"))).orElse(null));
     }
 }

@@ -51,10 +51,13 @@ public class MessageDelivery {
     private final Json json;
     private final Clock clock;
     private final RunSuspensions suspensions;
+    private final PollWaits polls;
 
     public MessageDelivery(MessageStore store, RunStore runs, RunEvents events, ReleaseQueries releases,
-            EngineCommands engine, Json json, Clock clock, RunSuspensions suspensions) {
+            EngineCommands engine, Json json, Clock clock, RunSuspensions suspensions,
+            @org.springframework.context.annotation.Lazy PollWaits polls) {
         this.suspensions = suspensions;
+        this.polls = polls;
         this.store = store;
         this.runs = runs;
         this.events = events;
@@ -95,6 +98,8 @@ public class MessageDelivery {
             return new Outcome(Outcome.Status.INVALID, errors, null, List.of());
         }
         store.close(workspaceId, current.id(), MessageStore.RECEIVED, messageId, now);
+        // S129 CG-W03: the message won; its safety-net check closes in the same transaction.
+        polls.fallbackClosed(workspaceId, current.runId(), current.nodeId(), "messageReceived");
         runs.mutate(workspaceId, current.runId(), m -> {
             m.removeStep(current.nodeId());
             m.settle();

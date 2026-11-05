@@ -66,6 +66,56 @@ export const WORKSPACES: MockWorkspace[] = [
   { id: WS_FACILITIES, key: 'facilities', name: 'Facilities', organizationName: 'Demo Organization', isTest: false, allowSelfApprovalWorkflows: false },
 ]
 
+/** The seeded organization that owns the seeded workspaces (platform administration). */
+export const ORG_DEMO = '44444444-4444-4444-8444-444444444444'
+export const SEEDED_ORGANIZATION = { id: ORG_DEMO, key: 'demo', name: 'Demo Organization', createdAt: '2026-10-01T08:00:00Z' }
+const SEEDED_WORKSPACE_COUNT = WORKSPACES.length
+
+export interface MockOrganization {
+  id: string
+  key: string
+  name: string
+  createdAt: string
+}
+
+/** A workspace a platform administrator created in mock mode. Its access is whatever its Settings hold. */
+export interface MockCreatedWorkspace extends MockWorkspace {
+  organizationId: string
+  createdAt: string
+}
+
+export interface MockPlatform {
+  organizations: MockOrganization[]
+  workspaces: MockCreatedWorkspace[]
+}
+
+/** WORKSPACES is shared by every mock module: keep its tail equal to the created workspaces of the current db. */
+function syncCreatedWorkspaces(): void {
+  WORKSPACES.splice(SEEDED_WORKSPACE_COUNT, WORKSPACES.length, ...(db.platform?.workspaces ?? []))
+}
+
+export function isCreatedWorkspace(wsId: string): boolean {
+  return db.platform?.workspaces.some((w) => w.id === wsId) ?? false
+}
+
+/** Add a created workspace to the mock (the caller already validated it). */
+export function addCreatedWorkspace(workspace: MockCreatedWorkspace): void {
+  ;(db.platform ??= { organizations: [], workspaces: [] }).workspaces.push(workspace)
+  syncCreatedWorkspaces()
+}
+
+/**
+ * Roles and grants a person holds in a created workspace: the role bindings and grants its Settings hold for them.
+ * Seeded workspaces keep the fixed membership table below.
+ */
+function createdWorkspaceAccess(user: MockUser, wsId: string): { roles: string[]; grants: Permission[] } | null {
+  if (!isCreatedWorkspace(wsId)) return null
+  const mine = (p: { type: string; value: string }) => p.type === 'subject' && p.value === user.id
+  const roles = (db.accessEdits?.roleBindings ?? []).filter((b) => b.wsId === wsId && mine(b.principal)).map((b) => b.role as string)
+  const grants = (db.accessEdits?.grants ?? []).filter((g) => g.wsId === wsId && mine(g.principal)).map((g) => g.permission as Permission)
+  return { roles: [...new Set(roles)], grants: [...new Set(grants)] }
+}
+
 /** Default role mapping (docs/build/S6-security.md section 3). */
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   WORKSPACE_ADMIN: ['workspace.manage-access', 'connection.read'],
@@ -121,11 +171,14 @@ export function userById(id: string): MockUser | undefined {
 export const promotionApprovers = new Set<string>()
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
-  const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  const created = createdWorkspaceAccess(user, wsId)
+  const roles = created ? created.roles : (MEMBERSHIPS[user.username]?.[wsId] ?? [])
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(created?.grants ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {
+  const created = createdWorkspaceAccess(user, wsId)
+  if (created) return created.roles.length > 0 || created.grants.length > 0
   return (MEMBERSHIPS[user.username]?.[wsId] ?? []).length > 0
 }
 
@@ -138,7 +191,7 @@ export function inGroup(user: MockUser, key: string): boolean {
 }
 
 export function rolesOf(user: MockUser, wsId: string): string[] {
-  return MEMBERSHIPS[user.username]?.[wsId] ?? []
+  return createdWorkspaceAccess(user, wsId)?.roles ?? MEMBERSHIPS[user.username]?.[wsId] ?? []
 }
 
 export function allMemberships(): Array<{ username: string; wsId: string; roles: string[] }> {
@@ -309,6 +362,8 @@ export interface MockRun {
   messageWaits?: Record<string, { message: string; key: string; dueAt: string | null }>
   /** Steps waiting for an external worker (docs/build/S43), by step id. */
   externalWaits?: Record<string, { topic: string; attempt: number }>
+  /** "Wait for a signal" steps (docs/build/S59): step id -> signal name and when the wait started. */
+  signalWaits?: Record<string, { signal: string; since: string }>
   /** Case stages entered by this run (docs/build/S17). */
   stages?: Record<string, MockStageRow>
   /** Files of this run, including removed ones (metadata stays). */
@@ -426,6 +481,8 @@ export interface MockDb {
   featureSwitches?: MockFeatureSwitch[]
   /** Access changes made in Settings (role bindings, grants, groups) on top of the seeded memberships. */
   accessEdits?: MockAccessEdits
+  /** Organizations and workspaces a platform administrator created (the seeded ones are fixed). */
+  platform?: MockPlatform
 }
 
 export interface MockAccessEdits {
@@ -583,6 +640,7 @@ export let db: MockDb = emptyDb()
 
 export function replaceDb(next: MockDb): void {
   db = next
+  syncCreatedWorkspaces()
 }
 
 export function blankDefinition(workflowKey: string, name: string): Definition {
@@ -615,6 +673,7 @@ interface DbSnapshot {
   messageBuffer?: MockMessage[]
   featureSwitches?: MockFeatureSwitch[]
   accessEdits?: MockAccessEdits
+  platform?: MockPlatform
   /** Absent in snapshots written before migrations were mocked. */
   migrations?: Array<[string, MockMigration]>
   migrationProjects?: Array<[string, MockMigrationProject]>
@@ -639,6 +698,7 @@ export function snapshotDb(): string {
     messageBuffer: db.messageBuffer ?? [],
     featureSwitches: db.featureSwitches ?? [],
     ...(db.accessEdits ? { accessEdits: db.accessEdits } : {}),
+    ...(db.platform ? { platform: db.platform } : {}),
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
@@ -666,6 +726,7 @@ export function restoreDb(json: string): boolean {
     next.messageBuffer = snap.messageBuffer ?? []
     next.featureSwitches = snap.featureSwitches ?? []
     if (snap.accessEdits) next.accessEdits = snap.accessEdits
+    if (snap.platform) next.platform = snap.platform
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
     next.canaries = new Map(snap.canaries ?? [])

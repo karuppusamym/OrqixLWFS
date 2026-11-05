@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Ban, Pause, Play } from 'lucide-react'
+import { AlertTriangle, Ban, Pause, Play, RadioTower } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import * as endpoints from '@/api/endpoints'
 import { fingerprintOf, useIdempotencyKey } from '@/api/idempotency'
@@ -20,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { formatDateTime } from '@/lib/dates'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { candidateEffects, EFFECT_STATE_LABEL } from './operatorText'
+import { isSignalName, type SignalChoice } from './signals'
 
 /**
  * Operator dialogs (docs/build/S7-frontend.md section 4): Retry, Reconcile, Cancel, Reassign, and Suspend/Resume
@@ -301,6 +302,114 @@ export function SuspendDialog(props: DialogProps) {
 
 export function ResumeDialog(props: DialogProps) {
   return <SuspendResumeDialog {...props} mode="resume" />
+}
+
+// Send a signal (S59) ------------------------------------------------------------------------------
+
+const OTHER_SIGNAL = '__other__'
+
+/**
+ * Release a request that waits for a signal nothing will send: the named signal reaches only the steps and handlers of
+ * this request that wait for it now. The choices come from the open steps and the workflow's handlers; another name can
+ * be typed. The server refuses a signal nothing waits for (SIGNAL_NOT_AWAITED).
+ */
+export function SendSignalDialog({ open, run, onClose, choices }: DialogProps & { choices: SignalChoice[] }) {
+  const { workspace } = useWorkspace()
+  const ws = workspace.id
+  const refresh = useRefresh(run.id)
+  const announce = useAnnounce()
+  const key = useIdempotencyKey()
+  const [picked, setPicked] = useState(choices[0]?.signal ?? OTHER_SIGNAL)
+  const [typed, setTyped] = useState('')
+  const [reason, setReason] = useState('')
+  const [signalError, setSignalError] = useState<string>()
+  const [reasonError, setReasonError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<ProblemError | null>(null)
+  const signal = picked === OTHER_SIGNAL ? typed.trim() : picked
+
+  const submit = async () => {
+    const badSignal = !isSignalName(signal) ? (signal ? 'Use the signal name from the workflow: lowercase letters and digits, words joined by dashes, for example payment-confirmed.' : 'Enter the name of the signal.') : undefined
+    const badReason = !reason.trim() ? 'Add a reason. It is recorded in the audit log.' : undefined
+    setSignalError(badSignal)
+    setReasonError(badReason)
+    if (badSignal || badReason) return
+    setPending(true)
+    setError(null)
+    try {
+      const idem = key.keyFor(fingerprintOf(run.id, 'signal', signal, reason.trim(), run.version))
+      await endpoints.sendRunSignal(ws, run.id, { signal, reason: reason.trim(), expectedVersion: run.version }, idem)
+      await refresh()
+      announce(`The signal ${signal} was sent.`)
+      onClose()
+    } catch (cause) {
+      setError(toProblem(cause))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Send a signal to this request"
+      dismissible={!pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} loading={pending}>
+            {pending ? null : <RadioTower aria-hidden="true" />}
+            Send signal
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Alert tone="info" title="Only this request receives it">
+          Steps and handlers of this request that wait for the signal now continue. Use it when a request waits for a signal that
+          nothing else will send. The signal never reaches another request.
+        </Alert>
+        {choices.length > 0 ? (
+          <fieldset className="space-y-2" aria-describedby={signalError ? 'signal-error' : undefined}>
+            <legend className="text-sm font-semibold">
+              Signal <span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span>
+            </legend>
+            <RadioGroup value={picked} onValueChange={setPicked} aria-label="Signal">
+              {choices.map((c) => (
+                <div key={c.signal} className="flex items-start gap-3 rounded-control border border-border p-3">
+                  <RadioGroupItem value={c.signal} id={`signal-${c.signal}`} />
+                  <Label htmlFor={`signal-${c.signal}`} className="font-normal">
+                    <span className="font-mono font-semibold">{c.signal}</span>
+                    <span className="block text-sm text-muted-foreground">Reaches {c.receivers.join(' and ')}</span>
+                  </Label>
+                </div>
+              ))}
+              <div className="flex items-start gap-3 rounded-control border border-border p-3">
+                <RadioGroupItem value={OTHER_SIGNAL} id="signal-other" />
+                <Label htmlFor="signal-other" className="font-normal">Another signal</Label>
+              </div>
+            </RadioGroup>
+            {picked === OTHER_SIGNAL ? (
+              <div className="space-y-1">
+                <Label htmlFor="signal-name">Signal name</Label>
+                <Input id="signal-name" value={typed} onChange={(e) => setTyped(e.target.value)} maxLength={64} autoComplete="off" spellCheck={false} aria-invalid={signalError ? true : undefined} />
+              </div>
+            ) : null}
+            {signalError ? <p id="signal-error" className="text-sm font-medium text-danger">{signalError}</p> : null}
+          </fieldset>
+        ) : (
+          <FormField label="Signal name" required id="signal-name" error={signalError} description="The name used in the workflow's Wait for a signal step, for example payment-confirmed.">
+            {(ids) => <Input id={ids.input} value={typed} onChange={(e) => setTyped(e.target.value)} maxLength={64} autoComplete="off" spellCheck={false} aria-invalid={signalError ? true : undefined} aria-describedby={ids.describedBy} aria-required />}
+          </FormField>
+        )}
+        <ReasonField id="signal-reason" value={reason} onChange={setReason} error={reasonError} />
+        <DialogError error={error} />
+      </div>
+    </Dialog>
+  )
 }
 
 // Consistency check and repair (EX09) --------------------------------------------------------------

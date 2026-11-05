@@ -246,6 +246,7 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
   run.waits = {}
   run.messageWaits = {}
   run.externalWaits = {}
+  run.signalWaits = {}
   for (const childId of Object.values(run.childWaits ?? {})) {
     const c = db.runs.get(childId)
     if (c && active(c)) cancelRun(c, userById(run.initiatorId) as MockUser, 'The request that started this one has ended.', true)
@@ -347,6 +348,17 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       case 'externalTask':
         startExternal(run, node)
         return
+      case 'waitForSignal':
+        startSignalWait(run, node)
+        return
+      case 'sendSignal': {
+        const signal = String(node.config.signal ?? '')
+        addEvent(run, 'SIGNAL_SENT', { nodeId: node.id, data: { label: node.label, signal } })
+        deliverSignal(run, signal)
+        if (!active(run)) return
+        current = next('next')
+        break
+      }
       case 'startWorkflow':
         startChild(run, node)
         return
@@ -355,6 +367,36 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         return
     }
   }
+}
+
+/** A token reached "Wait for a signal": the request waits until the signal is sent in it (S59). */
+function startSignalWait(run: MockRun, node: WorkflowNode): void {
+  const signal = String(node.config.signal ?? '')
+  run.signalWaits = { ...(run.signalWaits ?? {}), [node.id]: { signal, since: clock.iso() } }
+  run.lifecycle = 'waiting'
+  addEvent(run, 'SIGNAL_WAIT_STARTED', { nodeId: node.id, data: { label: node.label, signal } })
+}
+
+/** Signal names the request waits for right now. */
+export function awaitedSignals(run: MockRun): string[] {
+  return [...new Set(Object.values(run.signalWaits ?? {}).map((w) => w.signal))]
+}
+
+/**
+ * Deliver a signal inside one request: every step that waits for it now continues, oldest first. A signal never
+ * reaches another request. Returns how many steps received it.
+ */
+export function deliverSignal(run: MockRun, signal: string): number {
+  const waiting = Object.entries(run.signalWaits ?? {}).filter(([, w]) => w.signal === signal).sort((a, b) => a[1].since.localeCompare(b[1].since))
+  const def = currentRelease(run).definition
+  for (const [nodeId] of waiting) {
+    if (!active(run) || !run.signalWaits?.[nodeId]) continue
+    delete run.signalWaits[nodeId]
+    addEvent(run, 'SIGNAL_RECEIVED', { nodeId, data: { label: nodeById(def, nodeId)?.label ?? nodeId, signal } })
+    const next = def.transitions.find((t) => t.from === nodeId && t.on === 'next')
+    if (next) advance(run, next.to)
+  }
+  return waiting.length
 }
 
 /** A token reached a worker step: publish the job and wait. The mock has no worker API; tests complete it with completeExternalJob. */
@@ -697,6 +739,7 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
   run.waits = {}
   run.messageWaits = {}
   run.externalWaits = {}
+  run.signalWaits = {}
   const succeeded = run.effects.filter((e) => e.state === 'succeeded')
   run.lifecycle = 'cancelled'
   run.endedAt = clock.iso()
@@ -775,6 +818,9 @@ export function toRun(run: MockRun, user: MockUser): Run {
   }
   for (const [nodeId, w] of Object.entries(run.messageWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt, messageName: w.message })
+  }
+  for (const [nodeId, w] of Object.entries(run.signalWaits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'waitForSignal', since: w.since, candidateGroup: null, assignee: null, dueAt: null })
   }
   for (const nodeId of Object.keys(run.childWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'child', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })

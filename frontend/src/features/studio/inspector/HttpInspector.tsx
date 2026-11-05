@@ -20,6 +20,7 @@ import { Advanced, CommitInput, CommitNumber, InspectorSection } from './control
 import { CallFailureErrorFields, UndoFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
 import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
+import { PollFields } from './PollFields'
 import { applyDocumentReference } from '../model/documentReference'
 import type { DocumentOperation } from '@/features/settings/DocumentVersionPicker'
 
@@ -250,6 +251,25 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
           </fieldset>
         ) : null}
       </InspectorSection>
+
+      {operation && !operation.agent ? (
+        <PollFields
+          node={node}
+          readOnlyOperation={operation.effectClass === 'readOnly'}
+          systemName={summary?.name ?? connectionKey}
+          before={available}
+          results={Object.entries(resultMapping).map(([name, pointer]) => {
+            const schema = operation.responseSchema.properties?.[pointer.slice(1)]
+            return {
+              ref: `/steps/${node.id}/${name}`,
+              label: humanize(name),
+              group: node.label,
+              type: schema?.type ?? 'string',
+              ...(schema?.enum ? { enumValues: schema.enum } : {}),
+            }
+          })}
+        />
+      ) : null}
 
       <UndoFields node={node} />
       <CallFailureErrorFields node={node} />

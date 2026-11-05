@@ -9633,7 +9633,7 @@ components:
         authoredDeadlineAt: { type: string, format: date-time }
         extensionLimit: { type: string, format: date-time }
         deadlineExtensions: { type: integer, minimum: 0 }
-        shown: { type: [object, 'null'], maxProperties: 3, description: Values shown while waiting; null without request-data access }
+        shown: { type: [object, 'null'], maxProperties: 3, additionalProperties: { type: [string, number, boolean] }, description: Values shown while waiting; null without request-data access }
         canOperate: { type: boolean }
         checkNowAvailableAt: { type: [string, 'null'], format: date-time }
         endedAt: { type: [string, 'null'], format: date-time }

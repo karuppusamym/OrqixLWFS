@@ -79,6 +79,20 @@ export function StepSettings({
               <option value="timeout">It answers too late (the time limit of {c.timeoutSeconds} seconds passes)</option>
               <option value="unknownOutcome">The answer is lost, so nobody knows if it was done</option>
             </Select>
+            {s.result === 'works' && c.polls ? (
+              <div>
+                <Label htmlFor={`${id}-checks`} className="font-normal">
+                  Answers of the checks, one per line (the last one repeats)
+                </Label>
+                <Textarea id={`${id}-checks`} rows={4} spellCheck={false} className="font-mono text-xs" value={s.checks ?? ''}
+                  placeholder={[...(c.results[0] ? ['pending', 'pending'] : []), 'unavailable', '{ "state": "done" }'].join('\n')}
+                  aria-describedby={`${id}-checks-help`}
+                  onChange={(e) => set({ calls: { ...settings.calls, [c.id]: { ...s, checks: e.target.value } } })} />
+                <p id={`${id}-checks-help`} className="mt-1 text-xs text-muted-foreground">
+                  {c.results[0] ? `A plain value is the answer for ${c.results[0].key}. ` : ''}Write unavailable for a check that gets no answer, or a JSON body for a full answer.
+                </p>
+              </div>
+            ) : null}
             {s.result === 'works' && c.results.length > 0 ? (
               <details>
                 <summary className="cursor-pointer text-sm text-muted-foreground">Choose the values it returns (otherwise a sample answer is used)</summary>

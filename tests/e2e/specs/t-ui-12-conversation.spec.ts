@@ -13,6 +13,9 @@ test('guided request survives reload, requires confirmation, and supports reques
   const send = async (message: string) => {
     await page.locator('#conversation-message').fill(message)
     await page.getByRole('button', { name: 'Send', exact: true }).click()
+    // The answer box is cleared only when the reply has arrived. Checking for the Send button alone can pass before the
+    // button turns into "Sending…", and the next answer would then be typed into a box that is about to be cleared.
+    await expect(page.locator('#conversation-message')).toHaveValue('')
     await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
   }
   await send('start purchase-approval')

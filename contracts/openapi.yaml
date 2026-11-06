@@ -7112,7 +7112,7 @@ paths:
       x-orqix-audit: connector.package-imported
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageImport' } } } }
       responses:
-        '201': { description: Imported, pending approval, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '201': { description: 'Imported, pending approval', content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -8309,7 +8309,7 @@ paths:
       summary: 'AI decision records of a run (S134 section 7.8)'
       description: |
         Input values appear only when retained by the workspace policy and the caller may see the run data.
-      x-orqix-permission: run.read | initiator | participant
+      x-orqix-permission: run.read | initiator | taskParticipant
       responses:
         '200':
           description: OK
@@ -8334,7 +8334,7 @@ paths:
       summary: 'Record that a person accepted or overrode an AI decision'
       description: |
         An override names the final label or outcome and a reason; it becomes a candidate evaluation case.
-      x-orqix-permission: participant | run.operate | ai.evaluate
+      x-orqix-permission: taskParticipant | run.operate | ai.evaluate
       x-orqix-audit: ai.decision.outcome-recorded
       requestBody:
         required: true
@@ -11096,7 +11096,7 @@ components:
         dueAt: { type: [string, 'null'], format: date-time }
         deadlineAt: { type: [string, 'null'], format: date-time }
         attempts: { type: integer, minimum: 0, description: Checks made so far (poll and safety-net checks) }
-        correlationRef: { type: [string, 'null'], description: Message name, signal or worker topic; never a request value }
+        correlationRef: { type: [string, 'null'], description: 'Message name, signal or worker topic; never a request value' }
         connectionKey: { type: [string, 'null'] }
         check: { oneOf: [{ $ref: '#/components/schemas/PollCheck' }, { type: 'null' }] }
     PollCheck:
@@ -11173,7 +11173,7 @@ components:
       required: [kind, source, openNow, longestOpenSeconds, totalOpenSeconds, finished, averageFinishedSeconds, p90FinishedSeconds]
       properties:
         kind: { type: string, enum: [poll, message, callback, externalJob] }
-        source: { type: string, description: Connection key, message name or worker topic }
+        source: { type: string, description: 'Connection key, message name or worker topic' }
         openNow: { type: integer, minimum: 0 }
         longestOpenSeconds: { type: [integer, 'null'], minimum: 0 }
         totalOpenSeconds: { type: [integer, 'null'], minimum: 0 }
@@ -11911,7 +11911,7 @@ components:
               outcome: { type: [string, 'null'] }
               durationMs: { type: [integer, 'null'], minimum: 0 }
               costUsd: { type: [number, 'null'], minimum: 0 }
-              content: { type: object, additionalProperties: true, description: Redacted arguments, results and model text }
+              content: { type: object, additionalProperties: true, description: 'Redacted arguments, results and model text' }
               createdAt: { $ref: '#/components/schemas/Timestamp' }
     AgentTestSuite:
       type: object
@@ -11994,7 +11994,7 @@ components:
               costUsd: { type: number, minimum: 0 }
               p95DurationMs: { type: [integer, 'null'], minimum: 0 }
               failureCodes: { type: object, additionalProperties: { type: integer } }
-        refusedToolCalls: { type: object, additionalProperties: { type: integer }, description: Refused tool calls by outcome (refusedNotAllowed, refusedSchemaChanged, refusedDataClass, refusedKillSwitch, invalidArguments, declined, ...) }
+        refusedToolCalls: { type: object, additionalProperties: { type: integer }, description: 'Refused tool calls by outcome (refusedNotAllowed, refusedSchemaChanged, refusedDataClass, refusedKillSwitch, invalidArguments, declined, ...)' }
         schemaRefusals: { type: array, items: { $ref: '#/components/schemas/McpToolDrift' } }
         killSwitches: { type: array, items: { $ref: '#/components/schemas/AgentKillSwitch' } }
         loops: { type: object, additionalProperties: { type: integer }, description: Durable loops by status }
@@ -14852,7 +14852,7 @@ components:
         retireReason: { type: [string, 'null'] }
         canManage: { type: boolean }
         canApprove: { type: boolean }
-        canDecide: { type: boolean, description: The caller holds connector.approve, did not import it, and it is pending }
+        canDecide: { type: boolean, description: 'The caller holds connector.approve, did not import it, and it is pending' }
     ConnectorPackageReview:
       type: object
       description: What the review screen shows; computed at import from the validated files.
@@ -14940,7 +14940,7 @@ components:
             properties:
               key: { $ref: '#/components/schemas/Key' }
               version: { type: integer, minimum: 1 }
-              reused: { type: boolean, description: The definition was unchanged, so the existing version is used }
+              reused: { type: boolean, description: 'The definition was unchanged, so the existing version is used' }
         hostsToAllow: { type: array, items: { type: string }, description: Host patterns a binding may use; add the concrete host to the egress allow-list }
     ConnectorCatalog:
       type: object

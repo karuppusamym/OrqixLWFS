@@ -8109,7 +8109,7 @@ export interface components {
             deadlineAt: string | null;
             /** @description Checks made so far (poll and safety-net checks) */
             attempts: number;
-            /** @description Message name */
+            /** @description Message name, signal or worker topic; never a request value */
             correlationRef: string | null;
             connectionKey: string | null;
             check: components["schemas"]["PollCheck"] | null;
@@ -8188,7 +8188,7 @@ export interface components {
         InsightsOutsideWait: {
             /** @enum {string} */
             kind: "poll" | "message" | "callback" | "externalJob";
-            /** @description Connection key */
+            /** @description Connection key, message name or worker topic */
             source: string;
             openNow: number;
             longestOpenSeconds: number | null;
@@ -8739,7 +8739,7 @@ export interface components {
                 outcome?: string | null;
                 durationMs?: number | null;
                 costUsd?: number | null;
-                /** @description Redacted arguments */
+                /** @description Redacted arguments, results and model text */
                 content: {
                     [key: string]: unknown;
                 };
@@ -8825,7 +8825,7 @@ export interface components {
                     [key: string]: number;
                 };
             }[];
-            /** @description Refused tool calls by outcome (refusedNotAllowed */
+            /** @description Refused tool calls by outcome (refusedNotAllowed, refusedSchemaChanged, refusedDataClass, refusedKillSwitch, invalidArguments, declined, ...) */
             refusedToolCalls: {
                 [key: string]: number;
             };
@@ -11043,7 +11043,7 @@ export interface components {
             retireReason: string | null;
             canManage: boolean;
             canApprove: boolean;
-            /** @description The caller holds connector.approve */
+            /** @description The caller holds connector.approve, did not import it, and it is pending */
             canDecide: boolean;
         };
         /** @description What the review screen shows; computed at import from the validated files. */
@@ -11114,7 +11114,7 @@ export interface components {
             connections: {
                 key: components["schemas"]["Key"];
                 version: number;
-                /** @description The definition was unchanged */
+                /** @description The definition was unchanged, so the existing version is used */
                 reused: boolean;
             }[];
             /** @description Host patterns a binding may use; add the concrete host to the egress allow-list */
@@ -23915,7 +23915,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Imported */
+            /** @description Imported, pending approval */
             201: {
                 headers: {
                     [name: string]: unknown;

@@ -78,7 +78,8 @@ public class AdapterTaskDelegate implements JavaDelegate {
         ObjectNode payload = payload(config, kind, values);
 
         EffectDispatcher.DispatchResult result = adapters.send(new AdapterSteps.Send(workspaceId, runId, element.getId(),
-                OCCURRENCE, adapterKey, kind, payload, properties.runtime().lockOwner()));
+                ProcessData.occurrence(execution, element.getId()), adapterKey, kind, payload,
+                properties.runtime().lockOwner()));
         if (result instanceof EffectDispatcher.Succeeded success) {
             if (!success.reused()) {
                 metrics.effectAttempt(success.effectClass(), "succeeded");

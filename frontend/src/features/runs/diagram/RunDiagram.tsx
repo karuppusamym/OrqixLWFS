@@ -60,7 +60,7 @@ function toDefinition(path: RunPath): Definition {
   for (const n of path.diagram.nodes) if (n.position) positions[n.id] = { x: n.position.x, y: n.position.y }
   return normalizeDefinition({
     nodes: path.diagram.nodes.map((n) => ({ id: n.id, type: knownKind(n.kind), label: n.label, config: {} })),
-    transitions: path.diagram.transitions.map((t) => ({ id: t.id, from: t.from, to: t.to, on: t.on, ...(t.label ? { label: t.label } : {}) })),
+    transitions: path.diagram.transitions.map((t) => ({ id: t.id, from: t.from, to: t.to, on: t.on, ...(t.label ? { label: t.label } : {}), ...(t.maxTraversals ? { maxTraversals: t.maxTraversals } : {}) })),
     uiLayout: { positions },
   })
 }

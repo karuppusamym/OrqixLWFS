@@ -41,6 +41,31 @@ class ReleaseCompatibilityTest {
                 t("start", "manager", "next") + "," + t("manager", "end", "approved"));
     }
 
+    /** S138: manager -> review; review rejects back to manager at most {@code max} times, then ends. */
+    private JsonNode loop(int max, String reviewConfig) {
+        return flow(START + "," + node("manager", "approval", "{\"candidateGroupRef\":\"managers\"}") + ","
+                + node("review", "approval", reviewConfig) + "," + END,
+                t("start", "manager", "next") + "," + t("manager", "review", "approved") + ","
+                + t("manager", "end", "rejected") + "," + t("review", "end", "approved") + ","
+                + "{\"id\":\"back\",\"from\":\"review\",\"to\":\"manager\",\"on\":\"rejected\",\"maxTraversals\":" + max + "},"
+                + "{\"id\":\"limit\",\"from\":\"review\",\"to\":\"end\",\"on\":\"limitReached\"}");
+    }
+
+    @Test
+    void aRequestInsideALoopMovesOnlyWhenTheLoopIsIdentical() {
+        JsonNode a = loop(2, "{\"candidateGroupRef\":\"finance\"}");
+        assertThat(codes(a, a, "manager")).doesNotContain("LOOP_CHANGED");
+        assertThat(codes(a, loop(3, "{\"candidateGroupRef\":\"finance\"}"), "manager")).contains("LOOP_CHANGED");
+        assertThat(codes(a, loop(2, "{\"candidateGroupRef\":\"auditors\"}"), "manager")).contains("LOOP_CHANGED");
+        // A release that adds a loop around the waiting step changes it as well.
+        JsonNode plain = flow(START + "," + node("manager", "approval", "{\"candidateGroupRef\":\"managers\"}") + ","
+                + node("review", "approval", "{\"candidateGroupRef\":\"finance\"}") + "," + END,
+                t("start", "manager", "next") + "," + t("manager", "review", "approved") + ","
+                + t("manager", "end", "rejected") + "," + t("review", "end", "approved") + ","
+                + t("review", "end", "rejected"));
+        assertThat(codes(plain, a, "manager")).contains("LOOP_CHANGED");
+    }
+
     @Test
     void identicalReleasesAreCompatible() {
         JsonNode a = base("{\"candidateGroupRef\":\"managers\"}", node("notify", "notification", "{}"));

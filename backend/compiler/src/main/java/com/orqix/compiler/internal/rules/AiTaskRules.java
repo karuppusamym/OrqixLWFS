@@ -73,7 +73,9 @@ public final class AiTaskRules {
     }
 
     private static void check(RuleContext rc, Node.AiTask ai) {
-        routes(rc, ai);
+        if (rc.definition().execution().forEachOf(ai.id()) == null) {
+            routes(rc, ai); // a for-each AI task (S138) has one next step; ForEachRules checks it
+        }
         if (!ai.shadow() && !List.of("classify", "extract").contains(ai.mode()) && ai.routes()) {
             rc.issues().blocker("WF_AI_AUTONOMY_MODE", ai.configPath("autonomy"), ai.id(), null, q(ai) + " is a "
                     + ai.mode() + " task, which a person or a decision table always acts on. Use \"suggest\" or"

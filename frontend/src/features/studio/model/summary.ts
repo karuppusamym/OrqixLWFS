@@ -15,6 +15,16 @@ export function describeCondition(def: Definition, c: Condition, lookup?: Connec
 
 /** Short route text used on edges and in the Steps tab. */
 export function routeText(def: Definition, t: Transition, lookup?: ConnectionLookup): string {
+  const base = routeBaseText(def, t, lookup)
+  if (t.maxTraversals) {
+    // S138: a bounded "send back to" path.
+    const limit = `send back, at most ${t.maxTraversals} ${t.maxTraversals === 1 ? 'time' : 'times'}`
+    return base ? `${base} (${limit})` : limit.charAt(0).toUpperCase() + limit.slice(1)
+  }
+  return base
+}
+
+function routeBaseText(def: Definition, t: Transition, lookup?: ConnectionLookup): string {
   switch (t.on) {
     case 'approved':
       return 'Approved'
@@ -38,6 +48,8 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return t.label || 'Needs review'
     case 'aiUnavailable':
       return t.label || 'AI unavailable'
+    case 'limitReached':
+      return t.label || 'Limit reached'
   }
 }
 
@@ -52,6 +64,7 @@ export function routeSlotLabel(def: Definition, t: Transition | undefined, on: T
   if (on === 'lowConfidence') return 'When AI is not confident enough'
   if (on === 'needsReview') return 'When a person must review'
   if (on === 'aiUnavailable') return 'When AI is unavailable'
+  if (on === 'limitReached') return 'When the send-back limit is reached'
   return ROUTE_LABEL[on]
 }
 

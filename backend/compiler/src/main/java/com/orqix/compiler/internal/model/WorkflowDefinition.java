@@ -65,9 +65,19 @@ public record WorkflowDefinition(
 
     /** @param label may be null; @param condition non-null only for {@code on: condition} */
     public record Transition(int index, String id, String from, String to, Route on, String label,
-                             Condition condition, String aiLabel) {
+                             Condition condition, String aiLabel, Integer maxTraversals) {
         public Transition(int index, String id, String from, String to, Route on, String label, Condition condition) {
-            this(index, id, from, to, on, label, condition, null);
+            this(index, id, from, to, on, label, condition, null, null);
+        }
+
+        public Transition(int index, String id, String from, String to, Route on, String label, Condition condition,
+                          String aiLabel) {
+            this(index, id, from, to, on, label, condition, aiLabel, null);
+        }
+
+        /** @return true for a declared bounded loop path (CG-E01, S138) */
+        public boolean bounded() {
+            return maxTraversals != null;
         }
 
         public String path() {
@@ -262,9 +272,19 @@ public record WorkflowDefinition(
      * sorted by id; a step without one uses {@code maxAttempts} and {@code retryDelaySeconds}.
      */
     public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds,
-                            Map<String, StepRetry> stepRetry) {
+                            Map<String, StepRetry> stepRetry, Map<String, StepForEach> forEach) {
         public Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {
-            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, Map.of());
+            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, Map.of(), Map.of());
+        }
+
+        public Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds,
+                         Map<String, StepRetry> stepRetry) {
+            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, stepRetry, Map.of());
+        }
+
+        /** @return the step's for-each policy (CG-E06, S138), or null when it runs once */
+        public StepForEach forEachOf(String stepId) {
+            return forEach.get(stepId);
         }
 
         /** @return the step's own policy, or null when it uses the workflow defaults */

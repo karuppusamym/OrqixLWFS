@@ -110,6 +110,15 @@ public final class FieldTypes {
         if (producer == null) {
             return new Unknown("There is no step with the ID \"" + stepId + "\".");
         }
+        com.orqix.compiler.internal.model.StepForEach each = definition.execution().forEachOf(stepId);
+        if (each != null && !FailureRules.isFailureOutput(key)) {
+            return forEachOutput(producer, each, key);
+        }
+        return stepOutput(producer, key);
+    }
+
+    /** The output of one run of a step, ignoring any for-each policy. */
+    private Resolution stepOutput(Node producer, String key) {
         return switch (producer) {
             case Node.Approval a -> approvalOutput(a, key);
             case Node.Decision d -> decisionOutput(d, key);
@@ -150,6 +159,9 @@ public final class FieldTypes {
         }
         if (list.type() != FieldKind.ARRAY) {
             return new Unknown("\"" + list.title() + "\" is not a list, so it has no count or total.");
+        }
+        if (tail.equals(ITEM) || tail.startsWith(ITEM + "/")) {
+            return item(key, list, tail);
         }
         int max = list.maxItems() == null ? 0 : list.maxItems();
         if (tail.equals("count")) {
@@ -529,6 +541,65 @@ public final class FieldTypes {
                     + ", but the source can have other values";
         }
         return null;
+    }
+
+    /** The current item of a for-each step (CG-E06, S138): the reader maps it as {@code /input/<list>/*}. */
+    public static final String ITEM = "*";
+
+    /**
+     * {@code /input/<list>/*} (a list of single values) and {@code /input/<list>/*}{@code /<column>} (a list of rows):
+     * the item a for-each step is running for. Only the step itself is given these references.
+     */
+    private Resolution item(String key, FormSchema.Field list, String tail) {
+        if (list.items() == null) {
+            return new Unknown("\"" + list.title() + "\" has no typed items.");
+        }
+        if (tail.equals(ITEM)) {
+            if (list.rows()) {
+                return new Unknown("\"" + list.title() + "\" is a list of rows. Choose which column fills which input.");
+            }
+            return new Resolved(formType(list.items(), false), null, key);
+        }
+        String column = tail.substring(ITEM.length() + 1);
+        FormSchema.Field col = list.rows() ? list.items().rowFields().get(column) : null;
+        if (col == null) {
+            return new Unknown("The list \"" + list.title() + "\" has no column \"" + column + "\"."
+                    + (list.rows() ? " Columns: " + String.join(", ", list.items().rowFields().keySet()) + "." : ""));
+        }
+        return new Resolved(formType(col, !list.items().rowRequired().contains(column)), null, key);
+    }
+
+    /**
+     * Outputs of a for-each step (CG-E06, S138): {@code itemCount}, {@code completedCount}, {@code stoppedEarly}, and
+     * each collected output as a list of the per-item result in item order. A list entry may be empty when the step
+     * stops early or the item result was optional.
+     */
+    private Resolution forEachOutput(Node producer, com.orqix.compiler.internal.model.StepForEach each, String key) {
+        BigDecimal max = BigDecimal.valueOf(each.maxItems());
+        if (com.orqix.compiler.internal.model.StepForEach.ITEM_COUNT.equals(key)
+                || com.orqix.compiler.internal.model.StepForEach.COMPLETED_COUNT.equals(key)) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ZERO, max), producer, key);
+        }
+        if (com.orqix.compiler.internal.model.StepForEach.STOPPED_EARLY.equals(key)) {
+            return new Resolved(new FieldType(FieldKind.BOOLEAN, null, false, null, null), producer, key);
+        }
+        String source = each.collect().get(key);
+        if (source == null) {
+            return new Unknown("\"" + producer.label() + "\" runs for each item, so it produces itemCount,"
+                    + " completedCount, stoppedEarly" + (each.collect().isEmpty() ? "" : ", "
+                    + String.join(", ", each.collect().keySet())) + ", not \"" + key + "\". Collect a result to use it.");
+        }
+        Resolution one = stepOutput(producer, source);
+        if (!(one instanceof Resolved r)) {
+            return one;
+        }
+        FieldType it = r.type();
+        if (it.kind() == FieldKind.ARRAY || it.kind() == FieldKind.OBJECT) {
+            return new Unknown("Only single values can be collected; \"" + source + "\" is a list.");
+        }
+        FieldType entry = new FieldType(it.kind(), it.domain(), it.mayBeAbsent() || each.stopsEarly(), it.minimum(),
+                it.maximum());
+        return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, entry), producer, key);
     }
 
     private static FieldType formType(FormSchema.Field field, boolean optional) {

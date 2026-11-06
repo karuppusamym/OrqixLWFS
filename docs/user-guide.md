@@ -370,3 +370,10 @@ When the system answers "too many requests" (429) or "unavailable" (503) with a 
 that long, at most the longest delay. A call whose outcome is unknown is never retried automatically. When a
 connection is paused after repeated failures, or its request limit is reached, the timeline says the step is waiting
 and that no attempt was used. Details: [S131](build/S131-retry-and-circuit-breaker.md).
+
+## Send back with a limit, and steps that run for each item (designers) - 6 November 2026
+
+- **Send back to an earlier step.** Select a connection (for example "Rejected" after a finance review) and choose *Send back to an earlier step*: pick the step, how many times at most (1 to 10), and where the request continues when the limit is reached. Each time back is a new visit: new tasks with their own deadlines, new calls and notices. People kept apart by separation of duties stay apart across every visit. Drawing a loop by hand is still refused; every loop needs a limit. Message waits, child workflows, document generation, signals and undo steps cannot be inside a loop yet.
+- **For each item.** A call to a system, an external worker or an AI task can run once for each item of a list on the request form (up to 500 items). Map the item (or each row's columns) to the step's inputs, choose when the step is done (after every item, after the first success, or once enough items succeeded) and which results to collect into lists. Calls can send items in parallel batches of up to 25; workers and AI tasks take items one at a time. After the step you can use itemCount, completedCount, stoppedEarly and the collected lists.
+- **Where is my request.** A step shows how often the request was there, how often it was sent back and whether the limit was reached, and for a for-each step how many items finished. Operators can list the items of a step (`GET .../runs/{runId}/steps/{nodeId}/items`).
+- **Moving requests to a new release.** A request inside a loop moves only when the loop is the same in the new release.

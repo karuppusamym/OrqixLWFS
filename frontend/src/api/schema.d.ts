@@ -3592,6 +3592,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/steps/{nodeId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                nodeId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * The item results of a "for each" step of a request
+         * @description CG-E06 (S138): every finished item of every visit of a for-each step (call a system, external worker or AI
+         *     task), in visit and item order: the 0-based position in the request list, whether it succeeded and when it
+         *     finished. Item results themselves stay in the step outputs (the collected lists); this read shows progress
+         *     and which items ran when the step stopped early. Same access rule as the run path. 404 when the step is not
+         *     a for-each step of the request's release.
+         */
+        get: operations["getRunStepItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/insights/summary": {
         parameters: {
             query?: never;
@@ -9537,6 +9565,8 @@ export interface components {
                 [key: string]: {
                     /** @enum {string} */
                     outcome?: "approve" | "reject" | "timeout";
+                    /** @description S138: one outcome per visit of a step inside a bounded loop (the last one repeats); wins over outcome. */
+                    outcomes?: ("approve" | "reject" | "timeout")[];
                     reason?: string;
                 };
             };
@@ -10287,18 +10317,20 @@ export interface components {
             from: string;
             to: string;
             /**
-             * @description error only on a section error route (S59); the ai routes leave AI tasks (S134).
+             * @description error only on a section error route (S59); the ai routes leave AI tasks (S134); limitReached leaves a step whose bounded loop path is used up (S138).
              * @enum {string}
              */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "limitReached";
             /** @description The designer's route label. Conditions are never included. */
             label?: string | null;
+            /** @description A bounded "send back to" path (S138): how many times it may be taken. Left out otherwise. */
+            maxTraversals?: number;
         };
         PathVisit: {
             nodeId: string;
             /** @description Which time the request was at this step (repeats in loops). */
             occurrence: number;
-            /** @description List-driven approval only (S88): the 0-based list position of the item this task decided. Left out otherwise. */
+            /** @description List-driven approval (S88): the 0-based list position of the item this task decided; for-each call (S138): the item the call ran for. Left out otherwise. */
             itemIndex?: number;
             /** @description List-driven approval only (S88): what the task showed for its item. */
             itemLabel?: string;
@@ -10319,6 +10351,44 @@ export interface components {
             assignee?: components["schemas"]["SubjectRef"] | null;
             dueAt?: components["schemas"]["Timestamp"] | null;
         };
+        StepItems: {
+            runId: components["schemas"]["Uuid"];
+            nodeId: string;
+            maxItems: number;
+            /** @enum {string} */
+            mode: "sequential" | "parallel";
+            items: components["schemas"]["StepItem"][];
+        };
+        StepItem: {
+            /** @description The visit of the step (above 1 inside a bounded loop). */
+            occurrence: number;
+            /** @description 0-based position in the request list. */
+            itemIndex: number;
+            /** @description The item finished with a usable result (an AI task item: AI decided it). */
+            succeeded: boolean;
+            completedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description A bounded "send back to" path (CG-E01): how often the request was sent back and whether the limit was reached. */
+        PathLoop: {
+            transitionId: string;
+            from: string;
+            to: string;
+            maxTraversals: number;
+            traversals: number;
+            /** @description The request continued on the limitReached path. */
+            limitReached: boolean;
+        };
+        /** @description One visit of a for-each step (CG-E06). */
+        PathForEach: {
+            nodeId: string;
+            occurrence: number;
+            items: number;
+            completed: number;
+            succeeded: number;
+            parallel: boolean;
+            /** @description The step was left (its outputs were collected). */
+            done: boolean;
+        };
         RunPath: {
             runId: components["schemas"]["Uuid"];
             lifecycle: components["schemas"]["Lifecycle"];
@@ -10336,6 +10406,10 @@ export interface components {
             historyTruncated?: boolean;
             /** @description Each time a section was entered or a handler started (S59). */
             scopeVisits?: components["schemas"]["PathScopeVisit"][];
+            /** @description Bounded loop paths of the release and how the request used them (S138). Left out when the release has none. */
+            loops?: components["schemas"]["PathLoop"][];
+            /** @description Visits of for-each steps (S138). Left out when there are none. */
+            forEach?: components["schemas"]["PathForEach"][];
         };
         PathScope: {
             id: string;
@@ -12609,7 +12683,7 @@ export interface components {
                 [key: string]: components["schemas"]["scalarFormField"];
             };
         };
-        /** @description A list of rows (up to 50), each with the scalar fields of rowSchema. */
+        /** @description A list of rows (up to 500 since S138; per-item approvals and child for-each keep their own lower limits), each with the scalar fields of rowSchema. */
         rowsFormField: {
             /** @constant */
             type: "array";
@@ -12690,6 +12764,32 @@ export interface components {
             recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
             supervisorGroupRef?: components["schemas"]["key"];
         };
+        /** @description CG-E06 for each (docs/build/S138): run this step once per item of a request list (1 to 500 items), one at a time or in parallel batches. For a list of single values itemInput names the input that receives the item; for a list of rows itemMapping copies columns of the current row into inputs (exactly one of the two). Outputs at /steps/<id>/: itemCount, completedCount, stoppedEarly and one list per collect entry, in item order. */
+        stepForEach: {
+            itemsRef: string;
+            itemInput?: components["schemas"]["fieldKey"];
+            itemMapping?: {
+                [key: string]: components["schemas"]["fieldKey"];
+            };
+            maxItems: number;
+            /**
+             * @default sequential
+             * @enum {unknown}
+             */
+            mode: "sequential" | "parallel";
+            /** @description Parallel only: how many items run at the same time (default 25). */
+            batchSize?: number;
+            /** @description When the step is done: after every item (all, the default), after the first item that succeeded (firstSuccess), or once atLeast items succeeded. */
+            completion?: {
+                /** @enum {unknown} */
+                when: "all" | "firstSuccess" | "atLeast";
+                count?: number;
+            };
+            /** @description Collected output name -> result of one item. The collected output is a list in item order. */
+            collect?: {
+                [key: string]: components["schemas"]["fieldKey"];
+            };
+        } & (unknown | unknown);
         /** @description This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*). */
         stepRetry: {
             /** @description Total attempts, the first included. */
@@ -12929,6 +13029,7 @@ export interface components {
             type?: "http";
             /** @description Effect class, idempotency header and success statuses come from the pinned connection operation, never from the workflow. */
             config?: {
+                forEach?: components["schemas"]["stepForEach"];
                 connectionRef: components["schemas"]["key"];
                 operation: string;
                 inputMapping: {
@@ -13103,6 +13204,7 @@ export interface components {
             type?: "externalTask";
             /** @description Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention. */
             config?: {
+                forEach?: components["schemas"]["stepForEach"];
                 /** @description The kind of job. Workers ask for the topics they serve. */
                 topic: components["schemas"]["key"];
                 /** @description Request or earlier-step values sent to the worker, by name. */
@@ -13198,6 +13300,7 @@ export interface components {
             type?: "aiTask";
             /** @description AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode. */
             config?: {
+                forEach?: components["schemas"]["stepForEach"];
                 /** @description Key of the shared AI skill. */
                 skillRef: components["schemas"]["key"];
                 /** @description Approved version to pin; publishing pins the latest approved version when absent. */
@@ -13231,7 +13334,9 @@ export interface components {
             from: components["schemas"]["id"];
             to: components["schemas"]["id"];
             /** @enum {unknown} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "limitReached";
+            /** @description CG-E01 bounded loop (docs/build/S138): this path leads back to an earlier step and may be taken at most this many times per request. The step it leaves must also have one limitReached path, taken instead once the limit is used up. */
+            maxTraversals?: number;
             /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
             aiLabel?: string;
             /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
@@ -13471,6 +13576,32 @@ export interface components {
                 };
                 /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
                 id: string;
+                /** @description CG-E06 for each (docs/build/S138): run this step once per item of a request list (1 to 500 items), one at a time or in parallel batches. For a list of single values itemInput names the input that receives the item; for a list of rows itemMapping copies columns of the current row into inputs (exactly one of the two). Outputs at /steps/<id>/: itemCount, completedCount, stoppedEarly and one list per collect entry, in item order. */
+                stepForEach: {
+                    itemsRef: string;
+                    itemInput?: components["schemas"]["fieldKey"];
+                    itemMapping?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
+                    maxItems: number;
+                    /**
+                     * @default sequential
+                     * @enum {unknown}
+                     */
+                    mode: "sequential" | "parallel";
+                    /** @description Parallel only: how many items run at the same time (default 25). */
+                    batchSize?: number;
+                    /** @description When the step is done: after every item (all, the default), after the first item that succeeded (firstSuccess), or once atLeast items succeeded. */
+                    completion?: {
+                        /** @enum {unknown} */
+                        when: "all" | "firstSuccess" | "atLeast";
+                        count?: number;
+                    };
+                    /** @description Collected output name -> result of one item. The collected output is a list in item order. */
+                    collect?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
+                } & (unknown | unknown);
                 fieldKey: string;
                 label: string;
                 /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
@@ -13512,7 +13643,7 @@ export interface components {
                         [key: string]: components["schemas"]["scalarFormField"];
                     };
                 };
-                /** @description A list of rows (up to 50), each with the scalar fields of rowSchema. */
+                /** @description A list of rows (up to 500 since S138; per-item approvals and child for-each keep their own lower limits), each with the scalar fields of rowSchema. */
                 rowsFormField: {
                     /** @constant */
                     type: "array";
@@ -13655,6 +13786,7 @@ export interface components {
                     type?: "http";
                     /** @description Effect class, idempotency header and success statuses come from the pinned connection operation, never from the workflow. */
                     config?: {
+                        forEach?: components["schemas"]["stepForEach"];
                         connectionRef: components["schemas"]["key"];
                         operation: string;
                         inputMapping: {
@@ -13881,7 +14013,9 @@ export interface components {
                     from: components["schemas"]["id"];
                     to: components["schemas"]["id"];
                     /** @enum {unknown} */
-                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "limitReached";
+                    /** @description CG-E01 bounded loop (docs/build/S138): this path leads back to an earlier step and may be taken at most this many times per request. The step it leaves must also have one limitReached path, taken instead once the limit is used up. */
+                    maxTraversals?: number;
                     /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
                     aiLabel?: string;
                     /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
@@ -13991,6 +14125,7 @@ export interface components {
                     type?: "externalTask";
                     /** @description Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention. */
                     config?: {
+                        forEach?: components["schemas"]["stepForEach"];
                         /** @description The kind of job. Workers ask for the topics they serve. */
                         topic: components["schemas"]["key"];
                         /** @description Request or earlier-step values sent to the worker, by name. */
@@ -14110,6 +14245,7 @@ export interface components {
                     type?: "aiTask";
                     /** @description AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode. */
                     config?: {
+                        forEach?: components["schemas"]["stepForEach"];
                         /** @description Key of the shared AI skill. */
                         skillRef: components["schemas"]["key"];
                         /** @description Approved version to pin; publishing pins the latest approved version when absent. */
@@ -21196,6 +21332,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunPath"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getRunStepItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                nodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepItems"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

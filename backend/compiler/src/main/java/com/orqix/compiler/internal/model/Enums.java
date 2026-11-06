@@ -75,7 +75,9 @@ public final class Enums {
         /** AI task: a person must look (suggest autonomy, policy, low field confidence, sampled review). */
         NEEDS_REVIEW("needsReview"),
         /** AI task: AI could not produce a valid answer (disabled, refused, failed, over budget, invalid twice). */
-        AI_UNAVAILABLE("aiUnavailable");
+        AI_UNAVAILABLE("aiUnavailable"),
+        /** CG-E01 (S138): the bounded loop path of the step is used up; the request continues here instead. */
+        LIMIT_REACHED("limitReached");
 
         private final String json;
 

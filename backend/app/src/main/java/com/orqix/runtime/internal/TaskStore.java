@@ -51,6 +51,13 @@ public class TaskStore {
         insert(taskId, workspaceId, runId, nodeId, label, candidateGroup, dueAt, createdAt, null, null, null, null);
     }
 
+    /** S138: the visit of the approval step this task belongs to, for tasks of a step inside a bounded loop. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void occurrence(String taskId, int occurrence) {
+        jdbc.sql("UPDATE task_context SET occurrence = :occ WHERE engine_task_id = :task")
+                .param("occ", occurrence).param("task", taskId).update();
+    }
+
     /**
      * As {@link #insert(String, UUID, UUID, String, String, String, Instant, Instant)}, for a task that decides one
      * item of a list-driven approval (S88): {@code itemIndex} is its 0-based list position, {@code itemLabel} what it

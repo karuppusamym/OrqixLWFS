@@ -24,7 +24,7 @@ public class FlowableEngineConfiguration {
 
     /** The only names an expression in generated BPMN may resolve. */
     public static final List<String> EXPRESSION_BEANS =
-            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask", "orqixExternalTask", "orqixCompensationTask", "orqixAdapterTask", "orqixPollTask", "orqixAiTask");
+            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask", "orqixExternalTask", "orqixCompensationTask", "orqixAdapterTask", "orqixPollTask", "orqixAiTask", "orqixLoop", "orqixForEach");
 
     @Bean(destroyMethod = "shutdown")
     DefaultAsyncTaskExecutor orqixJobTaskExecutor(OrqixProperties properties) {
@@ -52,6 +52,8 @@ public class FlowableEngineConfiguration {
             AdapterTaskDelegate orqixAdapterTask,
             PollTaskDelegate orqixPollTask,
             AiTaskDelegate orqixAiTask,
+            OrqixLoop orqixLoop,
+            OrqixForEach orqixForEach,
             RuntimeProjectionListener projectionListener,
             OrqixFailedJobCommandFactory failedJobCommandFactory,
             DefaultAsyncTaskExecutor orqixJobTaskExecutor) {
@@ -69,6 +71,9 @@ public class FlowableEngineConfiguration {
             beans.put("orqixAdapterTask", orqixAdapterTask);
             beans.put("orqixPollTask", orqixPollTask);
             beans.put("orqixAiTask", orqixAiTask);
+            // S138: bounded loops and for-each steps.
+            beans.put("orqixLoop", orqixLoop);
+            beans.put("orqixForEach", orqixForEach);
             configuration.setBeans(beans);
 
             configuration.setEnableEventDispatcher(true);

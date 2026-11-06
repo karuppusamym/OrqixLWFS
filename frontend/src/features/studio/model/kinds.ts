@@ -101,6 +101,7 @@ export const ROUTE_LABEL: Record<RouteKind, string> = {
   lowConfidence: 'Low confidence',
   needsReview: 'Needs review',
   aiUnavailable: 'AI unavailable',
+  limitReached: 'Limit reached',
 }
 
 /** Default config for a new node of each kind. */

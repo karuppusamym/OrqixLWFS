@@ -10,6 +10,7 @@ import { availableFields, chipLabel } from '../model/fieldRefs'
 import { cfg, type Definition, type Transition, type WorkflowNode } from '../model/types'
 import { CommitInput, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+import { ForEachFields } from './ForEachFields'
 
 type AiSkill = components['schemas']['AiSkill']
 type Autonomy = 'shadow' | 'suggest' | 'autoWithReview' | 'auto'
@@ -171,6 +172,7 @@ export function AiTaskInspector({ node }: { node: WorkflowNode }) {
         </FormField>
       })}
     </InspectorSection>
+    <ForEachFields node={node} results={['status', 'label', 'confidence', 'score', 'recommendation', 'summary']} parallel={false} />
     <StepIdField node={node} />
   </>
 }

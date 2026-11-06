@@ -77,6 +77,13 @@ public final class BpmnGenerator {
     /** Process variable prefix holding the step a section was left to (S59). */
     public static final String EXIT_VARIABLE = "orqix_exit_";
 
+    /** CG-E06 (S138): local variable of a for-each item execution, JSON {"i": position, "v": item value}. */
+    public static final String FOR_EACH_ITEM = "orqix_forEachItem";
+    /** CG-E06 (S138): local variable of a batch execution of a parallel for-each in batches (0-based batch number). */
+    public static final String FOR_EACH_BATCH = "orqix_forEachBatch";
+    /** CG-E06 (S138): suffix of the sequential subprocess that runs the batches of a parallel for-each. */
+    public static final String BATCHES = "__batches";
+
     /** Generated process plus its source map. */
     public record Result(String xml, SourceMap sourceMap) {
     }
@@ -158,6 +165,7 @@ public final class BpmnGenerator {
         }
         Scopes scopes = new Scopes(definition);
         scopes.aiPins = aiPins == null ? Map.of() : aiPins;
+        scopes.loops = new com.orqix.compiler.internal.model.Loops(definition);
         // Business errors and signals (S59): one definition per code or name, sorted. Signals reach only the steps of
         // the request that sends them (flowable:scope processInstance), never other requests.
         scopes.errorCodes().forEach(code ->
@@ -182,7 +190,7 @@ public final class BpmnGenerator {
         }
         for (Transition t : definition.transitions()) {
             if (scopes.container(t) == null) {
-                flow(x, map, nodes, t, scopes.target(t));
+                flow(x, map, nodes, t, scopes.target(t), scopes, definition);
             }
         }
         for (WorkflowDefinition.Subprocess s : definition.subprocesses()) {
@@ -199,6 +207,11 @@ public final class BpmnGenerator {
                              Map<String, String> decisionResource, Map<String, WorkflowInfo> children,
                              Scopes scopes) {
         map.node(n.id(), n.id());
+        com.orqix.compiler.internal.model.StepForEach each = d.execution().forEachOf(n.id());
+        boolean batched = each != null && each.batched();
+        if (batched) {
+            batchesOpen(x, map, n, each);
+        }
         switch (n) {
             case Node.RaiseError r -> {
                 // An error end event: the section's error boundary or an error handler catches it (S59).
@@ -389,7 +402,9 @@ public final class BpmnGenerator {
                 h.resultMapping().forEach((name, pointer) ->
                         x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("pointer", pointer));
                 x.close();
+                forEachExtension(x, d, h.id());
                 x.close();
+                forEachLoop(x, d, h.id());
                 x.close();
                 failureBoundary(x, map, d, h);
             }
@@ -436,7 +451,9 @@ public final class BpmnGenerator {
                             .attr("required", Boolean.toString(f.required()));
                 }
                 x.close();
+                forEachExtension(x, d, e.id());
                 x.close();
+                forEachLoop(x, d, e.id());
                 x.close();
                 // A worker business error takes the step's failed route (S132, CG-E10).
                 failureBoundary(x, map, d, e);
@@ -632,6 +649,9 @@ public final class BpmnGenerator {
                 x.close();
             }
         }
+        if (batched) {
+            batchesClose(x, map, d, n);
+        }
     }
 
     /**
@@ -690,7 +710,7 @@ public final class BpmnGenerator {
         map.node(id, begin);
         for (Transition t : d.transitions()) {
             if (scopes.container(t) == s) {
-                flow(x, map, nodes, t, scopes.target(t));
+                flow(x, map, nodes, t, scopes.target(t), scopes, d);
             }
         }
         java.util.List<String> exits = scopes.exits(s);
@@ -797,6 +817,8 @@ public final class BpmnGenerator {
         private final java.util.Set<String> mergedSplits = new java.util.HashSet<>();
         /** AI task node id to its pinned skill version (S134). */
         Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins = Map.of();
+        /** Bounded loops (CG-E01, S138). */
+        com.orqix.compiler.internal.model.Loops loops;
 
         Scopes(WorkflowDefinition d) {
             this.d = d;
@@ -828,7 +850,16 @@ public final class BpmnGenerator {
 
         /** @return the element that receives flows into this step: the generated merge in front of a merged split. */
         String entry(String nodeId) {
+            if (batched(nodeId)) {
+                return nodeId + BATCHES;
+            }
             return mergedSplits.contains(nodeId) ? nodeId + SPLIT_MERGE : nodeId;
+        }
+
+        /** @return true for a parallel for-each step that runs in batches (S138): flows go to its subprocess */
+        boolean batched(String nodeId) {
+            com.orqix.compiler.internal.model.StepForEach each = d.execution().forEachOf(nodeId);
+            return each != null && each.batched();
         }
 
         boolean merged(String nodeId) {
@@ -864,7 +895,7 @@ public final class BpmnGenerator {
         /** @return the element a flow from outside every subprocess goes to for this step */
         String outerTarget(String nodeId) {
             WorkflowDefinition.Subprocess entered = entryOf.get(nodeId);
-            return entered == null ? nodeId : entered.id();
+            return entered == null ? (batched(nodeId) ? nodeId + BATCHES : nodeId) : entered.id();
         }
 
         /** @return the steps outside a section that its paths lead to, in canonical path order */
@@ -932,11 +963,33 @@ public final class BpmnGenerator {
         }
     }
 
-    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t, String target) {
+    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t, String target,
+                             Scopes scopes, WorkflowDefinition d) {
         map.transition(t.id(), t.id());
         Node from = nodes.get(t.from());
-        String source = flowSource(from, t);
-        String expression = from instanceof Node.Http polled && polled.polls()
+        com.orqix.compiler.internal.model.Loops loops = scopes.loops;
+        com.orqix.compiler.internal.model.Loops.Loop loop = loops.of(t);
+        com.orqix.compiler.internal.model.Loops.Loop limitOf = t.on() == Route.LIMIT_REACHED ? loops.leaving(t.from())
+                : null;
+        String source = limitOf != null ? limitOf.back().id() + com.orqix.compiler.internal.model.Loops.GUARD
+                : flowSource(from, t, d);
+        String flowTarget = loop != null ? t.id() + com.orqix.compiler.internal.model.Loops.GUARD : target;
+        java.util.List<String> listeners = new java.util.ArrayList<>();
+        if (d.execution().forEachOf(from.id()) != null && t.on() != Route.FAILED && limitOf == null) {
+            // S138: the step's outputs are the collected item results, written once when the step is left.
+            listeners.add("${orqixForEach.collect(execution, '" + from.id() + "')}");
+        }
+        if (limitOf != null) {
+            // S138: records that the loop's limit was used up (run path and timeline).
+            listeners.add("${orqixLoop.limitReached(execution, '" + limitOf.back().id() + "')}");
+        }
+        if (loop == null && loops.inLoop(t.to())) {
+            // S138: the visit number (occurrence) of a step inside a loop counts the paths taken into it.
+            listeners.add("${orqixLoop.entered(execution, '" + t.to() + "')}");
+        }
+        String expression = limitOf != null ? null : d.execution().forEachOf(from.id()) != null
+                ? (t.on() == Route.CONDITION ? "${orqixRoute.condition(execution, '" + t.id() + "')}" : null)
+                : from instanceof Node.Http polled && polled.polls()
                 ? "${orqixRoute.polled(execution, '" + from.id() + "', '" + pollOutcome(t.on()) + "')}"
                 : from instanceof Node.AiTask ai && !ai.shadow()
                 ? "${orqixRoute.ai(execution, '" + from.id() + "', '" + aiRoute(t) + "')}"
@@ -944,18 +997,27 @@ public final class BpmnGenerator {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
-            case NEXT, DEFAULT, TIMED_OUT, FAILED, AI_LABEL, LOW_CONFIDENCE, NEEDS_REVIEW, AI_UNAVAILABLE -> null;
+            case NEXT, DEFAULT, TIMED_OUT, FAILED, AI_LABEL, LOW_CONFIDENCE, NEEDS_REVIEW, AI_UNAVAILABLE, LIMIT_REACHED -> null;
         };
-        if (expression == null) {
+        if (expression == null && listeners.isEmpty()) {
             x.leaf("", "sequenceFlow", BPMN_NS);
-            flowAttributes(x, t, source, target);
+            flowAttributes(x, t, source, flowTarget);
+            if (loop != null) {
+                guard(x, map, t, loop, target, loops);
+            }
             return;
         }
         x.open("", "sequenceFlow", BPMN_NS);
-        flowAttributes(x, t, source, target);
+        flowAttributes(x, t, source, flowTarget);
+        if (t.condition() != null || !listeners.isEmpty()) {
+            x.open("", "extensionElements", BPMN_NS);
+            for (String listener : listeners) {
+                x.leaf("flowable", "executionListener", FLOWABLE_NS).attr("event", "take")
+                        .attr("expression", listener);
+            }
+        }
         if (t.condition() != null) {
             Condition c = t.condition();
-            x.open("", "extensionElements", BPMN_NS);
             if (c.compound()) {
                 x.open("orqix", "condition", ORQIX_NS).attr("group", c.group());
                 for (Condition term : c.terms()) x.leaf("orqix", "term", ORQIX_NS)
@@ -967,13 +1029,132 @@ public final class BpmnGenerator {
                     .attr("operator", c.operator().json())
                     .attr("valueType", c.value().typeName())
                     .attr("value", c.value().text());
+        }
+        if (t.condition() != null || !listeners.isEmpty()) {
             x.close();
         }
+        if (expression != null) {
+            x.openInline("", "conditionExpression", BPMN_NS)
+                    .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                    .cdata(expression)
+                    .closeInline();
+        }
+        x.close();
+        if (loop != null) {
+            guard(x, map, t, loop, target, loops);
+        }
+    }
+
+    /**
+     * The guard at the end of a bounded loop path (CG-E01, S138): an exclusive gateway that goes back to the earlier
+     * step while the path was taken fewer than {@code maxTraversals} times (the "again" flow counts the traversal and
+     * the visit), and otherwise takes the step's {@code limitReached} path, its default flow.
+     */
+    private static void guard(XmlOut x, SourceMap map, Transition t, com.orqix.compiler.internal.model.Loops.Loop loop,
+                              String target, com.orqix.compiler.internal.model.Loops loops) {
+        String guard = t.id() + com.orqix.compiler.internal.model.Loops.GUARD;
+        String again = t.id() + com.orqix.compiler.internal.model.Loops.AGAIN;
+        x.open("", "exclusiveGateway", BPMN_NS).attr("id", guard)
+                .attr("name", (t.label() != null ? t.label() : "Send back") + ": limit " + loop.maxTraversals())
+                .attr("default", loop.limit().id());
+        x.open("", "extensionElements", BPMN_NS);
+        x.leaf("orqix", "loop", ORQIX_NS).attr("path", t.id()).attr("maxTraversals",
+                Integer.toString(loop.maxTraversals())).attr("limitPath", loop.limit().id());
+        x.close();
+        x.close();
+        map.transition(t.id(), guard);
+        x.open("", "sequenceFlow", BPMN_NS).attr("id", again).attr("sourceRef", guard).attr("targetRef", target);
+        x.open("", "extensionElements", BPMN_NS);
+        x.leaf("flowable", "executionListener", FLOWABLE_NS).attr("event", "take")
+                .attr("expression", "${orqixLoop.traversed(execution, '" + t.id() + "')}");
+        if (loops.inLoop(t.to())) {
+            x.leaf("flowable", "executionListener", FLOWABLE_NS).attr("event", "take")
+                    .attr("expression", "${orqixLoop.entered(execution, '" + t.to() + "')}");
+        }
+        x.close();
         x.openInline("", "conditionExpression", BPMN_NS)
                 .attr("xsi", XSI_NS, "type", "tFormalExpression")
-                .cdata(expression)
+                .cdata("${orqixLoop.again(execution, '" + t.id() + "', " + loop.maxTraversals() + ")}")
                 .closeInline();
         x.close();
+        map.transition(t.id(), again);
+    }
+
+    /** {@code orqix:forEach} for a for-each step (S138): the policy the runtime and the BPMN reader use. */
+    private static void forEachExtension(XmlOut x, WorkflowDefinition d, String id) {
+        com.orqix.compiler.internal.model.StepForEach f = d.execution().forEachOf(id);
+        if (f == null) {
+            return;
+        }
+        x.open("orqix", "forEach", ORQIX_NS).attr("itemsRef", f.itemsRef())
+                .attr("maxItems", Integer.toString(f.maxItems())).attr("mode", f.parallel() ? "parallel" : "sequential")
+                .attr("batchSize", Integer.toString(f.batchSize())).attr("when", f.when());
+        if (f.count() != null) {
+            x.attr("count", f.count().toString());
+        }
+        f.collect().forEach((name, result) ->
+                x.leaf("orqix", "collect", ORQIX_NS).attr("name", name).attr("result", result));
+        x.close();
+    }
+
+    /**
+     * Flowable multi-instance for a for-each step (S138): one instance per item (or per item of the current batch),
+     * the item in {@link #FOR_EACH_ITEM}. A completion condition ends the step once enough items succeeded.
+     */
+    private static void forEachLoop(XmlOut x, WorkflowDefinition d, String id) {
+        com.orqix.compiler.internal.model.StepForEach f = d.execution().forEachOf(id);
+        if (f == null || f.batched()) {
+            return; // parallel items: the batches subprocess iterates, the step's job sends the batch's items together
+        }
+        x.open("", "multiInstanceLoopCharacteristics", BPMN_NS)
+                .attr("isSequential", Boolean.toString(!f.parallel()))
+                .attr("flowable", FLOWABLE_NS, "collection", "${orqixForEach.items(execution, '" + id + "')}")
+                .attr("flowable", FLOWABLE_NS, "elementVariable", FOR_EACH_ITEM);
+        if (f.stopsEarly()) {
+            x.openInline("", "completionCondition", BPMN_NS)
+                    .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                    .cdata("${orqixForEach.done(execution, '" + id + "')}")
+                    .closeInline();
+        }
+        x.close();
+    }
+
+    /**
+     * Opens the sequential subprocess of a parallel for-each (S138): one subprocess instance per batch of
+     * {@code batchSize} items. The step inside keeps its ID and runs once per batch as one asynchronous job that sends
+     * the batch's items at the same time, each through the effect journal with its own key. Jobs of one request are
+     * exclusive, so separate jobs per item would run one after the other anyway.
+     */
+    private static void batchesOpen(XmlOut x, SourceMap map, Node n, com.orqix.compiler.internal.model.StepForEach f) {
+        String id = n.id() + BATCHES;
+        x.open("", "subProcess", BPMN_NS).attr("id", id).attr("name", n.label() + ": batches of " + f.batchSize());
+        x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "true")
+                .attr("flowable", FLOWABLE_NS, "collection", "${orqixForEach.batches(execution, '" + n.id() + "')}")
+                .attr("flowable", FLOWABLE_NS, "elementVariable", FOR_EACH_BATCH);
+        if (f.stopsEarly()) {
+            x.openInline("", "completionCondition", BPMN_NS)
+                    .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                    .cdata("${orqixForEach.done(execution, '" + n.id() + "')}")
+                    .closeInline();
+        }
+        x.close();
+        x.leaf("", "startEvent", BPMN_NS).attr("id", id + "__start");
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", id + "__in").attr("sourceRef", id + "__start")
+                .attr("targetRef", n.id());
+        map.node(n.id(), id);
+        map.node(n.id(), id + "__start");
+        map.node(n.id(), id + "__in");
+    }
+
+    private static void batchesClose(XmlOut x, SourceMap map, WorkflowDefinition d, Node n) {
+        String id = n.id() + BATCHES;
+        x.leaf("", "endEvent", BPMN_NS).attr("id", id + "__end");
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", id + "__out").attr("sourceRef", n.id())
+                .attr("targetRef", id + "__end");
+        map.node(n.id(), id + "__end");
+        map.node(n.id(), id + "__out");
+        x.close();
+        failureBoundary(x, map, d, n, id);
     }
 
     /**
@@ -1055,10 +1236,14 @@ public final class BpmnGenerator {
         new java.util.TreeMap<>(ai.redaction()).forEach((name, rule) ->
                 x.leaf("orqix", "redaction", ORQIX_NS).attr("name", name).attr("rule", rule));
         x.close();
+        forEachExtension(x, d, ai.id());
         x.close();
+        forEachLoop(x, d, ai.id());
         x.close();
-        if (ai.shadow()) {
-            return; // one path, no choice: the task continues straight to its next step
+        if (ai.shadow() || d.execution().forEachOf(ai.id()) != null) {
+            // One path, no choice: the task continues straight to its next step (a for-each AI task collects each
+            // item's status instead, S138).
+            return;
         }
         String gateway = ai.id() + AI_ROUTE;
         x.leaf("", "sequenceFlow", BPMN_NS).attr("id", ai.id() + "__toAiRoute").attr("sourceRef", ai.id())
@@ -1088,6 +1273,14 @@ public final class BpmnGenerator {
      * generate exactly the same process as before.
      */
     private static void failureBoundary(XmlOut x, SourceMap map, WorkflowDefinition d, Node n) {
+        com.orqix.compiler.internal.model.StepForEach each = d.execution().forEachOf(n.id());
+        if (each != null && each.batched()) {
+            return; // on the batches subprocess instead (written by batchesClose)
+        }
+        failureBoundary(x, map, d, n, n.id());
+    }
+
+    private static void failureBoundary(XmlOut x, SourceMap map, WorkflowDefinition d, Node n, String attachedTo) {
         if (d.transitions().stream().noneMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))
                 || n instanceof Node.Http h && h.polls()) {
             return;
@@ -1096,7 +1289,7 @@ public final class BpmnGenerator {
         x.open("", "boundaryEvent", BPMN_NS)
                 .attr("id", id)
                 .attr("name", n.label() + ": failed")
-                .attr("attachedToRef", n.id())
+                .attr("attachedToRef", attachedTo)
                 .attr("cancelActivity", "true");
         x.leaf("", "errorEventDefinition", BPMN_NS).attr("errorRef", FAILED_ERROR);
         x.close();
@@ -1104,15 +1297,19 @@ public final class BpmnGenerator {
     }
 
     /** BPMN element a canonical transition leaves from (approvals leave through their generated helpers). */
-    private static String flowSource(Node from, Transition t) {
+    private static String flowSource(Node from, Transition t, WorkflowDefinition d) {
+        com.orqix.compiler.internal.model.StepForEach each = d.execution().forEachOf(from.id());
         if (from instanceof Node.Http h && h.polls()) {
             return from.id() + POLL_ROUTE;
         }
-        if (from instanceof Node.AiTask ai && !ai.shadow()) {
-            return from.id() + AI_ROUTE;
-        }
         if (t.on() == Route.FAILED) {
             return from.id() + FAILED_BOUNDARY;
+        }
+        if (each != null) {
+            return each.batched() ? from.id() + BATCHES : from.id();
+        }
+        if (from instanceof Node.AiTask ai && !ai.shadow()) {
+            return from.id() + AI_ROUTE;
         }
         if (from instanceof Node.Approval) {
             return from.id() + (t.on() == Route.TIMED_OUT ? APPROVAL_TIMEOUT : APPROVAL_ROUTE);
@@ -1220,7 +1417,11 @@ public final class BpmnGenerator {
             }
             for (Transition t : d.transitions()) {
                 Node from = nodes.get(t.from());
-                edge(x, t.id(), centre.get(flowSource(from, t)), centre.get(scopes.target(t)));
+                // S138: loop guards and batch subprocesses have no shape of their own; draw from the step itself.
+                BigDecimal[] source = centre.get(flowSource(from, t, d));
+                BigDecimal[] target = centre.get(scopes.target(t));
+                edge(x, t.id(), source != null ? source : centre.get(t.from()),
+                        target != null ? target : centre.get(t.to()));
             }
             scopeDiagram(x, d, scopes, centre, boxes);
             x.close();

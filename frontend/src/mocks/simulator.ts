@@ -1467,7 +1467,7 @@ class Run {
   private routeDescription(t: Transition): string {
     const from = this.byId.get(t.from) as WorkflowNode
     const to = this.byId.get(t.to) as WorkflowNode
-    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', failed: 'when the step fails', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next', aiLabel: `when AI says ${t.aiLabel ?? ''}`, lowConfidence: 'when AI is not confident enough', needsReview: 'when a person must review', aiUnavailable: 'when AI is unavailable' }[t.on]
+    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', failed: 'when the step fails', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next', aiLabel: `when AI says ${t.aiLabel ?? ''}`, lowConfidence: 'when AI is not confident enough', needsReview: 'when a person must review', aiUnavailable: 'when AI is unavailable', limitReached: 'when the send-back limit is reached' }[t.on]
     return `${from.label}, ${when}, goes to ${to.label}`
   }
 }

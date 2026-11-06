@@ -37,9 +37,13 @@ public class AiTaskDelegate implements JavaDelegate, TriggerableJavaDelegate, Fl
     private final AiTaskJobs jobs;
     private final Json json;
 
-    public AiTaskDelegate(@org.springframework.context.annotation.Lazy AiTaskJobs jobs, Json json) {
+    private final OrqixForEach forEach;
+
+    public AiTaskDelegate(@org.springframework.context.annotation.Lazy AiTaskJobs jobs, Json json,
+            @org.springframework.context.annotation.Lazy OrqixForEach forEach) {
         this.jobs = jobs;
         this.json = json;
+        this.forEach = forEach;
     }
 
     @Override
@@ -75,7 +79,15 @@ public class AiTaskDelegate implements JavaDelegate, TriggerableJavaDelegate, Fl
 
     @Override
     public void trigger(Context context) {
-        // The AI task worker set the route and the outputs; the generated gateway takes the route.
+        // The AI task worker set the route and the outputs; the generated gateway takes the route. A for-each item
+        // (S138) keeps its outputs for the collected lists; an item succeeded when AI decided it.
+        DelegateExecution execution = context.getExecution();
+        Object result = execution.getVariable(ProcessData.stepVariable(execution.getCurrentActivityId()));
+        if (result != null) {
+            JsonNode outputs = json.parse(result.toString());
+            forEach.record(execution, execution.getCurrentActivityId(), outputs,
+                    "decided".equals(outputs.path("status").asString(null)));
+        }
     }
 
     @Override

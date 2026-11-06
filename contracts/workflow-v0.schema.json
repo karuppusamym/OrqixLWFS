@@ -629,6 +629,64 @@
       "type": "string",
       "pattern": "^(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}$"
     },
+    "stepForEach": {
+      "description": "CG-E06 for each (docs/build/S138): run this step once per item of a request list (1 to 500 items), one at a time or in parallel batches. For a list of single values itemInput names the input that receives the item; for a list of rows itemMapping copies columns of the current row into inputs (exactly one of the two). Outputs at /steps/<id>/: itemCount, completedCount, stoppedEarly and one list per collect entry, in item order.",
+      "type": "object",
+      "properties": {
+        "itemsRef": {
+          "type": "string",
+          "pattern": "^/input/[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "itemInput": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "itemMapping": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 10,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "$ref": "#/$defs/fieldKey" }
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "mode": {
+          "enum": ["sequential", "parallel"],
+          "default": "sequential"
+        },
+        "batchSize": {
+          "description": "Parallel only: how many items run at the same time (default 25).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "completion": {
+          "description": "When the step is done: after every item (all, the default), after the first item that succeeded (firstSuccess), or once atLeast items succeeded.",
+          "type": "object",
+          "properties": {
+            "when": { "enum": ["all", "firstSuccess", "atLeast"] },
+            "count": { "type": "integer", "minimum": 1, "maximum": 500 }
+          },
+          "required": ["when"],
+          "additionalProperties": false
+        },
+        "collect": {
+          "description": "Collected output name -> result of one item. The collected output is a list in item order.",
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "$ref": "#/$defs/fieldKey" }
+        }
+      },
+      "required": ["itemsRef", "maxItems"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["itemInput"], "not": { "required": ["itemMapping"] } },
+        { "required": ["itemMapping"], "not": { "required": ["itemInput"] } }
+      ]
+    },
     "fieldKey": {
       "type": "string",
       "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
@@ -814,7 +872,7 @@
       "additionalProperties": false
     },
     "rowsFormField": {
-      "description": "A list of rows (up to 50), each with the scalar fields of rowSchema.",
+      "description": "A list of rows (up to 500 since S138; per-item approvals and child for-each keep their own lower limits), each with the scalar fields of rowSchema.",
       "type": "object",
       "properties": {
         "type": {
@@ -833,12 +891,12 @@
         "minItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 500
         },
         "maxItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 500
         }
       },
       "required": [
@@ -1315,6 +1373,9 @@
           "type": "object",
           "description": "Effect class, idempotency header and success statuses come from the pinned connection operation, never from the workflow.",
           "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
             "connectionRef": {
               "$ref": "#/$defs/key"
             },
@@ -1991,8 +2052,15 @@
             "aiLabel",
             "lowConfidence",
             "needsReview",
-            "aiUnavailable"
+            "aiUnavailable",
+            "limitReached"
           ]
+        },
+        "maxTraversals": {
+          "description": "CG-E01 bounded loop (docs/build/S138): this path leads back to an earlier step and may be taken at most this many times per request. The step it leaves must also have one limitReached path, taken instead once the limit is used up.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
         },
         "aiLabel": {
           "description": "AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel.",
@@ -2497,6 +2565,9 @@
           "description": "Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention.",
           "type": "object",
           "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
             "topic": {
               "description": "The kind of job. Workers ask for the topics they serve.",
               "$ref": "#/$defs/key"
@@ -2566,12 +2637,12 @@
         "minItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 25
+          "maximum": 500
         },
         "maxItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 25
+          "maximum": 500
         }
       },
       "required": [
@@ -2869,6 +2940,9 @@
           "description": "AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode.",
           "type": "object",
           "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
             "skillRef": {
               "description": "Key of the shared AI skill.",
               "$ref": "#/$defs/key"

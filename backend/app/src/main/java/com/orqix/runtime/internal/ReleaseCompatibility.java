@@ -131,6 +131,17 @@ public final class ReleaseCompatibility {
             findings.add(new Finding("SUBPROCESSES",
                     "One of the releases has sections or handlers; requests of such workflows cannot be moved.", null));
         }
+        Set<String> sourceLoops = loopSteps(source);
+        if (sourceLoops.contains(active) || loopSteps(target).contains(active)) {
+            // CG-E01 (S138): the request is inside a bounded loop. Its traversal counts and visit numbers belong to this
+            // release's loop paths, so it moves only when every loop (path back, limit, limitReached path and the steps
+            // inside) is identical in the target release.
+            if (!loops(source).equals(loops(target))) {
+                findings.add(new Finding("LOOP_CHANGED", "The request is inside a loop (\"send back to\" with a"
+                        + " limit); it can move only when the loop, its limit and its steps are identical in the target"
+                        + " release.", active));
+            }
+        }
         if (!source.path("stages").equals(target.path("stages"))) {
             findings.add(new Finding("STAGES_CHANGED",
                     "The case stages differ between the releases, so stage progress could not be carried over.", null));
@@ -190,6 +201,71 @@ public final class ReleaseCompatibility {
             }
         }
         seen.remove(nodeId);
+        return seen;
+    }
+
+    /**
+     * The bounded loops of a definition (S138) in a comparable form: each path back (id, ends, route, limit), its
+     * limitReached path, and the type and settings of every step in its body.
+     */
+    static List<String> loops(JsonNode definition) {
+        List<String> loops = new ArrayList<>();
+        for (JsonNode t : definition.path("transitions")) {
+            if (!t.path("maxTraversals").isNumber()) {
+                continue;
+            }
+            String from = t.path("from").asString("");
+            StringBuilder b = new StringBuilder(t.path("id").asString("") + "|" + from + "|" + t.path("to").asString("")
+                    + "|" + t.path("on").asString("") + "|" + t.path("maxTraversals").asInt());
+            for (JsonNode l : definition.path("transitions")) {
+                if (from.equals(l.path("from").asString("")) && "limitReached".equals(l.path("on").asString(""))) {
+                    b.append("|limit:").append(l.path("id").asString("")).append(">").append(l.path("to").asString(""));
+                }
+            }
+            for (String id : body(definition, t)) {
+                JsonNode n = node(definition, id);
+                b.append("|").append(id).append(":").append(n == null ? "" : n.path("type").toString() + n.path("config"));
+            }
+            loops.add(b.toString());
+        }
+        return loops;
+    }
+
+    /** Steps inside a bounded loop body of the definition (S138). */
+    static Set<String> loopSteps(JsonNode definition) {
+        Set<String> steps = new LinkedHashSet<>();
+        for (JsonNode t : definition.path("transitions")) {
+            if (t.path("maxTraversals").isNumber()) {
+                steps.addAll(body(definition, t));
+            }
+        }
+        return steps;
+    }
+
+    /** Steps on forward paths (bounded paths left out) from the loop's target back to its source. */
+    private static Set<String> body(JsonNode definition, JsonNode back) {
+        Set<String> after = reach(definition, back.path("to").asString(""), true);
+        Set<String> before = reach(definition, back.path("from").asString(""), false);
+        after.retainAll(before);
+        return new java.util.TreeSet<>(after);
+    }
+
+    private static Set<String> reach(JsonNode definition, String root, boolean forward) {
+        Set<String> seen = new LinkedHashSet<>(List.of(root));
+        Deque<String> queue = new ArrayDeque<>(List.of(root));
+        while (!queue.isEmpty()) {
+            String current = queue.poll();
+            for (JsonNode t : definition.path("transitions")) {
+                if (t.path("maxTraversals").isNumber()) {
+                    continue;
+                }
+                String a = t.path(forward ? "from" : "to").asString("");
+                String b = t.path(forward ? "to" : "from").asString("");
+                if (current.equals(a) && seen.add(b)) {
+                    queue.add(b);
+                }
+            }
+        }
         return seen;
     }
 

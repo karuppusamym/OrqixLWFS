@@ -157,7 +157,12 @@ public class EngineCommands {
     /** Resume a pinned child step in a durable job after the child's transaction commits. */
     public void resumeChild(String processInstanceId, String nodeId, Map<String, Object> variables) {
         var executions = runtimeService.createExecutionQuery().processInstanceId(processInstanceId)
-                .activityId(nodeId).list();
+                .activityId(nodeId).list().stream()
+                // S138: a for-each step also has its multi-instance root (and batch) executions at the activity; only
+                // the item execution waits for the trigger (items of workers and AI tasks run one at a time).
+                .filter(e -> !(e instanceof org.flowable.engine.impl.persistence.entity.ExecutionEntity entity)
+                        || !entity.isMultiInstanceRoot())
+                .toList();
         if (executions.size() != 1) {
             throw new IllegalStateException("Expected one waiting child execution at " + nodeId);
         }

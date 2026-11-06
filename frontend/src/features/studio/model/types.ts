@@ -8,7 +8,7 @@ export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | '
 /** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
 export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable' | 'limitReached'
 export type Literal = string | number | boolean
 
 /** Bounds of `between`; each bound is included unless it says false. */
@@ -53,6 +53,11 @@ export interface Transition {
   condition?: Condition
   /** AI task routes only (docs/build/S134): the skill label this path is for, when `on` is aiLabel. */
   aiLabel?: string
+  /**
+   * CG-E01 (docs/build/S138): this path sends the request back to an earlier step at most this many times (1-10); the
+   * step it leaves then continues on its limitReached path.
+   */
+  maxTraversals?: number
 }
 
 /** Inclusive UTC date window (YYYY-MM-DD) in which a row applies, judged by the request's submission date (S41). */

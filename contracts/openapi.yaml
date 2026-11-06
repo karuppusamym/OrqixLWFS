@@ -40,6 +40,7 @@ tags:
   - name: Notifications
   - name: Connections
   - name: ConnectionHealth
+  - name: ConnectorPackages
   - name: Adapters
   - name: Agent write tools
   - name: Access
@@ -6788,6 +6789,249 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---- end ConnectionHealth paths ----
 
+  # ---- ConnectorPackages (CG-C03, CG-C04, CG-C05, CG-C10, docs/build/S133): packages, catalog, palette, triggers ----
+  /workspaces/{workspaceId}/connector-packages:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: listConnectorPackages
+      summary: List the organization's connector package versions with their state in this workspace
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Package versions, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [ConnectorPackages]
+      operationId: importConnectorPackage
+      summary: Import a signed .orqpkg connector package for review
+      description: |
+        Needs fresh connector.manage. The archive is unzipped in memory with size, file and path limits, its checksums
+        and signature are checked against the deployment's trusted publisher keys, and every file is validated (schemas,
+        connection registration rules, compiler on step templates and starter workflows, fixture replay). An unsigned
+        package, or one signed with an untrusted key, needs `unsignedReason` (audited). A broken signature is always
+        refused. Nothing is active until a different person approves the exact hash and someone installs it.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-imported
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageImport' } } } }
+      responses:
+        '201': { description: Imported, pending approval, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [ConnectorPackages]
+      operationId: getConnectorPackage
+      summary: Review a package version (hosts, operations by effect class, data leaving Orqix, auth, triggers, comparison and where-used)
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Package version, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/decision:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: decideConnectorPackage
+      summary: Approve or reject exactly this package hash (a different person than the importer)
+      description: Needs the grant-only permission connector.approve (no role carries it). sha256 must be the hash shown on the review screen and expectedRevision the revision loaded (409 CONFIGURATION_VERSION_CONFLICT otherwise). The importer gets 403.
+      x-orqix-permission: connector.approve
+      x-orqix-audit: connector.package-decided
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDecision' } } } }
+      responses:
+        '200': { description: Decided, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/install:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: installConnectorPackage
+      summary: Install (or upgrade to) an approved package version in this workspace
+      description: Needs fresh connector.manage. The package connections become connection versions of this workspace (an unchanged definition reuses its version); install never creates bindings or credentials. The previously active version is superseded; published releases stay pinned.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-installed
+      responses:
+        '201': { description: Installed, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageInstall' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/retire:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: retireConnectorPackage
+      summary: Retire a package version (no new installs; no new use here; pinned releases keep working)
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-retired
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageRetire' } } } }
+      responses:
+        '200': { description: Retired, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/workflow-templates/{templateKey}/workflows:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: templateKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: createWorkflowFromPackageTemplate
+      summary: Create a workflow draft from a starter workflow of an installed package
+      description: The template's package connections are pinned to the versions installed here. Only an approved, actively installed version gives templates (404 otherwise).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkflowRequest' } } } }
+      responses:
+        '201':
+          description: Created
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Workflow' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-catalog:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: getConnectorCatalog
+      summary: Internal catalog of the organization's packages, versions, signature status, installs and outdated pins
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Catalog, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorCatalog' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/connector-palette:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: searchConnectorPalette
+      summary: Search the Studio palette by operation ("Create incident · ServiceNow") and package step templates
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Palette items, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPalette' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: listPackageTriggers
+      summary: Package webhook and polling triggers with their status (watermark, last run, lag, duplicates, dead records)
+      x-orqix-permission: connector.manage | run.operate
+      responses:
+        '200': { description: Triggers, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [ConnectorPackages]
+      operationId: createPackageTrigger
+      summary: Set up a trigger of an installed package in this workspace
+      description: Needs fresh connector.manage. The caller becomes the run-as person and needs workflow.start for a start trigger or message.send for a message trigger. A webhook trigger names the secret it verifies with (and, for JWT, the issuer and audience); a polling trigger reads through the package connection's binding.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.trigger-configured
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerConfigure' } } } }
+      responses:
+        '201': { description: Configured, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTrigger' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    put:
+      tags: [ConnectorPackages]
+      operationId: updatePackageTrigger
+      summary: Change, enable or disable a package trigger
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.trigger-configured
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerConfigure' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTrigger' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}/dead-records:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [ConnectorPackages]
+      operationId: listPackageTriggerDeadRecords
+      summary: Events a trigger could not use (error code, digest and time only; never content)
+      x-orqix-permission: connector.manage | run.operate
+      responses:
+        '200': { description: Dead records, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerDeadRecordList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}/events:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: receivePackageTriggerEvent
+      summary: Receive one webhook event for a package trigger (no session or token)
+      description: |
+        Verified by the scheme the package declares: an HMAC-SHA256 over `timestamp + "." + rawBody` in the package's
+        signature and timestamp headers (hex or base64, within the tolerance), a bearer JWT (HS256 with the trigger
+        secret or RS256 with its public key; issuer, audience and exp checked, lifetime bounded), or basic credentials
+        (weaker, HTTPS only). Every verification failure is 401; unknown or disabled triggers are 404. Bodies up to
+        64 KiB. A repeated event (same dedupe key) is acknowledged as a duplicate and never starts or resumes twice.
+      x-orqix-permission: packageTriggerVerification
+      x-orqix-audit: connector.trigger-record-dead
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '202': { description: Accepted, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerAccepted' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  # ---- end ConnectorPackages ----
   /workspaces/{workspaceId}/features:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -6991,7 +7235,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -10409,6 +10653,8 @@ components:
         - job.work
         - workflow.approve-promotion
         - agent.approve-write-tool
+        - connector.manage
+        - connector.approve
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -13313,6 +13559,324 @@ components:
         deferred: { type: integer, minimum: 0, description: Calls that waited for an open circuit or the request limit }
     # ---- end ConnectionHealth schemas ----
 
+    # ---- ConnectorPackages schemas (docs/build/S133) ----
+    ConnectorPackageSubject:
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        displayName: { type: [string, 'null'] }
+    ConnectorPackageSummary:
+      type: object
+      additionalProperties: false
+      required: [id, packageId, name, version, publisher, keyId, sha256, signatureStatus, status, importedBy, importedAt, decidedBy, decidedAt, decisionNote, installStatus, revision]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        packageId: { type: string, maxLength: 120 }
+        name: { type: string }
+        version: { type: string }
+        publisher: { type: string }
+        keyId: { type: string }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        signatureStatus: { type: string, enum: [verified, unsigned] }
+        status: { type: string, enum: [pending, approved, rejected, retired] }
+        importedBy: { $ref: '#/components/schemas/ConnectorPackageSubject' }
+        importedAt: { $ref: '#/components/schemas/Timestamp' }
+        decidedBy: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/ConnectorPackageSubject' }] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionNote: { type: [string, 'null'] }
+        installStatus: { type: [string, 'null'], enum: [active, superseded, retired, null], description: State of this version's install in the current workspace }
+        revision: { type: integer, minimum: 1 }
+    ConnectorPackageList:
+      type: object
+      additionalProperties: false
+      required: [items, canManage, canApprove]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ConnectorPackageSummary' } }
+        canManage: { type: boolean }
+        canApprove: { type: boolean }
+    ConnectorPackageDetail:
+      type: object
+      additionalProperties: false
+      required: [summary, manifest, review, comparison, whereUsed, unsignedReason, retireReason, canManage, canApprove, canDecide]
+      properties:
+        summary: { $ref: '#/components/schemas/ConnectorPackageSummary' }
+        manifest: { type: object, description: The package manifest (connector-package-v1.schema.json#/$defs/manifest) }
+        review: { $ref: '#/components/schemas/ConnectorPackageReview' }
+        comparison: { $ref: '#/components/schemas/ConnectorPackageComparison' }
+        whereUsed:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [workflowId, workflowKey, workflowName, connectionKey, draftVersion, releaseVersion, outdated]
+            properties:
+              workflowId: { $ref: '#/components/schemas/Uuid' }
+              workflowKey: { type: string }
+              workflowName: { type: string }
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              draftVersion: { type: [integer, 'null'] }
+              releaseVersion: { type: [integer, 'null'] }
+              outdated: { type: boolean, description: Pins an older connection version than this package version installs }
+        unsignedReason: { type: [string, 'null'] }
+        retireReason: { type: [string, 'null'] }
+        canManage: { type: boolean }
+        canApprove: { type: boolean }
+        canDecide: { type: boolean, description: The caller holds connector.approve, did not import it, and it is pending }
+    ConnectorPackageReview:
+      type: object
+      description: What the review screen shows; computed at import from the validated files.
+      required: [hosts, authSchemes, dataLeavingOrqix, connections, operations, operationsByEffect, triggers, stepTemplates, workflowTemplates, fixtures, docs]
+      properties:
+        hosts: { type: array, items: { type: object, properties: { pattern: { type: string }, purpose: { type: string } } } }
+        authSchemes: { type: array, items: { type: string } }
+        dataLeavingOrqix: { type: array, items: { type: string } }
+        connections: { type: array, items: { type: object } }
+        operations:
+          type: array
+          items:
+            type: object
+            properties:
+              connection: { type: string }
+              operation: { type: string }
+              label: { type: string }
+              method: { type: string }
+              path: { type: string }
+              effectClass: { type: string }
+              inputs: { type: array, items: { type: string } }
+              asynchronous: { type: boolean }
+        operationsByEffect: { type: object, additionalProperties: { type: integer } }
+        triggers: { type: array, items: { type: object } }
+        stepTemplates: { type: array, items: { type: object } }
+        workflowTemplates: { type: array, items: { type: object } }
+        fixtures: { type: object, properties: { count: { type: integer }, passed: { type: integer } } }
+        docs: { type: array, items: { type: string } }
+    ConnectorPackageComparison:
+      type: object
+      additionalProperties: false
+      required: [installedVersion, addedOperations, removedOperations, changes, compatible]
+      properties:
+        installedVersion: { type: [string, 'null'], description: The version active in this workspace (null when none) }
+        addedOperations: { type: array, items: { type: string } }
+        removedOperations: { type: array, items: { type: string } }
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [operation, change, breaking]
+            properties:
+              operation: { type: string }
+              change: { type: string }
+              breaking: { type: boolean }
+        compatible: { type: boolean, description: No removed operations and no breaking change }
+    ConnectorPackageImport:
+      type: object
+      additionalProperties: false
+      required: [archive]
+      properties:
+        archive: { type: string, maxLength: 7000000, description: The .orqpkg file in base64 (at most 5 MiB) }
+        unsignedReason: { type: [string, 'null'], maxLength: 500, description: Required (and audited) for an unsigned package or one signed with an untrusted key }
+    ConnectorPackageDecision:
+      type: object
+      additionalProperties: false
+      required: [decision, sha256, note, expectedRevision]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        note: { type: string, minLength: 1, maxLength: 500 }
+        expectedRevision: { type: integer, minimum: 1 }
+    ConnectorPackageRetire:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedRevision]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedRevision: { type: integer, minimum: 1 }
+    ConnectorPackageInstall:
+      type: object
+      additionalProperties: false
+      required: [packageId, version, previousVersion, connections, hostsToAllow]
+      properties:
+        packageId: { type: string }
+        version: { type: string }
+        previousVersion: { type: [string, 'null'] }
+        connections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, version, reused]
+            properties:
+              key: { $ref: '#/components/schemas/Key' }
+              version: { type: integer, minimum: 1 }
+              reused: { type: boolean, description: The definition was unchanged, so the existing version is used }
+        hostsToAllow: { type: array, items: { type: string }, description: Host patterns a binding may use; add the concrete host to the egress allow-list }
+    ConnectorCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [packageId, name, publisher, latestVersion, versions, installs, outdatedPins]
+            properties:
+              packageId: { type: string }
+              name: { type: string }
+              publisher: { type: string }
+              latestVersion: { type: [string, 'null'], description: Newest approved version }
+              versions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, version, status, signatureStatus, importedAt]
+                  properties:
+                    id: { $ref: '#/components/schemas/Uuid' }
+                    version: { type: string }
+                    status: { type: string, enum: [pending, approved, rejected, retired] }
+                    signatureStatus: { type: string, enum: [verified, unsigned] }
+                    importedAt: { $ref: '#/components/schemas/Timestamp' }
+              installs:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [workspaceId, workspaceName, version, status]
+                  properties:
+                    workspaceId: { $ref: '#/components/schemas/Uuid' }
+                    workspaceName: { type: string }
+                    version: { type: string }
+                    status: { type: string, enum: [active, retired] }
+              outdatedPins:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [workspaceId, workspaceName, workflowId, workflowName, connectionKey, pinnedVersion, latestVersion, retired, pinnedIn]
+                  properties:
+                    workspaceId: { $ref: '#/components/schemas/Uuid' }
+                    workspaceName: { type: string }
+                    workflowId: { $ref: '#/components/schemas/Uuid' }
+                    workflowName: { type: string }
+                    connectionKey: { type: string }
+                    pinnedVersion: { type: string, description: Package version the pinned connection version came from }
+                    latestVersion: { type: [string, 'null'] }
+                    retired: { type: boolean }
+                    pinnedIn: { type: string, enum: [draft, release] }
+    ConnectorPalette:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, label, description, packageId, packageName, packageVersion, packageVersionId, connectionKey, connectionVersion, operation, effectClass, templateKey, step, requestFields]
+            properties:
+              kind: { type: string, enum: [operation, stepTemplate] }
+              label: { type: string, description: 'For example "Raise an incident · ServiceNow ITSM"' }
+              description: { type: [string, 'null'] }
+              packageId: { type: string }
+              packageName: { type: string }
+              packageVersion: { type: string }
+              packageVersionId: { $ref: '#/components/schemas/Uuid' }
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              connectionVersion: { type: integer, minimum: 0 }
+              operation: { type: string }
+              effectClass: { type: string }
+              templateKey: { type: [string, 'null'] }
+              step: { type: [object, 'null'], description: The template's step (a workflow node without its id) }
+              requestFields: { type: [object, 'null'], description: Request form fields the template's mappings expect }
+    PackageTriggerConfigure:
+      type: object
+      additionalProperties: false
+      properties:
+        packageId: { type: [string, 'null'], maxLength: 120, description: Create only }
+        triggerKey: { type: [string, 'null'], maxLength: 64, description: Create only }
+        workflowId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }], description: The workflow a start trigger starts }
+        secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: Webhook triggers only; never the secret itself }
+        jwtIssuer: { type: [string, 'null'], maxLength: 200 }
+        jwtAudience: { type: [string, 'null'], maxLength: 200 }
+        enabled: { type: [boolean, 'null'] }
+        expectedVersion: { type: [integer, 'null'], minimum: 1, description: Update only }
+    PackageTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, packageId, packageVersion, triggerKey, label, kind, action, workflowId, messageName, verification, weaker, secretRef, jwtIssuer, jwtAudience, connectionKey, every, enabled, version, receivePath, status]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        packageId: { type: string }
+        packageVersion: { type: string }
+        triggerKey: { $ref: '#/components/schemas/Key' }
+        label: { type: string }
+        kind: { type: string, enum: [webhook, poll] }
+        action: { type: string, enum: [start, message] }
+        workflowId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+        messageName: { type: [string, 'null'] }
+        verification: { type: [string, 'null'], enum: [hmacSha256, jwt, basic, null] }
+        weaker: { type: boolean, description: Basic credentials (systems that cannot sign) }
+        secretRef: { type: [string, 'null'] }
+        jwtIssuer: { type: [string, 'null'] }
+        jwtAudience: { type: [string, 'null'] }
+        connectionKey: { type: [string, 'null'] }
+        every: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        receivePath: { type: [string, 'null'], description: Webhook URL path the remote system posts to }
+        status:
+          type: object
+          additionalProperties: false
+          required: [watermark, nextRunAt, lastRunAt, lastSuccessAt, lastErrorCode, lagSeconds, polls, recordsHandled, duplicates, deadRecords, leased]
+          properties:
+            watermark: { type: [string, 'null'] }
+            nextRunAt: { type: [string, 'null'], format: date-time }
+            lastRunAt: { type: [string, 'null'], format: date-time }
+            lastSuccessAt: { type: [string, 'null'], format: date-time }
+            lastErrorCode: { type: [string, 'null'] }
+            lagSeconds: { type: [integer, 'null'] }
+            polls: { type: integer, minimum: 0 }
+            recordsHandled: { type: integer, minimum: 0 }
+            duplicates: { type: integer, minimum: 0 }
+            deadRecords: { type: integer, minimum: 0 }
+            leased: { type: boolean, description: A pod is polling it right now }
+    PackageTriggerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/PackageTrigger' } }
+    PackageTriggerDeadRecordList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, errorCode, valueSha256, receivedAt]
+            properties:
+              id: { $ref: '#/components/schemas/Uuid' }
+              errorCode: { type: [string, 'null'] }
+              valueSha256: { type: string }
+              receivedAt: { $ref: '#/components/schemas/Timestamp' }
+    PackageTriggerAccepted:
+      type: object
+      additionalProperties: false
+      required: [status, runId]
+      properties:
+        status: { type: string, enum: [started, resumed, buffered, duplicate] }
+        runId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+    # ---- end ConnectorPackages schemas ----
     RoleBinding:
       type: object
       required: [id, role, principal, source, createdAt]
@@ -13327,7 +13891,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

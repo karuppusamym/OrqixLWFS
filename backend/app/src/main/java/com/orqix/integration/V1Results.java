@@ -41,6 +41,12 @@ final class V1Results {
     }
 
     static Mapped map(Operation operation, Map<String, String> mapping, JsonNode body, HttpHeaders headers, Json json) {
+        return map(operation, mapping, body, headers, json, null);
+    }
+
+    /** @param asyncValues status location values of an accepted asynchronous answer (CG-W02), else null */
+    static Mapped map(Operation operation, Map<String, String> mapping, JsonNode body, HttpHeaders headers, Json json,
+            Map<String, JsonNode> asyncValues) {
         ObjectNode result = json.object();
         List<String> truncated = new ArrayList<>();
         JsonNode responseSchema = operation.responseSchema();
@@ -51,6 +57,17 @@ final class V1Results {
             ConnectionContracts.ResultPointer parsed = ConnectionContracts.parseResult(pointer);
             if (parsed == null) {
                 throw new Unresolved(pointer);
+            }
+            if (parsed.async() != null) {
+                JsonNode value = asyncValues == null ? null : asyncValues.get(parsed.async());
+                if (value == null) {
+                    if (optional) {
+                        continue;
+                    }
+                    throw new Unresolved(pointer);
+                }
+                result.set(entry.getKey(), value);
+                continue;
             }
             if (parsed.header() != null) {
                 if (optional && (headers == null || headers.firstValue(parsed.header()).isEmpty())) {

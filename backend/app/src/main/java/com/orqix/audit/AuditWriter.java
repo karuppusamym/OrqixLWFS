@@ -238,6 +238,13 @@ public class AuditWriter {
             Map.entry("webhook.subscription-deleted", Set.of("deliveries")),
             Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
             Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
+            // S133: connector packages and package triggers (ids, versions, hashes and counts; never content or secrets)
+            Map.entry("connector.package-imported", Set.of("packageId", "version", "sha256", "signatureStatus", "unsignedOverride", "keyId")),
+            Map.entry("connector.package-decided", Set.of("packageId", "version", "sha256", "decision")),
+            Map.entry("connector.package-installed", Set.of("packageId", "version", "previousVersion", "connections")),
+            Map.entry("connector.package-retired", Set.of("packageId", "version", "workspacesAffected")),
+            Map.entry("connector.trigger-configured", Set.of("packageId", "triggerKey", "kind", "action", "enabled", "version")),
+            Map.entry("connector.trigger-record-dead", Set.of("triggerId", "error")),
             Map.entry("kafka.trigger-created", Set.of("key", "action", "cluster")),
             Map.entry("kafka.trigger-updated", Set.of("key", "version", "enabled")),
             Map.entry("kafka.trigger-deleted", Set.of("key", "records", "deadLetters")),

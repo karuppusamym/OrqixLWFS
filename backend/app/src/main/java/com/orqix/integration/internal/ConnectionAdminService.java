@@ -67,10 +67,13 @@ public class ConnectionAdminService {
     private final Schema definitionSchema;
     private final Schema definitionV1Schema;
     private final WorkspaceFeatures features;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.packages.ConnectorPackageService> packages;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
             EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AgentExecutor agents, AuditWriter audit,
-            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features) {
+            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.integration.packages.ConnectorPackageService> packages) {
+        this.packages = packages;
         this.features = features;
         this.connections = connections;
         this.policy = policy;
@@ -255,6 +258,17 @@ public class ConnectionAdminService {
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The credential reference is incomplete.")
                     .withFieldErrors(errors);
+        }
+        // S133: a connection installed from a connector package binds only to the package's declared hosts.
+        com.orqix.integration.packages.ConnectorPackageService packages = this.packages.getIfAvailable();
+        if (packages != null && request.baseUrl() != null && BASE_URL.matcher(request.baseUrl()).matches()) {
+            List<String> allowed = packages.refusedBindingHost(workspaceId, key, request.baseUrl());
+            if (allowed != null) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "The address is not one of the package's hosts.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/baseUrl", "PKG_HOST",
+                                "This connection comes from a connector package; its address must match "
+                                        + String.join(" or ", allowed) + ".")));
+            }
         }
         String host;
         try {

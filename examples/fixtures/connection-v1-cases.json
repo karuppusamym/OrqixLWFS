@@ -693,6 +693,88 @@
       "expect": []
     },
     {
+      "name": "async-status-operation-needs-path-inputs-only",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "findIncidentByCorrelation"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ASYNC"
+      ]
+    },
+    {
+      "name": "async-status-operation-not-paginated",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "listOpenIncidents"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ASYNC"
+      ]
+    },
+    {
+      "name": "async-status-header-forbidden",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Set-Cookie"
+            },
+            "statusOperation": "getIncident"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_HEADER_FORBIDDEN"
+      ]
+    },
+    {
+      "name": "valid-async-from-body-pointer",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "bodyPointer": "/result/sys_id"
+            },
+            "statusOperation": "getIncident"
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
       "name": "response-nested-too-deep",
       "patch": [
         {

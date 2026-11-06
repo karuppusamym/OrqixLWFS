@@ -13,6 +13,7 @@ import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
+import { ConnectorPackagesPanel } from './ConnectorPackagesPanel'
 import { FeaturesPanel } from './FeaturesPanel'
 import { McpServerPanel } from './McpServerPanel'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -29,12 +30,13 @@ export function SettingsPage() {
   const showAccess = can('workspace.manage-access')
   const showConnections = can('connection.read')
   const showWebhooks = showConnections || can('run.operate')
+  const showPackages = can('connector.manage', 'connector.approve', 'connection.read')
   const showTemplates = can('workflow.read')
   const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
 
-  if (!showAccess && !showConnections && !showTemplates && !showWebhooks) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -72,6 +74,7 @@ export function SettingsPage() {
           ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
           {showWebhooks ? <TabsTrigger value="kafka">Kafka</TabsTrigger> : null}
+          {showPackages ? <TabsTrigger value="packages">Connector packages</TabsTrigger> : null}
           {showAi ? (
             <TabsTrigger value="ai">
               <Sparkles className="size-4" aria-hidden="true" /> AI
@@ -126,6 +129,7 @@ export function SettingsPage() {
         ) : null}
         {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="kafka"><KafkaTriggersPanel /></TabsContent> : null}
+        {showPackages ? <TabsContent value="packages"><ConnectorPackagesPanel /></TabsContent> : null}
         {showAi ? (
           <TabsContent value="ai">
             <AiSettingsPanel />

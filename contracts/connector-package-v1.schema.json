@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/connector-package-v1.schema.json",
+  "title": "Orqix connector package v1",
+  "description": "Files of a signed connector package (.orqpkg, CG-C03, docs/build/S133-connector-packages.md). The archive holds manifest.json, connection definitions (connection-definition-v0 or v1), the files described here under $defs, docs, checksums.sha256 and signature.jws. Each file is validated against its definition on import: manifest.json against #/$defs/manifest, triggers/*.webhook.json and triggers/*.poll.json against #/$defs/trigger, templates/steps/*.json against #/$defs/stepTemplate, templates/workflows/*.json against #/$defs/workflowTemplate and fixtures/**/*.json against #/$defs/fixture. Packages never contain code, secrets or base URLs.",
+  "$defs": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "fieldKey": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+    },
+    "pointer": {
+      "type": "string",
+      "pattern": "^(/[^/]{1,100}){1,8}$",
+      "maxLength": 300
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(connections|triggers|templates/steps|templates/workflows|fixtures|docs)/[A-Za-z0-9][A-Za-z0-9._-]{0,80}(/[A-Za-z0-9][A-Za-z0-9._-]{0,80})?$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^P(?!$)([0-9]{1,3}D)?(T(?=[0-9])([0-9]{1,3}H)?([0-9]{1,4}M)?([0-9]{1,5}S)?)?$"
+    },
+    "effectClass": {
+      "type": "string",
+      "enum": ["readOnly", "idempotentWithKey", "idempotentByLookup", "idempotentNatural", "nonIdempotent"]
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "packageSchema": { "const": "orqix-connector-package/1" },
+        "id": {
+          "type": "string",
+          "description": "Reverse domain name, for example com.orqix.servicenow-itsm.",
+          "pattern": "^[a-z][a-z0-9-]{0,40}(\\.[a-z][a-z0-9-]{0,40}){1,5}$",
+          "maxLength": 120
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "version": {
+          "type": "string",
+          "description": "Semantic version MAJOR.MINOR.PATCH.",
+          "pattern": "^(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})$"
+        },
+        "description": { "type": "string", "maxLength": 1000 },
+        "publisher": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "keyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" }
+          },
+          "required": ["name", "keyId"],
+          "additionalProperties": false
+        },
+        "minOrqixVersion": { "type": "string", "pattern": "^[0-9]{1,3}\\.[0-9]{1,3}$" },
+        "categories": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,30}$" }
+        },
+        "hosts": {
+          "description": "Where bindings of this package's connections may point. '*' only as the whole leftmost label, followed by at least two concrete labels (no wildcard top-level or registrable domains).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "pattern": "^https://(\\*\\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(:[0-9]{1,5})?$"
+              },
+              "purpose": { "$ref": "#/$defs/text" }
+            },
+            "required": ["pattern", "purpose"],
+            "additionalProperties": false
+          }
+        },
+        "authSchemes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["none", "bearerToken", "apiKeyHeader", "oauth2ClientCredentials", "oauth2AuthorizationCode"] }
+        },
+        "operations": {
+          "description": "Declared count of operations per effect class over all connections; checked against the connections on import.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/effectClass" },
+          "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 200 }
+        },
+        "dataLeavingOrqix": {
+          "description": "Plain-language list of the request data the operations send to the remote system; shown on the review screen.",
+          "type": "array",
+          "maxItems": 40,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "triggers": {
+          "description": "Declared trigger keys; checked against the trigger files on import.",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/key" }
+        },
+        "codeComponents": {
+          "description": "Code connectors (CG-C06) are not supported by this format version; the list must be empty.",
+          "type": "array",
+          "maxItems": 0
+        },
+        "license": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "contents": {
+          "description": "Every file of the archive except manifest.json, checksums.sha256 and signature.jws, by role. A file in the archive that is not listed is refused.",
+          "type": "object",
+          "properties": {
+            "connections": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+            "triggers": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+            "stepTemplates": { "type": "array", "maxItems": 50, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+            "workflowTemplates": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+            "fixtures": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+            "docs": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } }
+          },
+          "required": ["connections"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["packageSchema", "id", "name", "version", "publisher", "hosts", "authSchemes", "operations", "dataLeavingOrqix", "license", "contents"],
+      "additionalProperties": false
+    },
+    "mapping": {
+      "description": "Start or message fields by name, each read from the event by JSON Pointer.",
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": { "$ref": "#/$defs/fieldKey" },
+      "additionalProperties": { "$ref": "#/$defs/pointer" }
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "start" }
+          },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "message" },
+            "message": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$" },
+            "correlationFrom": { "$ref": "#/$defs/pointer" }
+          },
+          "required": ["type", "message", "correlationFrom"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "dedupeKey": {
+      "description": "Pointers whose values together identify one event; a repeat is dropped.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/pointer" }
+    },
+    "verification": {
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "HMAC-SHA256 over timestamp + '.' + body with the trigger's secret (the S47 scheme), hex or base64.",
+          "properties": {
+            "scheme": { "const": "hmacSha256" },
+            "signatureHeader": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$" },
+            "timestampHeader": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$" },
+            "encoding": { "enum": ["hex", "base64"] },
+            "prefix": { "type": "string", "pattern": "^[a-z0-9]{1,16}=$" },
+            "toleranceSeconds": { "type": "integer", "minimum": 30, "maximum": 900 }
+          },
+          "required": ["scheme", "signatureHeader", "timestampHeader", "encoding"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "A bearer JWT signed with the trigger's secret (HS256) or verified with the public key it names (RS256); issuer and audience are set when the trigger is enabled; exp is required.",
+          "properties": {
+            "scheme": { "const": "jwt" },
+            "algorithms": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["HS256", "RS256"] } },
+            "maxLifetimeSeconds": { "type": "integer", "minimum": 30, "maximum": 3600 }
+          },
+          "required": ["scheme", "algorithms"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Basic credentials for systems that cannot sign. Weaker: accepted only over HTTPS with a dedicated per-trigger secret, and shown as weaker on the review screen.",
+          "properties": {
+            "scheme": { "const": "basic" }
+          },
+          "required": ["scheme"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "webhook" },
+            "key": { "$ref": "#/$defs/key" },
+            "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "description": { "type": "string", "maxLength": 500 },
+            "verification": { "$ref": "#/$defs/verification" },
+            "dedupeKey": { "$ref": "#/$defs/dedupeKey" },
+            "action": { "$ref": "#/$defs/action" },
+            "mapping": { "$ref": "#/$defs/mapping" }
+          },
+          "required": ["kind", "key", "label", "verification", "dedupeKey", "action", "mapping"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "poll" },
+            "key": { "$ref": "#/$defs/key" },
+            "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "description": { "type": "string", "maxLength": 500 },
+            "connection": { "$ref": "#/$defs/key" },
+            "operation": { "$ref": "#/$defs/fieldKey" },
+            "every": { "$ref": "#/$defs/duration" },
+            "itemsPointer": { "$ref": "#/$defs/pointer" },
+            "watermark": {
+              "type": "object",
+              "properties": {
+                "field": { "$ref": "#/$defs/pointer" },
+                "input": { "$ref": "#/$defs/fieldKey" },
+                "format": { "enum": ["iso8601", "servicenowDateTime"] },
+                "initial": { "const": "now" },
+                "overlap": { "$ref": "#/$defs/duration" }
+              },
+              "required": ["field", "input", "format", "initial", "overlap"],
+              "additionalProperties": false
+            },
+            "dedupeKey": { "$ref": "#/$defs/dedupeKey" },
+            "action": { "$ref": "#/$defs/action" },
+            "mapping": { "$ref": "#/$defs/mapping" },
+            "maxRecordsPerPoll": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          "required": ["kind", "key", "label", "connection", "operation", "every", "itemsPointer", "watermark", "dedupeKey", "action", "mapping", "maxRecordsPerPoll"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "requestField": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["string", "number", "integer", "boolean"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "maxLength": { "type": "integer", "minimum": 1, "maximum": 4000 },
+        "enum": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string", "maxLength": 100 } }
+      },
+      "required": ["type", "title"],
+      "additionalProperties": false
+    },
+    "stepTemplate": {
+      "type": "object",
+      "description": "A step preset shown in the Studio palette. step is one workflow node without its id; requestFields are the request form fields its mappings expect (as /input/<name>). On import it is compiled inside a generated workflow with these fields and the routes its settings need.",
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "connection": { "$ref": "#/$defs/key" },
+        "operation": { "$ref": "#/$defs/fieldKey" },
+        "requestFields": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "$ref": "#/$defs/requestField" }
+        },
+        "step": {
+          "type": "object",
+          "properties": {
+            "type": { "const": "http" },
+            "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "config": { "type": "object" }
+          },
+          "required": ["type", "label", "config"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["key", "label", "connection", "operation", "requestFields", "step"],
+      "additionalProperties": false
+    },
+    "workflowTemplate": {
+      "type": "object",
+      "description": "A starter workflow (workflow-v0). Its dependencies name package connections at their package version (1 for the first file version); creating a workflow from it pins the versions installed in the workspace.",
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "workflow": { "type": "object" }
+      },
+      "required": ["key", "label", "workflow"],
+      "additionalProperties": false
+    },
+    "fixture": {
+      "type": "object",
+      "description": "A recorded answer of one operation. On import it is replayed through the runtime's response handling (status classification, error mapping, schema check and result mapping) and must give the expected outcome.",
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "connection": { "$ref": "#/$defs/key" },
+        "operation": { "$ref": "#/$defs/fieldKey" },
+        "response": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "integer", "minimum": 200, "maximum": 599 },
+            "headers": {
+              "type": "object",
+              "maxProperties": 10,
+              "propertyNames": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$" },
+              "additionalProperties": { "type": "string", "maxLength": 500 }
+            },
+            "body": {}
+          },
+          "required": ["status"],
+          "additionalProperties": false
+        },
+        "resultMapping": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "type": "string", "maxLength": 300 }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "outcome": { "const": "succeeded" },
+                "results": { "type": "object", "maxProperties": 20 }
+              },
+              "required": ["outcome"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "outcome": { "enum": ["rejected", "retryable", "unknown"] },
+                "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }
+              },
+              "required": ["outcome"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["label", "connection", "operation", "response", "resultMapping", "expect"],
+      "additionalProperties": false
+    }
+  }
+}

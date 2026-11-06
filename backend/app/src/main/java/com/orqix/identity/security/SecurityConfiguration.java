@@ -70,6 +70,10 @@ public class SecurityConfiguration {
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
 
+    /** S133: package webhook triggers, verified by the trigger's own scheme (HMAC, JWT or basic). */
+    private static final java.util.regex.Pattern PACKAGE_TRIGGER_EVENT = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/package-triggers/[^/]+/events$");
+
     /** Callback poll (GET) and resume (POST) of S98: authenticated by the callback token header alone. */
     private static final java.util.regex.Pattern CALLBACK_POLL = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/callbacks/wait$");
@@ -87,6 +91,7 @@ public class SecurityConfiguration {
     SecurityFilterChain inboundChain(HttpSecurity http) throws Exception {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
                         && (INBOUND.matcher(request.getRequestURI()).matches()
+                                || PACKAGE_TRIGGER_EVENT.matcher(request.getRequestURI()).matches()
                                 || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
                         || "GET".equals(request.getMethod()) && (CALLBACK_POLL.matcher(request.getRequestURI()).matches()
                                 || EXTENSION_FILE.matcher(request.getRequestURI()).matches()))

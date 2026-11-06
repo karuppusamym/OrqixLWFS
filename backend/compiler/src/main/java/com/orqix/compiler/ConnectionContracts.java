@@ -29,6 +29,11 @@ public final class ConnectionContracts {
     public static final int MAX_ROWS = 100;
     /** Pointer segment that addresses response headers instead of the body. */
     public static final String HEADERS_SEGMENT = "@headers";
+    /**
+     * Pointer segment for the values an accepted asynchronous answer gives (CG-W02, S133): {@code /@async/<name>} is a
+     * path parameter of the status operation, read from the status location.
+     */
+    public static final String ASYNC_SEGMENT = "@async";
     /** Pointer segment that projects every item of a list. */
     public static final String EVERY_ITEM = "[*]";
 
@@ -176,8 +181,14 @@ public final class ConnectionContracts {
      * @param base       tokens up to the list for a projection, or the whole pointer
      * @param projection true when the pointer contains {@code /[*]}
      * @param column     tokens after {@code /[*]} (empty: rows of every scalar column)
+     * @param async      status operation path parameter for {@code /@async/<name>}, else null
      */
-    public record ResultPointer(String header, List<String> base, boolean projection, List<String> column) {
+    public record ResultPointer(String header, List<String> base, boolean projection, List<String> column,
+            String async) {
+
+        public ResultPointer(String header, List<String> base, boolean projection, List<String> column) {
+            this(header, base, projection, column, null);
+        }
     }
 
     /** @return the parsed pointer, or null when it is not valid (bad escape, several [*], header with more tokens) */
@@ -193,6 +204,9 @@ public final class ConnectionContracts {
         }
         if (HEADERS_SEGMENT.equals(tokens.get(0))) {
             return tokens.size() == 2 ? new ResultPointer(tokens.get(1), List.of(), false, List.of()) : null;
+        }
+        if (ASYNC_SEGMENT.equals(tokens.get(0))) {
+            return tokens.size() == 2 ? new ResultPointer(null, List.of(), false, List.of(), tokens.get(1)) : null;
         }
         int star = tokens.indexOf(EVERY_ITEM);
         if (star < 0) {
@@ -263,6 +277,45 @@ public final class ConnectionContracts {
             }
         }
         return columns;
+    }
+
+    /**
+     * The values an accepted answer of an asynchronous operation gives (CG-W02): the non-constant path parameters of
+     * its status operation, by name, read from the status location. Empty when the operation declares no async block
+     * or its status operation is missing.
+     */
+    public static Map<String, JsonNode> asyncResults(JsonNode definition, JsonNode operation) {
+        Map<String, JsonNode> results = new LinkedHashMap<>();
+        JsonNode async = operation == null ? null : operation.get("async");
+        if (async == null || definition == null) {
+            return results;
+        }
+        JsonNode status = definition.path("operations").get(async.path("statusOperation").asString(""));
+        if (status == null) {
+            return results;
+        }
+        JsonNode params = status.path("pathParams");
+        for (String name : params.propertyNames()) {
+            if (!params.get(name).has("const")) {
+                results.put(name, params.get(name));
+            }
+        }
+        return results;
+    }
+
+    /**
+     * @return true when every success status of an asynchronous operation is also an accepted status, so the
+     *         {@code /@async/} values are always present on success
+     */
+    public static boolean alwaysAccepted(JsonNode operation) {
+        Set<Integer> accepted = new LinkedHashSet<>();
+        operation.path("async").path("acceptedStatuses").forEach(s -> accepted.add(s.asInt()));
+        for (JsonNode s : operation.path("successStatuses")) {
+            if (!accepted.contains(s.asInt())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** @return the header declaration ignoring case, or null */
@@ -525,13 +578,44 @@ public final class ConnectionContracts {
             }
         }
 
-        // Async (declaration only).
+        // Async (CG-W02): the status operation is a GET read whose inputs all come from the status location.
         if (op.has("async")) {
-            String status = op.get("async").path("statusOperation").asString();
+            JsonNode async = op.get("async");
+            String status = async.path("statusOperation").asString();
             JsonNode target = operations.get(status);
             if (target == null || !"readOnly".equals(target.path("effectClass").asString())) {
                 out.add(new Problem(at + "/async/statusOperation", "CONN_V1_ASYNC", "The status operation " + status
                         + " must be a readOnly operation of this connection."));
+            } else {
+                if (!"GET".equals(target.path("method").asString()) || target.has("pagination")) {
+                    out.add(new Problem(at + "/async/statusOperation", "CONN_V1_ASYNC", "The status operation "
+                            + status + " must be a GET without pagination."));
+                }
+                Set<String> fromLocation = new LinkedHashSet<>();
+                JsonNode statusParams = target.path("pathParams");
+                for (String p : statusParams.propertyNames()) {
+                    if (!statusParams.get(p).has("const")) {
+                        fromLocation.add(p);
+                    }
+                }
+                if (fromLocation.isEmpty() || !fromLocation.containsAll(requiredInputs(target))
+                        || target.path("requestSchema").path("properties").size() > 0) {
+                    out.add(new Problem(at + "/async/statusOperation", "CONN_V1_ASYNC", "The status operation "
+                            + status + " must take its inputs only from path parameters (at least one), so the"
+                            + " status location can fill them."));
+                }
+                if (status.equals(name)) {
+                    out.add(new Problem(at + "/async/statusOperation", "CONN_V1_ASYNC", "An operation cannot be its"
+                            + " own status operation."));
+                }
+            }
+            String header = async.path("statusFrom").path("header").asString("");
+            if (!header.isEmpty() && FORBIDDEN_RESPONSE_HEADERS.contains(header.toLowerCase(Locale.ROOT))) {
+                out.add(new Problem(at + "/async/statusFrom/header", "CONN_V1_HEADER_FORBIDDEN", "The response header "
+                        + header + " cannot be read."));
+            }
+            if (op.has("pagination")) {
+                out.add(new Problem(at + "/async", "CONN_V1_ASYNC", "An asynchronous operation cannot be paginated."));
             }
         }
 

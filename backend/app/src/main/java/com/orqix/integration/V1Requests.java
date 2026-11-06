@@ -298,7 +298,7 @@ final class V1Requests {
     // ---------------------------------------------------------------------------------------------- helpers
 
     /** Checks a mapped value against the declared pattern, enum and maxLength of its field. */
-    private static void conforms(JsonNode field, String value, String name) {
+    static void conforms(JsonNode field, String value, String name) {
         if (field == null) {
             return;
         }

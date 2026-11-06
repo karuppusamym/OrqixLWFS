@@ -109,6 +109,30 @@ public final class Connections {
     }
 
     /**
+     * The scalar a result pointer reaches, including {@code /@async/<name>} values of an asynchronous operation
+     * (CG-W02, S133), which take the type of the status operation's path parameter.
+     *
+     * @return null when it does not resolve to a single value
+     */
+    public ResponseScalar result(String connectionKey, String operationName, String pointer) {
+        JsonNode operation = operation(connectionKey, operationName);
+        if (operation == null) {
+            return null;
+        }
+        ConnectionContracts.ResultPointer parsed = ConnectionContracts.parseResult(pointer);
+        if (parsed != null && parsed.async() != null) {
+            JsonNode param = ConnectionContracts.asyncResults(byKey.get(connectionKey).definition(), operation)
+                    .get(parsed.async());
+            if (param == null || !ConnectionContracts.isScalar(param)) {
+                return null;
+            }
+            FieldKind kind = FieldKind.fromJson(param.path("type").stringValue(""), param.path("format").stringValue(null));
+            return kind == null ? null : new ResponseScalar(kind, enumOf(param), ConnectionContracts.alwaysAccepted(operation));
+        }
+        return responseScalar(operation, pointer);
+    }
+
+    /**
      * @return mappable inputs of an operation by name (sorted): request fields and, for v1, path parameters that are
      *         not constants; empty when it has none
      */

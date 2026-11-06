@@ -5105,6 +5105,271 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/connector-packages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List the organization's connector package versions with their state in this workspace */
+        get: operations["listConnectorPackages"];
+        put?: never;
+        /**
+         * Import a signed .orqpkg connector package for review
+         * @description Needs fresh connector.manage. The archive is unzipped in memory with size, file and path limits, its checksums
+         *     and signature are checked against the deployment's trusted publisher keys, and every file is validated (schemas,
+         *     connection registration rules, compiler on step templates and starter workflows, fixture replay). An unsigned
+         *     package, or one signed with an untrusted key, needs `unsignedReason` (audited). A broken signature is always
+         *     refused. Nothing is active until a different person approves the exact hash and someone installs it.
+         */
+        post: operations["importConnectorPackage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/{packageVersionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Review a package version (hosts, operations by effect class, data leaving Orqix, auth, triggers, comparison and where-used) */
+        get: operations["getConnectorPackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/{packageVersionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or reject exactly this package hash (a different person than the importer)
+         * @description Needs the grant-only permission connector.approve (no role carries it). sha256 must be the hash shown on the review screen and expectedRevision the revision loaded (409 CONFIGURATION_VERSION_CONFLICT otherwise). The importer gets 403.
+         */
+        post: operations["decideConnectorPackage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/{packageVersionId}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install (or upgrade to) an approved package version in this workspace
+         * @description Needs fresh connector.manage. The package connections become connection versions of this workspace (an unchanged definition reuses its version); install never creates bindings or credentials. The previously active version is superseded; published releases stay pinned.
+         */
+        post: operations["installConnectorPackage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/{packageVersionId}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire a package version (no new installs; no new use here; pinned releases keep working) */
+        post: operations["retireConnectorPackage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/{packageVersionId}/workflow-templates/{templateKey}/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+                templateKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a workflow draft from a starter workflow of an installed package
+         * @description The template's package connections are pinned to the versions installed here. Only an approved, actively installed version gives templates (404 otherwise).
+         */
+        post: operations["createWorkflowFromPackageTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Internal catalog of the organization's packages, versions, signature status, installs and outdated pins */
+        get: operations["getConnectorCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Search the Studio palette by operation ("Create incident · ServiceNow") and package step templates */
+        get: operations["searchConnectorPalette"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/package-triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Package webhook and polling triggers with their status (watermark, last run, lag, duplicates, dead records) */
+        get: operations["listPackageTriggers"];
+        put?: never;
+        /**
+         * Set up a trigger of an installed package in this workspace
+         * @description Needs fresh connector.manage. The caller becomes the run-as person and needs workflow.start for a start trigger or message.send for a message trigger. A webhook trigger names the secret it verifies with (and, for JWT, the issuer and audience); a polling trigger reads through the package connection's binding.
+         */
+        post: operations["createPackageTrigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/package-triggers/{packageTriggerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Change, enable or disable a package trigger */
+        put: operations["updatePackageTrigger"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/package-triggers/{packageTriggerId}/dead-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Events a trigger could not use (error code, digest and time only; never content) */
+        get: operations["listPackageTriggerDeadRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/package-triggers/{packageTriggerId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive one webhook event for a package trigger (no session or token)
+         * @description Verified by the scheme the package declares: an HMAC-SHA256 over `timestamp + "." + rawBody` in the package's
+         *     signature and timestamp headers (hex or base64, within the tolerance), a bearer JWT (HS256 with the trigger
+         *     secret or RS256 with its public key; issuer, audience and exp checked, lifetime bounded), or basic credentials
+         *     (weaker, HTTPS only). Every verification failure is 401; unknown or disabled triggers are 404. Bodies up to
+         *     64 KiB. A repeated event (same dedupe key) is acknowledged as a duplicate and never starts or resumes twice.
+         */
+        post: operations["receivePackageTriggerEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/features": {
         parameters: {
             query?: never;
@@ -7523,7 +7788,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve";
         AgentWriteSubject: {
             id: components["schemas"]["Uuid"];
             displayName: string;
@@ -9785,6 +10050,271 @@ export interface components {
             /** @description Calls that waited for an open circuit or the request limit */
             deferred: number;
         };
+        ConnectorPackageSubject: {
+            id: components["schemas"]["Uuid"];
+            displayName: string | null;
+        };
+        ConnectorPackageSummary: {
+            id: components["schemas"]["Uuid"];
+            packageId: string;
+            name: string;
+            version: string;
+            publisher: string;
+            keyId: string;
+            sha256: string;
+            /** @enum {string} */
+            signatureStatus: "verified" | "unsigned";
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "retired";
+            importedBy: components["schemas"]["ConnectorPackageSubject"];
+            importedAt: components["schemas"]["Timestamp"];
+            decidedBy: null | components["schemas"]["ConnectorPackageSubject"];
+            /** Format: date-time */
+            decidedAt: string | null;
+            decisionNote: string | null;
+            /**
+             * @description State of this version's install in the current workspace
+             * @enum {string|null}
+             */
+            installStatus: "active" | "superseded" | "retired" | null;
+            revision: number;
+        };
+        ConnectorPackageList: {
+            items: components["schemas"]["ConnectorPackageSummary"][];
+            canManage: boolean;
+            canApprove: boolean;
+        };
+        ConnectorPackageDetail: {
+            summary: components["schemas"]["ConnectorPackageSummary"];
+            /** @description The package manifest (connector-package-v1.schema.json#/$defs/manifest) */
+            manifest: Record<string, never>;
+            review: components["schemas"]["ConnectorPackageReview"];
+            comparison: components["schemas"]["ConnectorPackageComparison"];
+            whereUsed: {
+                workflowId: components["schemas"]["Uuid"];
+                workflowKey: string;
+                workflowName: string;
+                connectionKey: components["schemas"]["Key"];
+                draftVersion: number | null;
+                releaseVersion: number | null;
+                /** @description Pins an older connection version than this package version installs */
+                outdated: boolean;
+            }[];
+            unsignedReason: string | null;
+            retireReason: string | null;
+            canManage: boolean;
+            canApprove: boolean;
+            /** @description The caller holds connector.approve */
+            canDecide: boolean;
+        };
+        /** @description What the review screen shows; computed at import from the validated files. */
+        ConnectorPackageReview: {
+            hosts: {
+                pattern?: string;
+                purpose?: string;
+            }[];
+            authSchemes: string[];
+            dataLeavingOrqix: string[];
+            connections: Record<string, never>[];
+            operations: {
+                connection?: string;
+                operation?: string;
+                label?: string;
+                method?: string;
+                path?: string;
+                effectClass?: string;
+                inputs?: string[];
+                asynchronous?: boolean;
+            }[];
+            operationsByEffect: {
+                [key: string]: number;
+            };
+            triggers: Record<string, never>[];
+            stepTemplates: Record<string, never>[];
+            workflowTemplates: Record<string, never>[];
+            fixtures: {
+                count?: number;
+                passed?: number;
+            };
+            docs: string[];
+        };
+        ConnectorPackageComparison: {
+            /** @description The version active in this workspace (null when none) */
+            installedVersion: string | null;
+            addedOperations: string[];
+            removedOperations: string[];
+            changes: {
+                operation: string;
+                change: string;
+                breaking: boolean;
+            }[];
+            /** @description No removed operations and no breaking change */
+            compatible: boolean;
+        };
+        ConnectorPackageImport: {
+            /** @description The .orqpkg file in base64 (at most 5 MiB) */
+            archive: string;
+            /** @description Required (and audited) for an unsigned package or one signed with an untrusted key */
+            unsignedReason?: string | null;
+        };
+        ConnectorPackageDecision: {
+            /** @enum {string} */
+            decision: "approve" | "reject";
+            sha256: string;
+            note: string;
+            expectedRevision: number;
+        };
+        ConnectorPackageRetire: {
+            reason: string;
+            expectedRevision: number;
+        };
+        ConnectorPackageInstall: {
+            packageId: string;
+            version: string;
+            previousVersion: string | null;
+            connections: {
+                key: components["schemas"]["Key"];
+                version: number;
+                /** @description The definition was unchanged */
+                reused: boolean;
+            }[];
+            /** @description Host patterns a binding may use; add the concrete host to the egress allow-list */
+            hostsToAllow: string[];
+        };
+        ConnectorCatalog: {
+            items: {
+                packageId: string;
+                name: string;
+                publisher: string;
+                /** @description Newest approved version */
+                latestVersion: string | null;
+                versions: {
+                    id: components["schemas"]["Uuid"];
+                    version: string;
+                    /** @enum {string} */
+                    status: "pending" | "approved" | "rejected" | "retired";
+                    /** @enum {string} */
+                    signatureStatus: "verified" | "unsigned";
+                    importedAt: components["schemas"]["Timestamp"];
+                }[];
+                installs: {
+                    workspaceId: components["schemas"]["Uuid"];
+                    workspaceName: string;
+                    version: string;
+                    /** @enum {string} */
+                    status: "active" | "retired";
+                }[];
+                outdatedPins: {
+                    workspaceId: components["schemas"]["Uuid"];
+                    workspaceName: string;
+                    workflowId: components["schemas"]["Uuid"];
+                    workflowName: string;
+                    connectionKey: string;
+                    /** @description Package version the pinned connection version came from */
+                    pinnedVersion: string;
+                    latestVersion: string | null;
+                    retired: boolean;
+                    /** @enum {string} */
+                    pinnedIn: "draft" | "release";
+                }[];
+            }[];
+        };
+        ConnectorPalette: {
+            items: {
+                /** @enum {string} */
+                kind: "operation" | "stepTemplate";
+                /** @description For example "Raise an incident · ServiceNow ITSM" */
+                label: string;
+                description: string | null;
+                packageId: string;
+                packageName: string;
+                packageVersion: string;
+                packageVersionId: components["schemas"]["Uuid"];
+                connectionKey: components["schemas"]["Key"];
+                connectionVersion: number;
+                operation: string;
+                effectClass: string;
+                templateKey: string | null;
+                /** @description The template's step (a workflow node without its id) */
+                step: Record<string, never> | null;
+                /** @description Request form fields the template's mappings expect */
+                requestFields: Record<string, never> | null;
+            }[];
+        };
+        PackageTriggerConfigure: {
+            /** @description Create only */
+            packageId?: string | null;
+            /** @description Create only */
+            triggerKey?: string | null;
+            /** @description The workflow a start trigger starts */
+            workflowId?: null | components["schemas"]["Uuid"];
+            /** @description Webhook triggers only; never the secret itself */
+            secretRef?: string | null;
+            jwtIssuer?: string | null;
+            jwtAudience?: string | null;
+            enabled?: boolean | null;
+            /** @description Update only */
+            expectedVersion?: number | null;
+        };
+        PackageTrigger: {
+            id: components["schemas"]["Uuid"];
+            packageId: string;
+            packageVersion: string;
+            triggerKey: components["schemas"]["Key"];
+            label: string;
+            /** @enum {string} */
+            kind: "webhook" | "poll";
+            /** @enum {string} */
+            action: "start" | "message";
+            workflowId: null | components["schemas"]["Uuid"];
+            messageName: string | null;
+            /** @enum {string|null} */
+            verification: "hmacSha256" | "jwt" | "basic" | null;
+            /** @description Basic credentials (systems that cannot sign) */
+            weaker: boolean;
+            secretRef: string | null;
+            jwtIssuer: string | null;
+            jwtAudience: string | null;
+            connectionKey: string | null;
+            every: string | null;
+            enabled: boolean;
+            version: number;
+            /** @description Webhook URL path the remote system posts to */
+            receivePath: string | null;
+            status: {
+                watermark: string | null;
+                /** Format: date-time */
+                nextRunAt: string | null;
+                /** Format: date-time */
+                lastRunAt: string | null;
+                /** Format: date-time */
+                lastSuccessAt: string | null;
+                lastErrorCode: string | null;
+                lagSeconds: number | null;
+                polls: number;
+                recordsHandled: number;
+                duplicates: number;
+                deadRecords: number;
+                /** @description A pod is polling it right now */
+                leased: boolean;
+            };
+        };
+        PackageTriggerList: {
+            items: components["schemas"]["PackageTrigger"][];
+        };
+        PackageTriggerDeadRecordList: {
+            items: {
+                id: components["schemas"]["Uuid"];
+                errorCode: string | null;
+                valueSha256: string;
+                receivedAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        PackageTriggerAccepted: {
+            /** @enum {string} */
+            status: "started" | "resumed" | "buffered" | "duplicate";
+            runId: null | components["schemas"]["Uuid"];
+        };
         RoleBinding: {
             id: components["schemas"]["Uuid"];
             role: components["schemas"]["WorkspaceRole"];
@@ -9796,7 +10326,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -12664,7 +13194,7 @@ export interface components {
             maxPages: number;
             maxItems: number;
         } & (unknown & unknown);
-        /** @description Declaration only in this version (CG-W02 executes it): the remote system answers with an accepted status and a status location that a read-only operation follows. The status URL must stay inside the binding. */
+        /** @description Start and follow up (CG-W02, docs/build/S133): the remote system answers with an accepted status and a status location (a header or a body value). Accepted statuses count as success. The location must have the binding's scheme, host, port and base path (else STATUS_URL_OUTSIDE_BINDING) and match the status operation's path template; its path parameters become the results /@async/<name>, which a Check until done on statusOperation maps in. */
         async: {
             acceptedStatuses: number[];
             statusFrom: {
@@ -12943,7 +13473,7 @@ export interface components {
                     maxPages: number;
                     maxItems: number;
                 } & (unknown & unknown);
-                /** @description Declaration only in this version (CG-W02 executes it): the remote system answers with an accepted status and a status location that a read-only operation follows. The status URL must stay inside the binding. */
+                /** @description Start and follow up (CG-W02, docs/build/S133): the remote system answers with an accepted status and a status location (a header or a body value). Accepted statuses count as success. The location must have the binding's scheme, host, port and base path (else STATUS_URL_OUTSIDE_BINDING) and match the status operation's path template; its path parameters become the results /@async/<name>, which a Check until done on statusOperation maps in. */
                 async: {
                     acceptedStatuses: number[];
                     statusFrom: {
@@ -21488,6 +22018,420 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listConnectorPackages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    importConnectorPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorPackageImport"];
+            };
+        };
+        responses: {
+            /** @description Imported */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getConnectorPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    decideConnectorPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorPackageDecision"];
+            };
+        };
+        responses: {
+            /** @description Decided */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    installConnectorPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageInstall"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    retireConnectorPackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorPackageRetire"];
+            };
+        };
+        responses: {
+            /** @description Retired */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPackageDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    createWorkflowFromPackageTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageVersionId: components["schemas"]["Uuid"];
+                templateKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkflowRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workflow"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getConnectorCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorCatalog"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    searchConnectorPalette: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Palette items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPalette"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listPackageTriggers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Triggers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageTriggerList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createPackageTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageTriggerConfigure"];
+            };
+        };
+        responses: {
+            /** @description Configured */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updatePackageTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageTriggerConfigure"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listPackageTriggerDeadRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dead records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageTriggerDeadRecordList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    receivePackageTriggerEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                packageTriggerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageTriggerAccepted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getWorkspaceFeatures: {
         parameters: {
             query?: never;
@@ -21720,7 +22664,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];

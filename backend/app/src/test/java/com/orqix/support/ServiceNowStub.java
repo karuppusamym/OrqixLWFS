@@ -31,7 +31,9 @@ public final class ServiceNowStub {
         /** The incident is created, but the answer comes after the client gave up. */
         COMMIT_THEN_TIMEOUT,
         /** Nothing is created and the answer never comes in time (the request was lost). */
-        LOST_THEN_TIMEOUT
+        LOST_THEN_TIMEOUT,
+        /** The instance refuses with 429 and Retry-After: 1 (S133). */
+        RATE_LIMITED
     }
 
     /** One request received: method, path with decoded query, body, raw bytes and Content-Type. */
@@ -41,9 +43,13 @@ public final class ServiceNowStub {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Map<String, ObjectNode> INCIDENTS = new LinkedHashMap<>();
+    private static final Map<String, ObjectNode> USERS = new LinkedHashMap<>();
+    private static final java.time.format.DateTimeFormatter UPDATED = java.time.format.DateTimeFormatter
+            .ofPattern("yyyy-MM-dd HH:mm:ss").withZone(java.time.ZoneOffset.UTC);
     private static final List<Call> CALLS = new ArrayList<>();
     private static final Deque<CreateFault> FAULTS = new ArrayDeque<>();
     private static int sequence;
+    private static long generation = 1;
     private static int delayMs = 6000;
 
     private ServiceNowStub() {
@@ -51,9 +57,11 @@ public final class ServiceNowStub {
 
     public static synchronized void reset() {
         INCIDENTS.clear();
+        USERS.clear();
         CALLS.clear();
         FAULTS.clear();
         sequence = 0;
+        generation++;
         delayMs = 6000;
     }
 
@@ -70,8 +78,42 @@ public final class ServiceNowStub {
         incident.put("close_code", "");
         incident.put("close_notes", "");
         incident.put("correlation_id", "");
+        touch(incident);
         INCIDENTS.put(sysId, incident);
         return sysId;
+    }
+
+    /** Adds an active user (sys_user) and returns its sys_id. */
+    public static synchronized String seedUser(String userName, String email) {
+        String sysId = sysId(500 + USERS.size());
+        ObjectNode user = JSON.createObjectNode().put("sys_id", sysId).put("user_name", userName)
+                .put("name", userName).put("email", email).put("active", "true");
+        USERS.put(sysId, user);
+        return sysId;
+    }
+
+    /** What an agent does in ServiceNow: sets state and close code; bumps sys_mod_count and sys_updated_on. */
+    public static synchronized void update(String sysId, String state, String closeCode) {
+        ObjectNode incident = INCIDENTS.get(sysId);
+        incident.put("state", state);
+        incident.put("close_code", closeCode == null ? "" : closeCode);
+        touch(incident);
+    }
+
+    /** Sets one field of an incident without counting a modification. */
+    public static synchronized void setField(String sysId, String field, String value) {
+        INCIDENTS.get(sysId).put(field, value);
+    }
+
+    /** The incident whose correlation_id is {@code correlationId}, or null. */
+    public static synchronized ObjectNode byCorrelation(String correlationId) {
+        return INCIDENTS.values().stream().filter(i -> correlationId.equals(i.path("correlation_id").asString()))
+                .findFirst().map(ObjectNode::deepCopy).orElse(null);
+    }
+
+    private static void touch(ObjectNode incident) {
+        incident.put("sys_updated_on", UPDATED.format(java.time.Instant.now()));
+        incident.put("sys_mod_count", Integer.toString(incident.path("sys_mod_count").asInt(-1) + 1));
     }
 
     public static synchronized void fault(CreateFault fault, int answerDelayMs) {
@@ -115,32 +157,60 @@ public final class ServiceNowStub {
             return json(200, JSON.createObjectNode().set("result", fields(incident, query)).toString());
         }
         if (path.equals("/api/now/table/incident") && "GET".equals(method)) {
-            return list(query);
+            return list(query, INCIDENTS);
         }
         if (path.equals("/api/now/table/incident") && "POST".equals(method)) {
             return create(request.getBodyAsString());
         }
+        if (path.startsWith("/api/now/table/incident/") && "PATCH".equals(method)) {
+            ObjectNode incident = INCIDENTS.get(path.substring("/api/now/table/incident/".length()));
+            if (incident == null) {
+                return json(404, "{\"error\":{\"message\":\"No Record found\"}}");
+            }
+            JSON.readTree(request.getBodyAsString()).properties().forEach(e -> incident.set(e.getKey(), e.getValue()));
+            touch(incident);
+            return json(200, JSON.createObjectNode().set("result", incident.deepCopy()).toString());
+        }
+        if (path.equals("/api/now/table/sys_user") && "GET".equals(method)) {
+            return list(query, USERS);
+        }
         return json(404, "{\"error\":{\"message\":\"Unknown resource\"}}");
     }
 
-    private static ResponseDefinition list(Map<String, String> query) {
+    private static ResponseDefinition list(Map<String, String> query, Map<String, ObjectNode> table) {
         String encoded = query.getOrDefault("sysparm_query", "");
         List<ObjectNode> matches = new ArrayList<>();
-        for (ObjectNode incident : INCIDENTS.values()) {
+        String orderBy = null;
+        for (ObjectNode record : table.values()) {
             boolean match = true;
             for (String condition : encoded.split("\\^")) {
-                if (condition.isEmpty() || condition.startsWith("ORDERBY")) {
+                if (condition.isEmpty() || condition.startsWith("ORDERBYDESC")) {
                     continue;
                 }
-                int eq = condition.indexOf('=');
-                if (eq < 0) {
+                if (condition.startsWith("ORDERBY")) {
+                    orderBy = condition.substring("ORDERBY".length());
+                    continue;
+                }
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("^([a-z_]+)(STARTSWITH|IN|>|=)(.*)$").matcher(condition);
+                if (!m.matches()) {
                     return json(400, "{\"error\":{\"message\":\"Invalid query\"}}");
                 }
-                match &= incident.path(condition.substring(0, eq)).asString("").equals(condition.substring(eq + 1));
+                String actual = record.path(m.group(1)).asString("");
+                match &= switch (m.group(2)) {
+                    case "STARTSWITH" -> actual.startsWith(m.group(3));
+                    case "IN" -> List.of(m.group(3).split(",")).contains(actual);
+                    case ">" -> actual.compareTo(m.group(3)) > 0;
+                    default -> actual.equals(m.group(3));
+                };
             }
             if (match) {
-                matches.add(incident);
+                matches.add(record);
             }
+        }
+        if (orderBy != null) {
+            String field = orderBy;
+            matches.sort(java.util.Comparator.comparing(r -> r.path(field).asString("")));
         }
         int offset = Integer.parseInt(query.getOrDefault("sysparm_offset", "0"));
         int limit = Integer.parseInt(query.getOrDefault("sysparm_limit", "10000"));
@@ -156,6 +226,11 @@ public final class ServiceNowStub {
     private static ResponseDefinition create(String body) {
         JsonNode input = JSON.readTree(body);
         CreateFault fault = FAULTS.pollFirst();
+        if (fault == CreateFault.RATE_LIMITED) {
+            return new ResponseDefinitionBuilder().withStatus(429).withHeader("Retry-After", "1")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("{\"error\":{\"message\":\"Rate limit exceeded\"}}").build();
+        }
         if (!input.path("short_description").isString()) {
             return json(400, "{\"error\":{\"message\":\"short_description is mandatory\"}}");
         }
@@ -169,6 +244,8 @@ public final class ServiceNowStub {
         incident.put("state", "1");
         input.properties().forEach(e -> incident.set(e.getKey(), e.getValue()));
         incident.put("active", "true");
+        incident.put("close_code", "");
+        touch(incident);
         INCIDENTS.put(sysId, incident);
         ResponseDefinitionBuilder answer = new ResponseDefinitionBuilder().withStatus(201)
                 .withHeader("Content-Type", "application/json")
@@ -207,8 +284,9 @@ public final class ServiceNowStub {
         return out;
     }
 
+    /** sys_ids differ after every reset, so events of earlier tests never look like repeats (S133 dedupe). */
     private static String sysId(int n) {
-        return String.format("%032x", 0xa11ce000L + n);
+        return String.format("%016x%016x", generation, 0xa11ce000L + n);
     }
 
     private static ResponseDefinition json(int status, String body) {

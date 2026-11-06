@@ -20,6 +20,7 @@ import { CheckPanel } from './CheckPanel'
 import { LanesView } from './LanesView'
 import { SourceView } from './SourceView'
 import { Palette } from './Palette'
+import { addPresetStep } from './model/packageSteps'
 import { SidePanel, type SideCard } from './SidePanel'
 import { AskDock } from './AskDock'
 import { AI_DOCK_KEY, AI_EXPANDED_KEY, SIDE_PANEL_KEY } from './viewKeys'
@@ -326,6 +327,19 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
               onAdd={(kind) => {
                 const id = store.getState().addNode(kind)
                 store.getState().requestFocus(id, 'label')
+              }}
+              onAddPackageStep={(item) => {
+                let added = ''
+                store.getState().apply((d) => {
+                  const config = item.kind === 'stepTemplate' && item.step
+                    ? ((item.step as { config?: Record<string, unknown> }).config ?? {})
+                    : { operation: item.operation, inputMapping: {}, resultMapping: {}, timeoutSeconds: 10 }
+                  const label = item.kind === 'stepTemplate' && item.step ? String((item.step as { label?: string }).label ?? item.label) : item.label
+                  const result = addPresetStep(d, { label, config, connectionKey: item.connectionKey, connectionVersion: item.connectionVersion })
+                  added = result.id
+                  return result.def
+                })
+                if (added) store.getState().requestFocus(added, 'label')
               }}
             />
           ) : null}

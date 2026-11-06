@@ -6920,7 +6920,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, ai.approve-skill, ai.evaluate] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -10338,6 +10338,8 @@ components:
         - job.work
         - workflow.approve-promotion
         - agent.approve-write-tool
+        - ai.approve-skill
+        - ai.evaluate
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -10543,6 +10545,7 @@ components:
             - AI_OUTPUT_INVALID
             - AI_PROVIDER_UNAVAILABLE
             - AI_BUDGET_EXCEEDED
+            - AI_SKILL_STATE_CONFLICT
             - SOURCE_INVALID
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
@@ -13214,7 +13217,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, ai.approve-skill, ai.evaluate] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

@@ -73,7 +73,7 @@ public class AccessController {
             @NotNull @Valid PrincipalRef principal) {
     }
 
-    public record CreateGrantRequest(@NotNull @Pattern(regexp = "workflow\\.start|connection\\.manage|message\\.send|document\\.browse|job\\.work|audit\\.read|workflow\\.approve-promotion|agent\\.approve-write-tool") String permission,
+    public record CreateGrantRequest(@NotNull @Pattern(regexp = "workflow\\.start|connection\\.manage|message\\.send|document\\.browse|job\\.work|audit\\.read|workflow\\.approve-promotion|agent\\.approve-write-tool|ai\\.approve-skill|ai\\.evaluate") String permission,
             UUID workflowId, @NotNull @Valid PrincipalRef principal) {
     }
 

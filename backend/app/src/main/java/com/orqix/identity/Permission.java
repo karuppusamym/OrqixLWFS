@@ -24,7 +24,11 @@ public enum Permission {
     JOB_WORK("job.work"),
     WORKFLOW_APPROVE_PROMOTION("workflow.approve-promotion"),
     /** IN04 (S75): grant-only, workspace-wide; approves or revokes agent write tools. No role carries it. */
-    AGENT_APPROVE_WRITE_TOOL("agent.approve-write-tool");
+    AGENT_APPROVE_WRITE_TOOL("agent.approve-write-tool"),
+    /** Grant-only (S134): approve AI skill versions and promotions written by someone else. */
+    AI_APPROVE_SKILL("ai.approve-skill"),
+    /** Grant-only (S134): run AI evaluation suites, read shadow dashboards and the AI review queue. */
+    AI_EVALUATE("ai.evaluate");
 
     private final String value;
 

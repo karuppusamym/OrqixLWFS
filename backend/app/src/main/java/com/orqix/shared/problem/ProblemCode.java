@@ -67,6 +67,8 @@ public enum ProblemCode {
     ATTACHMENT_LIMIT_REACHED(409, "The request has reached its file limit"),
     /** S127: the module named in {@code feature} is switched off in this workspace by an administrator. */
     FEATURE_DISABLED(409, "This part of Orqix is switched off in this workspace"),
+    /** S134: the AI skill version, promotion or evaluation is not in a state that allows this. */
+    AI_SKILL_STATE_CONFLICT(409, "The AI skill is not in a state that allows this"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

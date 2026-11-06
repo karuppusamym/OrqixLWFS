@@ -113,6 +113,10 @@ const TEXT_CLASS: Record<RouteKind, string> = {
   condition: 'text-edge-condition',
   default: 'text-foreground',
   next: 'text-foreground',
+  aiLabel: 'text-edge-condition',
+  lowConfidence: 'text-edge-condition',
+  needsReview: 'text-edge-condition',
+  aiUnavailable: 'text-edge-rejected',
 }
 
 /**

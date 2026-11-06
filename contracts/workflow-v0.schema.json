@@ -220,6 +220,9 @@
           },
           {
             "$ref": "#/$defs/sendAdapterNode"
+          },
+          {
+            "$ref": "#/$defs/aiTaskNode"
           }
         ]
       }
@@ -1984,8 +1987,17 @@
             "timedOut",
             "failed",
             "condition",
-            "default"
+            "default",
+            "aiLabel",
+            "lowConfidence",
+            "needsReview",
+            "aiUnavailable"
           ]
+        },
+        "aiLabel": {
+          "description": "AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
         },
         "label": {
           "description": "Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'.",
@@ -2004,6 +2016,32 @@
         "on"
       ],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "on": {
+                "const": "aiLabel"
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "then": {
+            "required": [
+              "aiLabel"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "aiLabel"
+              ]
+            }
+          }
+        }
+      ],
       "if": {
         "properties": {
           "on": {
@@ -2810,6 +2848,101 @@
         "config": {
           "type": "object",
           "description": "Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues.",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "aiTaskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "aiTask"
+        },
+        "config": {
+          "description": "AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode.",
+          "type": "object",
+          "properties": {
+            "skillRef": {
+              "description": "Key of the shared AI skill.",
+              "$ref": "#/$defs/key"
+            },
+            "skillVersion": {
+              "description": "Approved version to pin; publishing pins the latest approved version when absent.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "mode": {
+              "description": "Must equal the skill's mode.",
+              "enum": [
+                "classify",
+                "extract",
+                "score",
+                "recommend",
+                "summarize"
+              ]
+            },
+            "inputMapping": {
+              "description": "Skill input name to request or earlier-step value. Only mapped values are sent.",
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "autonomy": {
+              "description": "shadow: runs beside the existing decision and never routes; suggest (default): a person decides; autoWithReview: AI routes and a sample is reviewed afterwards; auto: AI routes within the threshold, only for labels the workspace policy marks low-risk.",
+              "enum": [
+                "shadow",
+                "suggest",
+                "autoWithReview",
+                "auto"
+              ]
+            },
+            "minConfidence": {
+              "description": "Calibrated confidence below which the step takes lowConfidence (classify) or needsReview (extract). Default 0.8.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reviewSamplePercent": {
+              "description": "autoWithReview only: share of automatic decisions queued for after-the-fact review (default 10).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "redaction": {
+              "description": "Per input: how the value is minimized before it is sent, on top of the field classification policy.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "maskCardNumbersAndEmails",
+                  "maskDigits",
+                  "hash",
+                  "drop"
+                ]
+              }
+            }
+          },
+          "required": [
+            "skillRef",
+            "mode",
+            "inputMapping"
+          ],
           "additionalProperties": false
         }
       },

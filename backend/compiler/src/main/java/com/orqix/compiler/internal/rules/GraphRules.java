@@ -113,6 +113,8 @@ final class GraphRules {
                 case START_WORKFLOW, EXTERNAL_TASK -> Set.of(Route.NEXT, Route.FAILED);
                 // A raised error ends the path; the section or handler that catches it decides what happens (S59).
                 case RAISE_ERROR -> Set.of();
+                // S134: the routes of an AI task depend on its mode and autonomy; AiTaskRules counts them.
+                case AI_TASK -> AiTaskRules.allowed((Node.AiTask) n);
                 default -> Set.of(Route.NEXT);
             };
             if (n.kind() == NodeKind.RAISE_ERROR) {
@@ -200,6 +202,9 @@ final class GraphRules {
                                     + " can have only one path for when the message does not arrive in time.");
                         }
                     }
+                }
+                case AI_TASK -> {
+                    // Counted by AiTaskRules (per label, lowConfidence, needsReview, aiUnavailable).
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);

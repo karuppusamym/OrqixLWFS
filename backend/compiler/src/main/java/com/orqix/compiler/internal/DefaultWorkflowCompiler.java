@@ -110,7 +110,19 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
             }
         }
 
-        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts);
+        // S134: every AI task pins the approved skill version the rules checked (step pin or latest approved).
+        Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins = new LinkedHashMap<>();
+        List<CompiledWorkflow.AiSkillRef> aiRefs = new ArrayList<>();
+        for (Node n : d.nodes()) {
+            if (n instanceof Node.AiTask ai) {
+                var pin = com.orqix.compiler.internal.rules.AiTaskRules.pinned(analysis.workspace(), ai);
+                aiPins.put(ai.id(), pin);
+                aiRefs.add(new CompiledWorkflow.AiSkillRef(ai.id(), ai.skillRef(), pin.version(), pin.contentHash(),
+                        pin.modelProfile(), ai.autonomy(), ai.shadow() ? null : pin.passingEvaluationId()));
+            }
+        }
+        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts,
+                aiPins);
 
         Set<String> usedConnections = new LinkedHashSet<>();
         Set<String> groups = new LinkedHashSet<>();
@@ -149,7 +161,8 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 List.copyOf(groups),
                 List.copyOf(childRefs),
                 List.copyOf(closure),
-                height);
+                height,
+                List.copyOf(aiRefs));
     }
 
     private static FieldKind inputKind(RuleContext analysis, DecisionTable table) {

@@ -237,6 +237,7 @@ final class SimulationRun {
             }
             case Node.ExternalTask n -> externalTask(n);
             case Node.SendAdapter n -> sendAdapter(n);
+            case Node.AiTask n -> aiTask(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -1478,6 +1479,110 @@ final class SimulationRun {
     // ------------------------------------------------------------------ message wait
 
     /** A worker is not simulated: the test supplies its result in the settings, otherwise declared fields get sample values. */
+    /**
+     * An AI task is never run by a test (S134): no model is called. The answer comes from {@code ai.<stepId>} in the
+     * test settings ({@code label}, {@code confidence}, {@code fields}, {@code score}, {@code recommendation},
+     * {@code summary}, or {@code unavailable: true}); without settings a classify task answers its first label with
+     * confidence 0.95. The route then follows the runtime rules: shadow always continues, suggest goes to a person,
+     * a confidence below the threshold takes lowConfidence (classify) or needsReview (extract). Workspace policy
+     * downgrades (low-risk labels, regulated workspaces) are applied by the runtime only.
+     */
+    private Transition aiTask(Node.AiTask n) {
+        for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
+            if (resolve(entry.getValue()) == null && !n.shadow()) {
+                stall(n, "TEST_AI_INPUT_MISSING", "A value this AI task sends is missing from this sample request.");
+                return null;
+            }
+        }
+        CompileContext.AiSkillVersion v = com.orqix.compiler.internal.rules.AiTaskRules.pinned(workspace, n);
+        JsonNode setting = scenario.path("ai").path(n.id());
+        ObjectNode d = F.objectNode();
+        d.put("skill", n.skillRef());
+        d.put("mode", n.mode());
+        d.put("autonomy", n.autonomy());
+        d.put("mocked", true);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("skillVersion", BigDecimal.valueOf(v == null ? 0 : v.version()));
+        String intro = Text.quote(n.label()) + " runs the AI skill " + Text.quote(n.skillRef());
+        if (setting.path("unavailable").asBoolean(false) || v == null) {
+            out.put("status", n.shadow() ? "shadow" : "unavailable");
+            steps.put(n.id(), out);
+            Transition t = next(n, n.shadow() ? Route.NEXT : Route.AI_UNAVAILABLE);
+            add(n, intro + ". In this test AI is unavailable, so " + (n.shadow() ? "the request continues unchanged."
+                    : "the request takes the path for when AI is unavailable."), d, out, t);
+            return t;
+        }
+        BigDecimal confidence = setting.has("confidence") ? setting.get("confidence").decimalValue()
+                : new BigDecimal("0.95");
+        out.put("confidence", confidence);
+        out.put("modelUsed", "test-mock");
+        String chosen = null;
+        switch (n.mode()) {
+            case "classify" -> {
+                chosen = setting.path("label").asString(v.labels().isEmpty() ? "" : v.labels().get(0).key());
+                String label = chosen;
+                if (v.labels().stream().noneMatch(l -> l.key().equals(label))) {
+                    throw new IllegalArgumentException("ai." + n.id() + ".label must be one of the skill's labels");
+                }
+                out.put("label", chosen);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "extract" -> {
+                Map<String, Object> fields = new LinkedHashMap<>();
+                setting.path("fields").properties().forEach(e -> fields.put(e.getKey(), Mocks.plainField(e.getValue())));
+                out.putAll(fields);
+            }
+            case "score" -> {
+                BigDecimal score = setting.has("score") ? setting.get("score").decimalValue()
+                        : v.scoreMin().add(v.scoreMax()).divide(BigDecimal.valueOf(2));
+                out.put("score", score);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "recommend" -> {
+                out.put("recommendation", setting.path("recommendation").asString(v.outcomes().get(0)));
+                out.put("rationale", "Test answer");
+            }
+            default -> out.put("summary", setting.path("summary").asString("Test summary."));
+        }
+        Route route;
+        String status;
+        if (n.shadow()) {
+            route = Route.NEXT;
+            status = "shadow";
+        } else if (("classify".equals(n.mode()) || "extract".equals(n.mode()))
+                && confidence.compareTo(n.minConfidence()) < 0) {
+            route = "classify".equals(n.mode()) ? Route.LOW_CONFIDENCE : Route.NEEDS_REVIEW;
+            status = "classify".equals(n.mode()) ? "lowConfidence" : "needsReview";
+        } else if ("classify".equals(n.mode()) && !n.routes()) {
+            route = next(n, Route.NEEDS_REVIEW) != null ? Route.NEEDS_REVIEW : Route.LOW_CONFIDENCE;
+            status = "needsReview";
+        } else if ("extract".equals(n.mode()) && (!n.routes()
+                || v.requiredFields().stream().anyMatch(f -> !out.containsKey(f)))) {
+            route = Route.NEEDS_REVIEW;
+            status = "needsReview";
+        } else {
+            route = "classify".equals(n.mode()) ? Route.AI_LABEL : Route.NEXT;
+            status = "decided";
+        }
+        out.put("status", status);
+        steps.put(n.id(), out);
+        Transition t = null;
+        if (route == Route.AI_LABEL) {
+            for (Transition candidate : graph.outgoing(n)) {
+                if (candidate.on() == Route.AI_LABEL && chosen.equals(candidate.aiLabel())) {
+                    t = candidate;
+                }
+            }
+        } else {
+            t = next(n, route);
+        }
+        d.put("route", route == Route.AI_LABEL ? "label:" + chosen : route.json());
+        add(n, intro + " (" + (setting.isObject() ? "answer from the test settings" : "sample answer")
+                + "). No model is called in a test; the request continues on " + d.path("route").asString() + ".", d,
+                out, t);
+        return t;
+    }
+
     private Transition externalTask(Node.ExternalTask n) {
         ObjectNode inputs = F.objectNode();
         for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
@@ -2226,7 +2331,7 @@ final class SimulationRun {
     }
 
     private void scenarioWarnings() {
-        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters")) {
+        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters", "ai")) {
             for (String id : scenario.path(group).propertyNames()) {
                 Node n = graph.node(id);
                 boolean right = n != null && switch (group) {
@@ -2235,6 +2340,7 @@ final class SimulationRun {
                     case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
                     case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
                     case "adapters" -> n.kind() == NodeKind.SEND_ADAPTER;
+                    case "ai" -> n.kind() == NodeKind.AI_TASK;
                     default -> n.kind() == NodeKind.START_WORKFLOW;
                 };
                 if (!right) {

@@ -26,6 +26,7 @@ public final class Rules {
         ExternalRules.check(rc);
         RetryRules.check(rc);
         AdapterStepRules.check(rc);
+        AiTaskRules.check(rc);
         AgentWriteToolRules.check(rc);
         MultiInstanceRules.check(rc);
         PerItemRules.check(rc);

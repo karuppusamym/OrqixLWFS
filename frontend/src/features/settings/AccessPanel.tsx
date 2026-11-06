@@ -53,6 +53,8 @@ const PERMISSION_HELP: Record<GrantPermission, string> = {
   'agent.approve-write-tool': 'Can approve or revoke the write tools an AI agent may use in a workflow (never for their own requests)',
   'connector.manage': 'Can import, install, upgrade and retire connector packages and set up their triggers',
   'connector.approve': 'Can approve connector packages another person imported (the exact package reviewed)',
+  'ai.approve-skill': 'Can approve AI skill versions and autonomy promotions written by someone else',
+  'ai.evaluate': 'Can run AI evaluation suites and read shadow dashboards and the AI review queue',
 }
 const PERMISSIONS = Object.keys(PERMISSION_HELP) as GrantPermission[]
 

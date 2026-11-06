@@ -62,6 +62,7 @@
                     <include>connection-definition-v0.schema.json</include>
                     <include>connection-definition-v1.schema.json</include>
                     <include>connector-package-v1.schema.json</include>
+                    <include>ai-skill-v1.schema.json</include>
                     <include>bpmn-shape-sizes.json</include>
                 </includes>
             </resource>

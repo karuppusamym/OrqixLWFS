@@ -250,6 +250,23 @@ public class AuditWriter {
             Map.entry("kafka.trigger-deleted", Set.of("key", "records", "deadLetters")),
             Map.entry("kafka.record-dead", Set.of("triggerId", "partition", "offset", "error")),
             Map.entry("kafka.test-message", Set.of("triggerId", "outcome")),
+            // S134: AI skills, evaluations, promotions, drift, policy and decision outcomes. Keys, versions and
+            // counts only; never instructions, case data, reasons or model output.
+            Map.entry("ai.skill.version.created", Set.of("skillKey", "version", "mode")),
+            Map.entry("ai.skill.version.updated", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.submitted", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.approved", Set.of("skillKey", "version", "contentHash")),
+            Map.entry("ai.skill.version.retired", Set.of("skillKey", "version")),
+            Map.entry("ai.eval-suite.saved", Set.of("suiteKey", "skillKey", "caseCount", "revision")),
+            Map.entry("ai.evaluation.started", Set.of("skillKey", "version", "suiteKey", "profile")),
+            Map.entry("ai.evaluation.finished", Set.of("skillKey", "version", "status", "caseCount")),
+            Map.entry("ai.promotion.requested", Set.of("skillKey", "version", "toAutonomy")),
+            Map.entry("ai.promotion.decided", Set.of("skillKey", "version", "toAutonomy", "decision")),
+            Map.entry("ai.skill.drift-fallback", Set.of("skillKey", "version", "agreement")),
+            Map.entry("ai.skill.drift-cleared", Set.of("skillKey", "version")),
+            Map.entry("ai.policy.updated", Set.of("regulated", "residency", "inputRetention", "version")),
+            Map.entry("ai.decision.outcome-recorded", Set.of("runId", "outcome")),
+            Map.entry("ai.eval-candidate.reviewed", Set.of("skillKey", "decision")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.

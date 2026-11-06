@@ -28,7 +28,11 @@ public enum Permission {
     /** CG-C04 (S133): grant-only, workspace-wide; imports, reviews, installs, binds and retires connector packages. */
     CONNECTOR_MANAGE("connector.manage"),
     /** CG-C04 (S133): grant-only, workspace-wide; approves the exact hash of a package another person imported. */
-    CONNECTOR_APPROVE("connector.approve");
+    CONNECTOR_APPROVE("connector.approve"),
+    /** Grant-only (S134): approve AI skill versions and promotions written by someone else. */
+    AI_APPROVE_SKILL("ai.approve-skill"),
+    /** Grant-only (S134): run AI evaluation suites, read shadow dashboards and the AI review queue. */
+    AI_EVALUATE("ai.evaluate");
 
     private final String value;
 

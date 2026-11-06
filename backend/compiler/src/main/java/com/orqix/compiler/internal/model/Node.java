@@ -195,6 +195,39 @@ public sealed interface Node {
         }
     }
 
+    /**
+     * AI task (CG-A01, docs/build/S134): runs a pinned, approved AI skill on the mapped values. {@code skillVersion} is
+     * null when the designer leaves the pin to publishing (latest approved version). {@code mode} must equal the
+     * skill's mode; {@code autonomy} is {@code shadow}, {@code suggest}, {@code autoWithReview} or {@code auto}.
+     * Mapping maps are sorted by key.
+     */
+    record AiTask(int index, String id, String label, String skillRef, Integer skillVersion, String mode,
+                  Map<String, String> inputMapping, String autonomy, java.math.BigDecimal minConfidence,
+                  int reviewSamplePercent, Map<String, String> redaction) implements Node {
+
+        public static final String SHADOW = "shadow";
+        public static final String SUGGEST = "suggest";
+        public static final String AUTO_WITH_REVIEW = "autoWithReview";
+        public static final String AUTO = "auto";
+        public static final java.math.BigDecimal DEFAULT_MIN_CONFIDENCE = new java.math.BigDecimal("0.8");
+        public static final int DEFAULT_REVIEW_PERCENT = 10;
+
+        /** @return true for shadow mode: the step records a decision and always continues on next */
+        public boolean shadow() {
+            return SHADOW.equals(autonomy);
+        }
+
+        /** @return true when the AI result chooses the path (autoWithReview or auto) */
+        public boolean routes() {
+            return AUTO.equals(autonomy) || AUTO_WITH_REVIEW.equals(autonomy);
+        }
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.AI_TASK;
+        }
+    }
+
     /** Notify someone. */
     record Notification(int index, String id, String label, String channel, String recipient, String message)
             implements Node {

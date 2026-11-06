@@ -47,6 +47,7 @@ export const BPMN_NOTATION: Record<NodeKind, BpmnNotation> = {
   http: { shape: 'serviceTask', sizeClass: 'task', element: 'service task', symbol: 'Rounded rectangle with a gear' },
   notification: { shape: 'sendTask', sizeClass: 'task', element: 'send task', symbol: 'Rounded rectangle with an envelope' },
   sendAdapter: { shape: 'sendTask', sizeClass: 'task', element: 'send task', symbol: 'Rounded rectangle with an envelope' },
+  aiTask: { shape: 'serviceTask', sizeClass: 'task', element: 'service task with a route gateway', symbol: 'Rounded rectangle with a gear' },
   generateDocument: { shape: 'documentTask', sizeClass: 'task', element: 'service task', symbol: 'Rounded rectangle with a page icon' },
   externalTask: { shape: 'externalServiceTask', sizeClass: 'task', element: 'external service task', symbol: 'Rounded rectangle with a gear and arrows' },
   wait: { shape: 'timerCatchEvent', sizeClass: 'event', element: 'intermediate timer catch event', symbol: 'Double circle with a clock' },

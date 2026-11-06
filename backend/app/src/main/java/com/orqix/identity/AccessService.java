@@ -129,13 +129,15 @@ public class AccessService {
         if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission)
                 && !"message.send".equals(permission) && !"document.browse".equals(permission) && !"job.work".equals(permission) && !"audit.read".equals(permission)
                 && !"workflow.approve-promotion".equals(permission) && !"agent.approve-write-tool".equals(permission)
-                && !"connector.manage".equals(permission) && !"connector.approve".equals(permission)) {
-            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage and connector.approve can be granted.");
+                && !"connector.manage".equals(permission) && !"connector.approve".equals(permission)
+                && !"ai.approve-skill".equals(permission) && !"ai.evaluate".equals(permission)) {
+            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill and ai.evaluate can be granted.");
         }
         if (("connection.manage".equals(permission) || "message.send".equals(permission) || "document.browse".equals(permission)
                 || "job.work".equals(permission) || "audit.read".equals(permission)
                 || "workflow.approve-promotion".equals(permission) || "agent.approve-write-tool".equals(permission)
-                || "connector.manage".equals(permission) || "connector.approve".equals(permission))
+                || "connector.manage".equals(permission) || "connector.approve".equals(permission)
+                || "ai.approve-skill".equals(permission) || "ai.evaluate".equals(permission))
                 && workflowId != null) {
             throw invalid("/workflowId", "type", permission + " is workspace-wide.");
         }

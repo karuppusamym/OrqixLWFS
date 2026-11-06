@@ -29,9 +29,12 @@ public class CompileContextFactory {
     private final AdapterSteps adapters;
     private final AgentWriteTools writeTools;
     private final Json json;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks;
 
     public CompileContextFactory(GroupDirectory groups, ConnectionService connections, CatalogStore store,
-            AdapterSteps adapters, AgentWriteTools writeTools, Json json) {
+            AdapterSteps adapters, AgentWriteTools writeTools, Json json,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks) {
+        this.aiTasks = aiTasks;
         this.groups = groups;
         this.connections = connections;
         this.store = store;
@@ -107,7 +110,10 @@ public class CompileContextFactory {
             approvals.add(new CompileContext.WriteToolApproval(fact.workflowKey(), fact.connectionKey(),
                     fact.connectionVersion(), fact.operation(), fact.toolName()));
         }
+        // AI skills (S134): approved versions, contract facts and the publish gate; the runtime admits again per task.
+        com.orqix.integration.AiTaskPort ai = aiTasks.getIfAvailable();
         return new CompileContext(workspace.allowSelfApprovalWorkflows(), groupInfos, versions,
-                connections.enabledBindings(workspace.id()), children, adapterInfos, approvals);
+                connections.enabledBindings(workspace.id()), children, adapterInfos, approvals,
+                ai == null ? Map.of() : ai.skillFacts(workspace.id()));
     }
 }

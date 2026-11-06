@@ -119,6 +119,16 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       const result = (Array.isArray(node.config.result) ? node.config.result : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return result.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
     }
+    case 'aiTask': {
+      // S134: status and skill version always; the answer when AI answered (labels and fields come from the skill).
+      const mode = String(node.config.mode ?? 'classify')
+      const common = [base('status', 'string'), base('skillVersion', 'integer', 'Skill version'), base('confidence', 'number'), base('modelUsed', 'string', 'Model used')]
+      if (mode === 'classify') return [...common, base('label', 'string'), base('reasons', 'array')]
+      if (mode === 'score') return [...common, base('score', 'number'), base('reasons', 'array')]
+      if (mode === 'recommend') return [...common, base('recommendation', 'string'), base('rationale', 'string')]
+      if (mode === 'summarize') return [...common, base('summary', 'string')]
+      return common
+    }
     case 'sendAdapter':
       // S73: how the adapter took the message; a database read also reports its row count.
       return node.config.kind === 'jdbc' ? [base('outcome', 'string'), base('rowCount', 'integer', 'Row count')] : [base('outcome', 'string')]
@@ -206,7 +216,7 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string') n.config.correlationField = map(n.config.correlationField)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter' || n.type === 'aiTask') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
       const each = n.config.forEach as { itemsRef: string } | undefined
@@ -227,7 +237,7 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string' && predicate(n.config.correlationField)) places.push(`the step "${n.label}"`)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter' || n.type === 'aiTask') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
       const each = n.config.forEach as { itemsRef: string } | undefined

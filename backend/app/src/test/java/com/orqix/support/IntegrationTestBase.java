@@ -40,6 +40,7 @@ public abstract class IntegrationTestBase {
         System.setProperty("orqix.ai.api-key", AgentLlmStub.KEY);
         System.setProperty("orqix.ai.base-url", AgentLlmStub.baseUrl());
         System.setProperty("orqix.ai.timeout", "5s");
+        AiTaskFixtures.configure();
     }
 
     @Autowired

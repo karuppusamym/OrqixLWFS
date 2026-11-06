@@ -1,6 +1,6 @@
 # S129: Check until done, callback safety net and "Waiting for"
 
-5 November 2026. Wave A of the Camunda gap plan ([doc 29](../29-camunda-gap-implementation-plan.md)): **CG-W01** "Keep checking until done" (§5.3), **CG-W03** callback with a polling safety net (§5.5) and **CG-W08** the uniform "Waiting for" projection, panel and API (§5.10). Migrations **V210** (`poll_wait`) and **V211** (`wait_state`). OpenAPI: one block tagged **Waits**.
+5 November 2026. Wave A of the Camunda gap plan ([doc 29](../29-camunda-gap-implementation-plan.md)): **CG-W01** "Keep checking until done" (§5.3), **CG-W03** callback with a polling safety net (§5.5) and **CG-W08** the uniform "Waiting for" projection, panel and API (§5.10). Migrations **V210** (`poll_wait`), **V211** (`wait_state`) and **V212** (purge grant and index). OpenAPI: one block tagged **Waits**.
 
 ## 1. What the designer sets
 
@@ -76,16 +76,27 @@ The run page shows a **Waiting for** panel: kind, subject, since, next check, de
 - The simulator (Java and the browser twin) follows the same schedule and reports each check with its simulated time. The Test tab accepts the answers of the checks, one per line (`pending`, `unavailable`, or a JSON body); the scenario field is `calls.<id>.checks` (the last answer repeats). A message wait with a safety net also accepts `messages.<id>.outcome: "fallback"`.
 - The browser mock backend runs a check-until step as a single call (like workers, S64); its "Waiting for" handler derives waits from the mock run's steps.
 
-## 6. Limits and follow-ups
+## 6. Follow-ups closed after the Wave A merge, and remaining limits
 
-- **Every mapped result must be in every answer.** The existing call executor treats a missing mapped field as an unusable answer, so a field that appears only when the work is done (a tracking number) makes a pending answer fail. Map only fields that are always present, or read the late field in a following call. Lifting this needs a change in `HttpExecutor` (owned by CG-W04/CG-C01 in this wave).
-- **`Retry-After` and the binding rate limit / circuit breaker** (§5.3 "Rate limits", acceptance "Retry-After honoured") belong to CG-W04, which owns `HttpExecutor`; the scheduler does not read `Retry-After` yet.
-- **Release migration (S38)** and the **repair scan (S72)** are not yet extended for `poll_wait`; a release migration of a request waiting in a polling step should be refused unless the step's settings are identical.
-- The **5,000-wait load test** of the acceptance list was not run; per-pod throughput is one batch of 20 rows per round, up to 10 rounds per tick.
+Closed on 6 November 2026, after merging connection v1, retry and circuit breaker (S130, S131) and secrets:
+
+| Item | Behaviour |
+|---|---|
+| Deferred calls | When the binding's circuit is open or its request rate is used up, `EffectDispatcher` throws `CallDeferredException` before anything is sent or journaled. The scheduler catches it: the next check moves to the end of the wait (capped at the deadline), **no check and no error are counted**, and `POLL_CHECK_DEFERRED` is written once per deferral run. At or after the deadline a deferred check gives up (`timedOut`; a safety net just stops) instead of spinning. |
+| `Retry-After` | A retryable failure with the server's `Retry-After` (429, 503; `EffectDispatcher.Failed.retryAfter()`) sets the next check to `now + min(maxInterval, max(interval, Retry-After))`, capped at the deadline: never sooner than the server asked, never later than the step's longest interval. The failure still counts as a consecutive error. |
+| Optional results | `poll.optionalResults` names mapped results that may be missing in an answer (a ticket number that appears only when done). The scheduler passes them to the executor as optional mappings (`ResultMappings`, `?` + pointer, in both the v0 and v1 mapping paths); a missing value leaves the check pending instead of making the answer unusable. They are optional outputs (`mayBeAbsent`), so later steps cannot require them (`WF_FIELDREF_NOT_GUARANTEED`); `WF_POLL_OPTIONAL` refuses names that are not kept results, and `WF_RESULT_OPTIONAL` is not raised for them. Studio has "May be missing until the work is done". |
+| Release migration (S38) | A request waiting in a polling step (or a message wait with a safety net) can move only when the step's settings, including checks, operation, mappings and the pinned connection version, are identical; otherwise `POLL_CHANGED`. Before, polling steps could never move. |
+| Repair scan (S72) | Open checks count as work outside the engine (a polling request is not "stranded"). Checks scheduled for a step where the engine is not waiting, or a step that shows checks with none scheduled, are reported (`unsupported`, never rebuilt). A `wait_state` that disagrees with the steps is `projectionDrift`, repairable: repair derives it again from the unchanged steps. |
+| Purge | Ended `poll_wait` rows older than `orqix.polling.retention` (default 30 days) are deleted hourly (`orqix.polling.purge-delay`) in batches of 500 with SKIP LOCKED, one `poll.waits-purged` audit entry (count, retention) per workspace and batch. V212 grants DELETE and adds the index. |
+| Safety-net inspector | Wait for a message has "Also check the other system now and then": connection, read-only operation, what to send, message values from the answer, done condition and interval. A connection used only by a safety net counts as used (dependencies sync, `WF_DEPENDENCY_UNUSED`, binding check, release connection pins). |
+| Insights | "Waiting on outside systems" (`GET /insights/outside-waits`, `run.read`): per kind and system (connection, message name or worker topic) the requests waiting now, the longest and total time so far (from `wait_state`), and finished checks in the period with average and 90th percentile (from `poll_wait`). |
+
+Remaining limits:
+
+- **Flyway order.** V212 sorts below the merged V220–V241. A database already migrated to V241 rejects it unless Flyway's out-of-order mode is enabled for this deployment, or the file is renumbered above V241 at merge.
 - Each check adds one `effect_journal` row (up to 1,000 per step occurrence); they appear in the request's technical details.
-- Insights "time spent waiting on outside systems" can read `wait_state` but is not built.
-- No purge of ended `poll_wait` rows yet.
-- Studio has no inspector for the safety net yet; it is set in the workflow JSON or BPMN.
+- A deferral or `Retry-After` does not stretch the deadline; an operator can extend it.
+- Engine-level release migration of a waiting polling step was checked through the compatibility rules only (`ReleaseCompatibility`), not by moving a live instance.
 
 ## 7. Evidence
 
@@ -93,4 +104,18 @@ Compiler (`PollRulesTest`, 17 tests): every `WF_POLL_*` rule, the BPMN shape and
 
 Application, PostgreSQL and Flowable through the public API with a WireMock status endpoint (`PollWaitsTest`, 11 tests): pending ×3 then done with the mapped output and one read-only journal entry per check; deadline with a final check then `timedOut`; `failWhen`; consecutive errors needing attention, operator Check now (403 without `run.operate`, 422 without a reason, 429 within a minute, audited); restart with an hour overdue gives exactly one catch-up check, and a pod that died while checking is recovered once after its lease; two schedulers run concurrently over six due rows and each row is checked exactly once (attempts 1); Extend deadline (limit, idempotent replay) and Stop waiting; cancel closes the checks in the same transaction; an approval listed as a wait and 404 for another workspace; the safety net ending a wait whose message was lost with a late message never resuming twice; a message first closing the safety net. The generated security matrix covers the five new operations.
 
-Frontend: schedule twin, inspector toggle and summary, Waiting-for panel and its actions, browser simulator twin and Test-tab answers.
+After the merge, `PollWaitsTest` has 18 tests: also a check deferred by an open circuit (no call, no check or error counted, next check at the end of the cool-down, give-up after the deadline), `Retry-After` 120 s honoured and 7,200 s capped at the 10-minute longest interval, an optional result missing in a pending answer, purge after the retention with its audit, the repair scan (in sync, `wait_state` drift repaired through the API, orphaned step reported), release-migration compatibility (`POLL_CHANGED` for changed checks or connection version), and the Insights figure. `PollRulesTest` adds `WF_POLL_OPTIONAL`, optional outputs and the safety-net connection counting as used.
+
+**Load test** (`PollLoadTest`, opt-in with `ORQIX_LOAD_TEST=true`, PostgreSQL Testcontainers and WireMock on one Windows workstation): 2,000 concurrent polling waits checking once a minute with 10 percent jitter, four schedulers (the live one plus three loops standing in for pods), measured over 180 s after a 75 s warm-up:
+
+| Measured | Value |
+|---|---|
+| Checks (WireMock calls) | 5,981 |
+| Expected from the schedule (2,001 waits × 180.1 s / 60 s) | 6,007 |
+| Ratio | **0.996** (within the 5 percent of the acceptance) |
+| Rate | 33.21 checks/s measured, 33.35/s scheduled |
+| Waits due for more than 10 s but not checked (max of 12 samples) | 0 |
+
+The acceptance in doc 29 names 5,000 waits; 2,000 were measured here (the coordinator's target). The test takes the count from `-Dorqix.loadTest.waits`.
+
+Frontend: schedule twin, inspector toggle and summary, optional results, Waiting-for panel and its actions, safety-net inspector, "Waiting on outside systems", browser simulator twin (with optional results and the safety net) and Test-tab answers.

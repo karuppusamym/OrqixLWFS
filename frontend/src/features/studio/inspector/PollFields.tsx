@@ -158,6 +158,27 @@ export function PollFields({ node, readOnlyOperation, results, before, systemNam
             </fieldset>
           ) : null}
 
+          {results.length > 0 ? (
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-semibold">May be missing until the work is done</legend>
+              <p className="text-xs text-muted-foreground">For values such as a ticket number that the other system only returns at the end. A missing value then means "not done yet".</p>
+              {results.map((f) => {
+                const key = f.ref.split('/').pop() as string
+                const optional = poll.optionalResults ?? []
+                return (
+                  <div key={f.ref} className="flex items-center gap-2">
+                    <Checkbox id={`poll-optional-${node.id}-${key}`} checked={optional.includes(key)} disabled={readOnly}
+                      onCheckedChange={(v) => {
+                        const next = v === true ? [...optional, key] : optional.filter((k) => k !== key)
+                        patch({ optionalResults: next.length ? next : undefined })
+                      }} />
+                    <Label htmlFor={`poll-optional-${node.id}-${key}`} className="font-normal">{f.label}</Label>
+                  </div>
+                )
+              })}
+            </fieldset>
+          ) : null}
+
           <FormField label="After failing checks in a row" id={`poll-errors-${node.id}`} description="Timeouts, server errors and rate limits count; 1 to 20.">
             {(ids) => (
               <div className="flex flex-wrap items-center gap-2">

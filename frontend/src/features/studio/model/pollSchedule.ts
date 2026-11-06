@@ -23,6 +23,8 @@ export interface PollConfig {
   onCheckError?: { maxConsecutive: number; then?: 'needsAttention' | 'timedOut' }
   finalCheckAtDeadline?: boolean
   showWhileWaiting?: string[]
+  /** Mapped results that may be missing in an answer (a missing one leaves the check pending). */
+  optionalResults?: string[]
 }
 
 export interface Schedule {

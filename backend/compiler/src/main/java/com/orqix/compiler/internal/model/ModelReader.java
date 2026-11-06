@@ -229,6 +229,8 @@ public final class ModelReader {
         JsonNode errors = p.get("onCheckError");
         List<String> shown = new ArrayList<>();
         p.path("showWhileWaiting").forEach(v -> shown.add(v.stringValue()));
+        List<String> optional = new ArrayList<>();
+        p.path("optionalResults").forEach(v -> optional.add(v.stringValue()));
         String every = p.get("every").stringValue();
         return new Node.Poll(!"afterInterval".equals(p.path("firstCheck").asString("immediate")), every,
                 backoff == null ? BigDecimal.ONE : backoff.get("multiplier").decimalValue(),
@@ -238,7 +240,7 @@ public final class ModelReader {
                 p.get("giveUpAfter").stringValue(), p.has("maxChecks") ? p.get("maxChecks").intValue() : null,
                 errors == null ? 5 : errors.get("maxConsecutive").intValue(),
                 errors != null && "timedOut".equals(errors.path("then").asString("needsAttention")),
-                p.path("finalCheckAtDeadline").asBoolean(true), List.copyOf(shown), p);
+                p.path("finalCheckAtDeadline").asBoolean(true), List.copyOf(shown), List.copyOf(optional), p);
     }
 
     /** S129: the safety-net check of a message wait. */

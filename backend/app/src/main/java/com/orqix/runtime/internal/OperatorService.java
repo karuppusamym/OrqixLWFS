@@ -61,6 +61,7 @@ public class OperatorService {
     private final RunMigrations migrations;
     private final ExternalJobService externalJobs;
     private final PollWaits polls;
+    private final WaitStates waitStates;
     private final RunRepair repairs;
     private final ConsistencyFindings consistency;
     private final RunConsistencyScan scan;
@@ -71,8 +72,9 @@ public class OperatorService {
             IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
             RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs, RunRepair repairs,
             ConsistencyFindings consistency, java.util.Optional<RunConsistencyScan> scan,
-            @org.springframework.context.annotation.Lazy PollWaits polls) {
+            @org.springframework.context.annotation.Lazy PollWaits polls, WaitStates waitStates) {
         this.polls = polls;
+        this.waitStates = waitStates;
         this.repairs = repairs;
         this.consistency = consistency;
         this.scan = scan.orElse(null);
@@ -545,7 +547,12 @@ public class OperatorService {
             throw new ApiException(ProblemCode.RUN_NOT_REPAIRABLE, verdict.diagnosis().message())
                     .with("currentVersion", run.version()).with("state", verdict.diagnosis().state());
         }
-        runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        if (verdict.rebuild() == null) {
+            // S129: only the "Waiting for" rows drifted; they are derived again from the unchanged steps.
+            waitStates.resync(workspaceId, runId, run.currentSteps());
+        } else {
+            runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        }
         consistency.forget(workspaceId, runId);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("reason", request.reason());

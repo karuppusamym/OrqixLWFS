@@ -224,6 +224,7 @@ public class AuditWriter {
             Map.entry("poll.checked-now", Set.of("waitId", "nodeId", "kind")),
             Map.entry("poll.deadline-extended", Set.of("waitId", "nodeId", "kind", "deadline")),
             Map.entry("poll.stopped", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.waits-purged", Set.of("count", "retentionSeconds")),
             Map.entry("callback.token-revoked", Set.of("waitId", "runId", "replaced")),
             Map.entry("callback.token-expired", Set.of("waitId", "runId")),
             Map.entry("callback.resumed", Set.of("waitId", "runId", "fieldCount", "channel")),

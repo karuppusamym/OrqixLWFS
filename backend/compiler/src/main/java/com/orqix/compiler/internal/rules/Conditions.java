@@ -225,6 +225,9 @@ final class Conditions {
         if (producer instanceof Node.WaitForMessage) {
             return "is not required, so a message may arrive without it";
         }
+        if (producer instanceof Node.Http) {
+            return "is marked as possibly missing in the answer of the checks";
+        }
         return "is only recorded when the approver enters one";
     }
 }

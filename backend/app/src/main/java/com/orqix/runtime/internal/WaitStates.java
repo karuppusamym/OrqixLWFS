@@ -49,6 +49,12 @@ public class WaitStates {
         if (before != null && before.equals(steps)) {
             return;
         }
+        resync(workspaceId, runId, steps);
+    }
+
+    /** Derives the rows again from the steps, whatever is stored (operator repair, S72). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void resync(UUID workspaceId, UUID runId, JsonNode steps) {
         Map<String, WaitRow> waits = new LinkedHashMap<>();
         for (JsonNode step : steps) {
             WaitRow row = fromStep(runId, step);

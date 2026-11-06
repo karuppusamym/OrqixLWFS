@@ -1505,6 +1505,15 @@
           "description": "One last check exactly at the deadline (default true).",
           "type": "boolean"
         },
+        "optionalResults": {
+          "description": "Mapped result fields that may be missing in an answer, for example a ticket number that appears only when the work is done. A missing value leaves the check pending instead of making the answer unusable; the field is an optional output of the step (WF_POLL_OPTIONAL).",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        },
         "showWhileWaiting": {
           "description": "Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW).",
           "type": "array",

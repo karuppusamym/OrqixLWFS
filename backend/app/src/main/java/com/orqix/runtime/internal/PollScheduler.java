@@ -18,9 +18,24 @@ public class PollScheduler {
     private static final Logger LOG = LoggerFactory.getLogger(PollScheduler.class);
 
     private final PollWaits polls;
+    private final java.time.Clock clock;
+    private final java.time.Duration retention;
 
-    public PollScheduler(PollWaits polls) {
+    public PollScheduler(PollWaits polls, java.time.Clock clock,
+            @org.springframework.beans.factory.annotation.Value("${orqix.polling.retention:30d}") java.time.Duration retention) {
         this.polls = polls;
+        this.clock = clock;
+        this.retention = retention;
+    }
+
+    /** Ended checks are kept for the retention (default 30 days), then deleted with an audited count. */
+    @Scheduled(fixedDelayString = "${orqix.polling.purge-delay:1h}", initialDelayString = "${orqix.polling.purge-delay:1h}")
+    public void purge() {
+        try {
+            polls.purge(clock.instant(), retention);
+        } catch (RuntimeException e) {
+            LOG.warn("Poll purge failed; it runs again later ({})", e.getClass().getSimpleName());
+        }
     }
 
     @Scheduled(fixedDelayString = "${orqix.polling.tick:2s}", initialDelayString = "${orqix.polling.tick:2s}")

@@ -351,7 +351,13 @@ public sealed interface Node {
                 int jitterPercent, WorkflowDefinition.Condition until, WorkflowDefinition.Condition failWhen,
                 String giveUpAfter, Integer maxChecks, int maxConsecutiveErrors, boolean errorsTimeOut,
                 boolean finalCheckAtDeadline, java.util.List<String> showWhileWaiting,
-                tools.jackson.databind.JsonNode json) { }
+                java.util.List<String> optionalResults, tools.jackson.databind.JsonNode json) {
+
+        /** @return true when this mapped result may be missing in an answer (it is then an optional output) */
+        public boolean optional(String key) {
+            return optionalResults.contains(key);
+        }
+    }
 
     /**
      * Safety-net check of a message wait (S129, CG-W03): the same call settings as a "Call a system" step and a slow

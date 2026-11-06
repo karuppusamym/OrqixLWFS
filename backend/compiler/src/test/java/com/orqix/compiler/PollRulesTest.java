@@ -247,6 +247,26 @@ class PollRulesTest {
         assertThat(blockers(d)).anyMatch(i -> i.startsWith("B WF_FIELDREF_NOT_GUARANTEED"));
     }
 
+    @Test
+    void optionalResultsMustBeKeptResultsAndAreOptionalOutputs() throws Exception {
+        ObjectNode d = definition();
+        ((ArrayNode) poll(d).putArray("optionalResults")).add("missing");
+        assertThat(blockers(d)).contains("B WF_POLL_OPTIONAL /nodes/10/config/poll/optionalResults/0");
+        d = definition();
+        ((ArrayNode) poll(d).putArray("optionalResults")).add("state");
+        assertThat(blockers(d)).isEmpty();
+        // A later step cannot rely on a value that may be missing.
+        for (JsonNode n : d.path("nodes")) {
+            if ("notify".equals(n.path("id").asString())) {
+                ((ObjectNode) n).setAll((ObjectNode) MAPPER.readTree("""
+                        {"id":"notify","type":"http","label":"Report","config":{"connectionRef":"order-status",
+                         "operation":"getStatus","inputMapping":{"orderId":"/steps/track/state"},"resultMapping":{},
+                         "timeoutSeconds":5}}"""));
+            }
+        }
+        assertThat(blockers(d)).anyMatch(i -> i.startsWith("B WF_FIELDREF_NOT_GUARANTEED"));
+    }
+
     // ------------------------------------------------------------------ schedule
 
     @Test
@@ -347,6 +367,8 @@ class PollRulesTest {
     void aSafetyNetCheckCompilesAndRoundTrips() throws Exception {
         ObjectNode d = fallbackDefinition(fallbackJson());
         assertThat(blockers(d)).isEmpty();
+        // The connection used only by the safety net counts as used.
+        assertThat(issues(d)).noneMatch(i -> i.contains("WF_DEPENDENCY_UNUSED"));
         String bpmn = Compilers.workflowCompiler().compile(d.toString(), context()).bpmnXml();
         assertThat(bpmn).contains("fallbackCheckBase64=", "fallbackConnectionVersion=\"1\"");
         var compiled = Compilers.workflowCompiler().compile(d.toString(), context());

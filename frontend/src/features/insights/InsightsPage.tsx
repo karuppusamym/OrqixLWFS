@@ -19,6 +19,7 @@ import { humanize } from '@/lib/text'
 import { useInsightsSteps, useInsightsSummary, useInsightsThroughput, type InsightsSteps, type InsightsSummary } from './api'
 import { formatSeconds, percent, rangeFor, STEP_KIND_LABEL, stepsCsv } from './format'
 import { ThroughputChart } from './ThroughputChart'
+import { OutsideWaits } from './OutsideWaits'
 import { insightsReport, reportFilename, throughputCsv } from './report'
 
 const RANGES = [7, 30, 90] as const
@@ -134,6 +135,7 @@ export function InsightsPage() {
         <div className="space-y-6" aria-busy={summary.isFetching}>
           <Cards data={summary.data} />
           <Bottlenecks query={steps} />
+          <OutsideWaits ws={ws} query={query} enabled={allowed} />
 
           <div className="grid gap-6 xl:grid-cols-2">
             <NeedsAttention ws={ws} data={summary.data} />

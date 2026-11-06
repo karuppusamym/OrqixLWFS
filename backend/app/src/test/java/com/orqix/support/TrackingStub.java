@@ -21,7 +21,10 @@ public final class TrackingStub {
     public record Call(Instant at, String body) {
     }
 
-    private record Answer(int status, String body) {
+    private record Answer(int status, String body, Integer retryAfter) {
+        Answer(int status, String body) {
+            this(status, body, null);
+        }
     }
 
     private static final Deque<Answer> QUEUE = new ArrayDeque<>();
@@ -53,6 +56,16 @@ public final class TrackingStub {
         }
     }
 
+    /** Queues one answer with this exact body (HTTP 200). */
+    public static synchronized void raw(String body) {
+        QUEUE.add(new Answer(200, body));
+    }
+
+    /** Queues one failure with a {@code Retry-After} in seconds. */
+    public static synchronized void failWithRetryAfter(int status, int seconds) {
+        QUEUE.add(new Answer(status, "{\"error\":\"slow down\"}", seconds));
+    }
+
     public static synchronized int calls() {
         return CALLS.size();
     }
@@ -70,7 +83,11 @@ public final class TrackingStub {
         if (answer.status() == 200) {
             last = answer;
         }
-        return new ResponseDefinitionBuilder().withStatus(answer.status()).withHeader("Content-Type", "application/json")
-                .withBody(answer.body()).build();
+        ResponseDefinitionBuilder builder = new ResponseDefinitionBuilder().withStatus(answer.status())
+                .withHeader("Content-Type", "application/json").withBody(answer.body());
+        if (answer.retryAfter() != null) {
+            builder.withHeader("Retry-After", Integer.toString(answer.retryAfter()));
+        }
+        return builder.build();
     }
 }

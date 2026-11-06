@@ -379,8 +379,10 @@ public final class FieldTypes {
         if (scalar == null) {
             return new Indeterminate();
         }
+        // S129: an optional result of a check may be missing even when the work is done.
+        boolean optional = h.polls() && h.poll().optional(key);
         return new Resolved(new FieldType(scalar.kind(), scalar.kind() == FieldKind.STRING ? scalar.enumValues()
-                : null, false, null, null), h, key);
+                : null, optional, null, null), h, key);
     }
 
     /** @return output keys of all rows and the default, sorted */

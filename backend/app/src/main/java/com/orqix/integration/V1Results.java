@@ -45,17 +45,25 @@ final class V1Results {
         List<String> truncated = new ArrayList<>();
         JsonNode responseSchema = operation.responseSchema();
         for (Map.Entry<String, String> entry : mapping.entrySet()) {
-            String pointer = entry.getValue();
+            // S129: "?" marks a result a check may not have yet; it is left out instead of failing the answer.
+            boolean optional = ResultMappings.isOptional(entry.getValue());
+            String pointer = ResultMappings.pointer(entry.getValue());
             ConnectionContracts.ResultPointer parsed = ConnectionContracts.parseResult(pointer);
             if (parsed == null) {
                 throw new Unresolved(pointer);
             }
             if (parsed.header() != null) {
+                if (optional && (headers == null || headers.firstValue(parsed.header()).isEmpty())) {
+                    continue;
+                }
                 result.set(entry.getKey(), header(operation, parsed.header(), headers, pointer));
                 continue;
             }
             if (!parsed.projection()) {
                 JsonNode value = body.at(pointer);
+                if (optional && (value.isMissingNode() || value.isNull())) {
+                    continue;
+                }
                 if (value.isMissingNode() || value.isNull() || value.isContainer()) {
                     throw new Unresolved(pointer);
                 }

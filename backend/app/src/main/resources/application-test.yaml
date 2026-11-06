@@ -43,6 +43,9 @@ logging:
     org.springframework.boot.autoconfigure: warn
 
 orqix:
+  mcp:
+    # S136 tests: the elicitation stream gives up quickly when a test never answers.
+    elicitation-wait: 10s
   insights:
     # Tests read figures right after changing data, so no figure is kept (production default: 30 seconds).
     cache-ttl-seconds: 0

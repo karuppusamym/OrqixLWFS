@@ -161,6 +161,8 @@ export interface Definition {
   inputUi?: InputUiDoc
   outputSchema: FormSchemaDoc
   triggers: Array<'manual' | 'api'>
+  /** CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool; never changes execution. */
+  exposeAsTool?: boolean
   nodes: WorkflowNode[]
   transitions: Transition[]
   decisions: DecisionTable[]

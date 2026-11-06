@@ -696,6 +696,16 @@ export const getWorkspaceFeatures = (ws: string) =>
 export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))
 
+// CG-M04 MCP server (docs/build/S136): per-workspace switch, connection details and recent tool calls.
+export const getMcpServer = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } } }))
+
+export const setMcpServer = (ws: string, enabled: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } }, body: { enabled } }))
+
+export const listMcpCalls = (ws: string, limit = 50) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server/calls', { params: { path: { workspaceId: ws }, query: { limit } } }))
+
 // Control evidence packs (docs/27 section 3): per release and per run, as PDF, DOCX or JSON.
 export type EvidencePackFormat = 'pdf' | 'docx' | 'json'
 

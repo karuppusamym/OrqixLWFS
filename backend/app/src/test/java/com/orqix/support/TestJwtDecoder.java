@@ -18,6 +18,14 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestJwtDecoder {
 
+    /** MCP tokens (S136): real RS256 signatures with the test key; issuer, expiry and audience as in production. */
+    @Bean
+    @org.springframework.context.annotation.Primary
+    com.orqix.mcp.McpTokens mcpTokens(com.orqix.mcp.McpSettings settings, java.time.Clock clock) {
+        return new com.orqix.mcp.McpTokens(settings, clock,
+                () -> org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withPublicKey(McpTestTokens.publicKey()).build());
+    }
+
     @Bean
     JwtDecoder jwtDecoder() {
         return token -> {

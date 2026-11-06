@@ -5155,6 +5155,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/mcp-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Whether AI assistants may use Orqix through MCP in this workspace (CG-M04, S136)
+         * @description The Orqix MCP server (endpoint /mcp, Streamable HTTP, protocol 2025-11-25) lets an assistant act for the
+         *     signed-in person with that person's own permissions. It is off in every workspace until a workspace
+         *     administrator switches it on. The endpoint and protected resource metadata URLs are what an MCP client needs.
+         */
+        get: operations["getMcpServer"];
+        /**
+         * Switch the MCP server on or off for this workspace (S136)
+         * @description Takes effect on the next MCP call on every replica (no cache). Switching off hides the workspace from MCP
+         *     clients at once (its tools disappear, calls answer like an unknown workspace) and pending confirmations can no
+         *     longer be confirmed. Setting the current value again changes nothing and writes no audit record.
+         */
+        put: operations["setMcpServer"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/mcp-server/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Recent MCP tool calls in this workspace, newest first (S136)
+         * @description Read from the audit log (action mcp.tool-called): who called which tool, the step (read, prepare, confirm,
+         *     elicitation answer), the outcome and the IDs involved. Never arguments, values or results.
+         */
+        get: operations["listMcpCalls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/access": {
         parameters: {
             query?: never;
@@ -7683,6 +7736,50 @@ export interface components {
         };
         WorkspaceFeatures: {
             items: components["schemas"]["WorkspaceFeatureState"][];
+        };
+        McpServer: {
+            /** @description false until a workspace administrator switches it on */
+            enabled: boolean;
+            /**
+             * Format: uri
+             * @description The MCP endpoint (resource URI) to give an MCP client
+             */
+            endpoint: string;
+            /**
+             * Format: uri
+             * @description OAuth protected resource metadata (RFC 9728)
+             */
+            metadataUrl: string;
+            /** @description Token audiences accepted besides the endpoint URI */
+            audiences: string[];
+            /** @description Tool calls one person may make per minute (per pod) */
+            callsPerMinute: number;
+            /** @description How long a prepared write can be confirmed */
+            confirmationSeconds: number;
+            /** @description null until first switched */
+            updatedAt: components["schemas"]["Timestamp"] | null;
+            updatedBy: components["schemas"]["SubjectRef"] | null;
+        };
+        SetMcpServer: {
+            enabled: boolean;
+        };
+        McpCall: {
+            occurredAt: components["schemas"]["Timestamp"];
+            actor: components["schemas"]["SubjectRef"] | null;
+            /** @description Tool name, or unknown for a name that is not an Orqix tool */
+            tool: string;
+            /** @description read, prepare, confirm, elicitationAccepted or elicitationDeclined */
+            step: string | null;
+            /** @description success, confirmationRequired, replayed, declined, expired, rateLimited, denied or failed */
+            outcome: string;
+            errorCode: string | null;
+            runId: components["schemas"]["Uuid"] | null;
+            taskId: string | null;
+            workflowId: components["schemas"]["Uuid"] | null;
+            confirmationId: components["schemas"]["Uuid"] | null;
+        };
+        McpCallList: {
+            items: components["schemas"]["McpCall"][];
         };
         SetWorkspaceFeature: {
             enabled: boolean;
@@ -11426,6 +11523,8 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
+            /** @description CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution. */
+            exposeAsTool?: boolean;
             nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
@@ -21439,6 +21538,88 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The switch and the connection details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMcpServer"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listMcpCalls: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent calls */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpCallList"];
+                };
+            };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

@@ -43,6 +43,7 @@ public class ReleaseEvidencePack {
             + "template bodies, test inputs or free-text notes. The full definition is in the release export bundle.";
 
     private final JdbcClient jdbc;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks;
     private final PolicyService policy;
     private final SubjectService subjects;
     private final EvidenceRenderer renderer;
@@ -51,7 +52,9 @@ public class ReleaseEvidencePack {
     private final Clock clock;
 
     public ReleaseEvidencePack(JdbcClient jdbc, PolicyService policy, SubjectService subjects,
-            EvidenceRenderer renderer, AuditWriter audit, Json json, Clock clock) {
+            EvidenceRenderer renderer, AuditWriter audit, Json json, Clock clock,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks) {
+        this.aiTasks = aiTasks;
         this.jdbc = jdbc;
         this.policy = policy;
         this.subjects = subjects;
@@ -144,6 +147,30 @@ public class ReleaseEvidencePack {
         for (JsonNode w : release.manifest().path("workflows")) {
             references.addObject().put("type", "Child workflow").put("key", w.path("workflowKey").asString())
                     .put("version", "release " + w.path("releaseNumber").asString()).put("hash", w.path("semanticHash").asString(null));
+        }
+        // S134: AI skill versions pinned by AI tasks, with the evaluation run that passed the publish gate.
+        ArrayNode aiEvaluations = pack.putArray("aiEvaluations");
+        for (JsonNode s : release.manifest().path("aiSkills")) {
+            references.addObject().put("type", "AI skill").put("key", s.path("skillKey").asString())
+                    .put("version", s.path("version").asString()).put("hash", s.path("contentHash").asString(null));
+            ObjectNode item = aiEvaluations.addObject().put("step", s.path("nodeId").asString())
+                    .put("skill", s.path("skillKey").asString() + " v" + s.path("version").asString())
+                    .put("autonomy", s.path("autonomy").asString()).put("modelProfile", s.path("modelProfile").asString());
+            JsonNode evidence = null;
+            if (s.path("evaluationRunId").isString() && aiTasks.getIfAvailable() != null) {
+                evidence = aiTasks.getIfAvailable().evaluationEvidence(ws,
+                        UUID.fromString(s.path("evaluationRunId").asString()));
+            }
+            if (evidence == null) {
+                item.put("evaluation", "shadow".equals(s.path("autonomy").asString()) ? "Not required (shadow mode)"
+                        : "Not found");
+            } else {
+                item.put("evaluation", evidence.path("status").asString() + ", accuracy "
+                        + evidence.path("accuracy").asString("") + " on " + evidence.path("cases").asInt() + " cases ("
+                        + evidence.path("suite").asString() + ")");
+                item.put("evaluatedAt", evidence.path("finishedAt").asString(null));
+                item.put("evaluationRunId", evidence.path("evaluationRunId").asString());
+            }
         }
         for (JsonNode a : release.manifest().path("assets")) {
             references.addObject().put("type", "Shared asset").put("key", a.path("key").asString(a.path("id").asString("")))
@@ -396,6 +423,10 @@ public class ReleaseEvidencePack {
         sections.add(EvidenceDocument.table("Pinned references", "Versions this release is bound to; later changes to them do not affect it.",
                 pack.path("pinnedReferences"), "No pinned rule tables, connections, child workflows or shared assets.",
                 "type", "Type", "key", "Key", "version", "Version", "hash", "Hash"));
+        sections.add(EvidenceDocument.table("AI evaluation gate", "Each AI task pins an approved skill version; the"
+                + " evaluation run below passed the publish gate (within 30 days, on the pinned model profile).",
+                pack.path("aiEvaluations"), "No AI tasks.", "step", "Step", "skill", "Skill", "autonomy", "Autonomy",
+                "modelProfile", "Profile", "evaluation", "Evaluation", "evaluatedAt", "Evaluated"));
         sections.add(EvidenceDocument.table("Promotion requests", null, pack.path("promotions"),
                 "No promotion requests for this release.", "targetWorkspace", "Target workspace", "status", "Status",
                 "requestedBy", "Requested by", "requestedAt", "Requested", "decidedBy", "Decided by", "decidedAt", "Decided"));

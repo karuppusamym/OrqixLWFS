@@ -68,6 +68,24 @@ class AccessApiTest extends IntegrationTestBase {
         assertThat(updated.body().path("revision").asInt()).isEqualTo(2);
     }
 
+    /**
+     * Every grantable permission can be granted and revoked workspace-wide. Guards the merged permission checks
+     * (V290): separate migrations once rebuilt the same database check with different lists.
+     */
+    @Test
+    void everyGrantablePermissionCanBeGranted() throws Exception {
+        for (String permission : List.of("workflow.start", "connection.manage", "message.send", "document.browse",
+                "job.work", "audit.read", "workflow.approve-promotion", "agent.approve-write-tool", "connector.manage",
+                "connector.approve", "ai.approve-skill", "ai.evaluate")) {
+            Response grant = api("wade.admin").post(Map.of("permission", permission,
+                    "principal", Map.of("type", "idpGroup", "value", "orqix-grant-check")),
+                    "/workspaces/{ws}/access/grants", SANDBOX);
+            assertThat(grant.status()).as(permission + ": " + grant).isEqualTo(201);
+            assertThat(api("wade.admin").delete("/workspaces/{ws}/access/grants/{id}", SANDBOX,
+                    grant.body().path("id").asString()).status()).as(permission).isEqualTo(204);
+        }
+    }
+
     @Test
     void platformAdministration() throws Exception {
         assertThat(api("wade.admin").get("/admin/organizations").status()).isEqualTo(403);

@@ -172,7 +172,7 @@ public class WebhookDispatcher {
             boolean dns = e.denial() == EgressPolicy.Denial.DNS_FAILURE;
             return new Result(false, !dns, 0, dns ? "dns_failure" : "egress_denied");
         }
-        String secret = secrets.read(c.secretRef()).orElse(null);
+        String secret = secrets.read(c.secretRef(), c.workspaceId()).orElse(null);
         if (secret == null) {
             return new Result(false, false, 0, "secret_unavailable");
         }

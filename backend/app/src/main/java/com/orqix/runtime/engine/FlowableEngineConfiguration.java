@@ -24,7 +24,7 @@ public class FlowableEngineConfiguration {
 
     /** The only names an expression in generated BPMN may resolve. */
     public static final List<String> EXPRESSION_BEANS =
-            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask", "orqixExternalTask", "orqixCompensationTask", "orqixAdapterTask");
+            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask", "orqixExternalTask", "orqixCompensationTask", "orqixAdapterTask", "orqixPollTask", "orqixAiTask");
 
     @Bean(destroyMethod = "shutdown")
     DefaultAsyncTaskExecutor orqixJobTaskExecutor(OrqixProperties properties) {
@@ -50,6 +50,8 @@ public class FlowableEngineConfiguration {
             ExternalTaskDelegate orqixExternalTask,
             CompensationTaskDelegate orqixCompensationTask,
             AdapterTaskDelegate orqixAdapterTask,
+            PollTaskDelegate orqixPollTask,
+            AiTaskDelegate orqixAiTask,
             RuntimeProjectionListener projectionListener,
             OrqixFailedJobCommandFactory failedJobCommandFactory,
             DefaultAsyncTaskExecutor orqixJobTaskExecutor) {
@@ -65,12 +67,18 @@ public class FlowableEngineConfiguration {
             beans.put("orqixExternalTask", orqixExternalTask);
             beans.put("orqixCompensationTask", orqixCompensationTask);
             beans.put("orqixAdapterTask", orqixAdapterTask);
+            beans.put("orqixPollTask", orqixPollTask);
+            beans.put("orqixAiTask", orqixAiTask);
             configuration.setBeans(beans);
 
             configuration.setEnableEventDispatcher(true);
             List<FlowableEventListener> listeners = configuration.getEventListeners() == null
                     ? new java.util.ArrayList<>() : new java.util.ArrayList<>(configuration.getEventListeners());
             listeners.add(projectionListener);
+            // Cancels the open worker job when the engine cancels its step (S132).
+            listeners.add(orqixExternalTask);
+            // Cancels the open AI job and deletes its turn state when the engine cancels an AI task (S134).
+            listeners.add(orqixAiTask);
             configuration.setEventListeners(listeners);
 
             configuration.setFailedJobCommandFactory(failedJobCommandFactory);

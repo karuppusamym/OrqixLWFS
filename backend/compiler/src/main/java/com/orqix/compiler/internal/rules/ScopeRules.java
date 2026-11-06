@@ -41,7 +41,7 @@ final class ScopeRules {
 
     private static final Set<NodeKind> SECTION_KINDS = Set.of(NodeKind.APPROVAL, NodeKind.DECISION, NodeKind.BRANCH,
             NodeKind.HTTP, NodeKind.GENERATE_DOCUMENT, NodeKind.NOTIFICATION, NodeKind.WAIT, NodeKind.WAIT_FOR_SIGNAL,
-            NodeKind.SEND_SIGNAL, NodeKind.RAISE_ERROR, NodeKind.COMPENSATE);
+            NodeKind.SEND_SIGNAL, NodeKind.RAISE_ERROR, NodeKind.COMPENSATE, NodeKind.EXTERNAL_TASK);
     private static final Set<NodeKind> HANDLER_KINDS = Set.of(NodeKind.APPROVAL, NodeKind.DECISION, NodeKind.BRANCH,
             NodeKind.HTTP, NodeKind.GENERATE_DOCUMENT, NodeKind.NOTIFICATION, NodeKind.WAIT, NodeKind.SEND_SIGNAL,
             NodeKind.COMPENSATE, NodeKind.END);
@@ -261,7 +261,8 @@ final class ScopeRules {
     /** A step that can raise {@code code} (null: any code): a raised error or a call set to raise one on failure. */
     private static boolean raises(Node m, String code) {
         String raised = m instanceof Node.RaiseError r ? r.errorCode()
-                : m instanceof Node.Http h ? h.raiseOnFailure() : null;
+                : m instanceof Node.Http h ? h.raiseOnFailure()
+                : m instanceof Node.ExternalTask e ? e.raiseOnFailure() : null;
         return raised != null && (code == null || code.equals(raised));
     }
 
@@ -417,16 +418,18 @@ final class ScopeRules {
     private static void callFailures(RuleContext rc) {
         Graph g = rc.graph();
         for (Node n : rc.definition().nodes()) {
-            if (!(n instanceof Node.Http h) || h.raiseOnFailure() == null || g.isShadowed(n)) {
+            // S132 (CG-E10): a worker's business error can raise the code the same way as a call's known failure.
+            String code = n instanceof Node.Http h ? h.raiseOnFailure()
+                    : n instanceof Node.ExternalTask e ? e.raiseOnFailure() : null;
+            if (code == null || g.isShadowed(n)) {
                 continue;
             }
             String path = n.configPath("raiseErrorOnFailure");
-            String code = h.raiseOnFailure();
             if (code.startsWith(RESERVED_ERROR_PREFIX)) {
                 reserved(rc, path, code);
                 continue;
             }
-            if (h.automaticUndo()) {
+            if (n instanceof Node.Http h && h.automaticUndo()) {
                 rc.issues().blocker("WF_CALL_FAILURE_ERROR_CONFLICT", path, n.id(), null, q(n) + " is an automatic"
                         + " undo call. It runs from an Undo step and cannot raise an error when it fails.");
                 continue;

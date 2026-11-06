@@ -85,6 +85,32 @@ public class OrqixRoute {
         return matches(execution, condition);
     }
 
+    /**
+     * A path out of a call that keeps checking until done (docs/build/S129): true when the poll scheduler triggered the
+     * step with this outcome ({@code met}, {@code failed} or {@code timedOut}). The node id and outcome come from the
+     * generated BPMN, never from user text.
+     */
+    public boolean polled(DelegateExecution execution, String nodeId, String outcome) {
+        Object value = execution.getVariable(com.orqix.runtime.internal.PollWaits.outcomeVariable(nodeId));
+        if (value == null) {
+            throw new IllegalStateException("Step " + nodeId + " continued without the outcome of its checks");
+        }
+        return outcome.equals(value);
+    }
+
+    /**
+     * A path out of an AI task (docs/build/S134): true when the AI task worker triggered the step with this route
+     * ({@code next}, {@code lowConfidence}, {@code needsReview}, {@code aiUnavailable} or {@code label:<key>}). The node
+     * id and the route come from the generated BPMN, never from user text or model output.
+     */
+    public boolean ai(DelegateExecution execution, String nodeId, String route) {
+        Object value = execution.getVariable(com.orqix.runtime.internal.AiTaskJobs.routeVariable(nodeId));
+        if (value == null) {
+            throw new IllegalStateException("AI task " + nodeId + " continued without a route");
+        }
+        return route.equals(value);
+    }
+
     /** Prefix of the process variable that holds the step a section was left to (S59). */
     static final String EXIT_VARIABLE = "orqix_exit_";
 

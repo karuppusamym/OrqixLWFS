@@ -57,6 +57,11 @@ public class RunStore {
     /** Step kinds that wait for something other than a job: a person, a timer or a child run. */
     private static final java.util.Set<String> WAITING_KINDS = java.util.Set.of("approval", "wait", "child", "external");
 
+    /** S129: a call that keeps checking until done waits between its checks. */
+    private static boolean waits(JsonNode step) {
+        return WAITING_KINDS.contains(step.path("kind").asString("")) || step.path("polling").asBoolean(false);
+    }
+
     /** Mutable view used by {@link #mutate}. */
     public static final class Mutation {
         public String lifecycle;
@@ -145,7 +150,7 @@ public class RunStore {
             }
             boolean onlyWaiting = steps.size() > 0;
             for (JsonNode step : steps) {
-                if (!WAITING_KINDS.contains(step.path("kind").asString(""))) {
+                if (!waits(step)) {
                     onlyWaiting = false;
                 }
             }
@@ -173,9 +178,12 @@ public class RunStore {
     private final Clock clock;
     private final org.springframework.beans.factory.ObjectProvider<RunStages> stages;
     private final RunReferences references;
+    private final org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates;
 
     public RunStore(JdbcClient jdbc, Json json, Clock clock,
-            org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references) {
+            org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references,
+            org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates) {
+        this.waitStates = waitStates;
         this.references = references;
         this.jdbc = jdbc;
         this.json = json;
@@ -331,6 +339,8 @@ public class RunStore {
                 .update();
         // Case stages are derived from the final steps of the transaction (docs/build/S17 section 4).
         stages.getObject().touch(workspaceId, runId, row.releaseId());
+        // What the request waits for, derived from the same steps (docs/build/S129, CG-W08).
+        waitStates.getObject().sync(workspaceId, runId, row.currentSteps(), m.steps);
         return find(workspaceId, runId).orElseThrow();
     }
 

@@ -361,7 +361,20 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
+        // S133: package versions are organization assets; a foreign caller is refused on the workspace before any lookup.
+        ids.put("packageVersionId", UUID.randomUUID().toString());
+        ids.put("packageTriggerId", UUID.randomUUID().toString());
+        ids.put("templateKey", "it-access-request");
         ids.put("writeId", UUID.randomUUID().toString());
+        // S134: AI skills, suites, evaluations, promotions, candidates and decisions; the workspace is invisible to
+        // foreign principals, so well-formed unknown ids prove the 404 as well as real ones.
+        ids.put("skillKey", "matrix-skill");
+        ids.put("version", "1");
+        ids.put("suiteKey", "matrix-suite");
+        ids.put("evaluationId", UUID.randomUUID().toString());
+        ids.put("promotionId", UUID.randomUUID().toString());
+        ids.put("candidateId", UUID.randomUUID().toString());
+        ids.put("decisionId", UUID.randomUUID().toString());
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
         ids.put("grantId", access.path("grants").get(0).path("id").asString());
@@ -533,6 +546,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     "enabled", true);
             case "finishConnectionOAuth" -> Map.of("state", "a".repeat(43), "code", "foreign-code");
             case "testConnection" -> Map.of("version", 1, "operation", "health");
+            // CG-W04 (S131): a valid request limit, so a 404 cannot be explained by the body.
+            case "putConnectionRateLimit" -> Map.of("maxRequestsPerMinute", 60);
             case "reviewOpenApiConnection" -> Map.of("source", "{}");
             case "createAdapter" -> Map.of("key", "foreign-adapter", "kind", "kafka", "name", "Foreign", "secretRef", "foreign-ref",
                     "config", Map.of("allowedTopics", List.of("foreign.topic")));
@@ -551,7 +566,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "revokeAgentWriteTool" -> Map.of("reason", "Foreign", "expectedVersion", 1);
             case "reconcileAgentWrite" -> Map.of("outcome", "notApplied", "reason", "Foreign", "expectedVersion", 1);
             case "setAgentWriteRetention" -> Map.of("retentionDays", 1, "expectedVersion", 0);
+            // S135 agent tools: well-formed bodies, so a 404 cannot be explained by validation.
+            case "setAgentKillSwitch" -> Map.of("active", true, "reason", "Foreign attempt");
+            case "setAgentTraceSettings" -> Map.of("enabled", true, "expectedVersion", 0);
+            case "saveAgentTestSuite" -> Map.of("suite", Map.of("operation", "assessVendor", "cases", List.of()),
+                    "expectedVersion", 0);
+            case "answerAgentRequest" -> Map.of("decision", "approve", "expectedVersion", 1);
             case "setWorkspaceFeature" -> Map.of("enabled", false);
+            // CG-M04 (S136): a well-formed switch, so a foreign 404 cannot be explained by the body.
+            case "setMcpServer" -> Map.of("enabled", true);
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
@@ -565,6 +588,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",
                     Map.of("bindings", List.of(), "actions", List.of()), "height", 120);
             case "decideUiExtensionVersion" -> Map.of("decision", "approve", "note", "Foreign attempt", "expectedStatus", "pending");
+            case "importConnectorPackage" -> Map.of("archive", "UEsDBBQAAAAIAA==");
+            case "decideConnectorPackage" -> Map.of("decision", "approve", "sha256", "0".repeat(64), "note", "Foreign",
+                    "expectedRevision", 1);
+            case "retireConnectorPackage" -> Map.of("reason", "Foreign attempt", "expectedRevision", 1);
+            case "createWorkflowFromPackageTemplate" -> Map.of("key", "foreign-package-wf", "name", "Foreign");
+            case "createPackageTrigger" -> Map.of("packageId", "com.orqix.servicenow-itsm", "triggerKey", "incident-updated",
+                    "secretRef", "foreign-hook");
+            case "updatePackageTrigger" -> Map.of("secretRef", "foreign-hook", "enabled", false, "expectedVersion", 1);
+            case "receivePackageTriggerEvent" -> Map.of("sys_id", "x");
             default -> null;
         };
     }
@@ -583,7 +615,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

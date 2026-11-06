@@ -154,6 +154,17 @@ orqix:
     cache-ttl: 50s
   idempotency:
     retention: 30d
+  mcp:
+    # CG-M04 MCP server (docs/build/S136). Off in every workspace until a workspace administrator switches it on in
+    # Settings. Tokens must come from the issuer below and name this resource (resource-uri) or one of the audiences.
+    resource-uri: ${ORQIX_MCP_RESOURCE_URI:}
+    audiences: ${ORQIX_MCP_AUDIENCES:orqix-mcp}
+    issuer: ${ORQIX_MCP_ISSUER:${spring.security.oauth2.resourceserver.jwt.issuer-uri:}}
+    jwk-set-uri: ${ORQIX_MCP_JWK_SET_URI:${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}}
+    allowed-origins: ${ORQIX_MCP_ALLOWED_ORIGINS:}
+    calls-per-minute: 60
+    confirmation-ttl: 5m
+    elicitation-wait: 60s
   callbacks:
     # S104: closed callback waits are deleted after this (their tokens then answer 404); poll + resume calls per token
     # per minute on each pod.
@@ -168,7 +179,31 @@ orqix:
     allowed-private-hosts: []
     plain-http-hosts: []
   secrets:
+    # Plain secretRef names are files here (mounted Kubernetes/OpenShift Secrets), read on every use.
     dir: /var/run/secrets/orqix
+    # Secret providers (docs/build/S132). A secretRef with a scheme (vault:, aws-sm:, azure-kv:, gcp-sm:) is
+    # resolved by that provider at dispatch and cached for cache-ttl (0s turns the cache off). Every provider is off
+    # until enabled; a reference to a disabled provider resolves to nothing (connection unavailable).
+    cache-ttl: ${ORQIX_SECRETS_CACHE_TTL:30s}
+    timeout: ${ORQIX_SECRETS_TIMEOUT:5s}
+    audit-flush-delay: 5s
+    vault:
+      enabled: ${ORQIX_VAULT_ENABLED:false}
+      address: ${ORQIX_VAULT_ADDR:}
+      namespace: ${ORQIX_VAULT_NAMESPACE:}
+      # token (token-file, e.g. written by Vault Agent) or kubernetes (service-account login)
+      auth: ${ORQIX_VAULT_AUTH:token}
+      token-file: ${ORQIX_VAULT_TOKEN_FILE:}
+      kubernetes-role: ${ORQIX_VAULT_K8S_ROLE:}
+      kubernetes-mount: ${ORQIX_VAULT_K8S_MOUNT:kubernetes}
+    aws:
+      enabled: ${ORQIX_AWS_SECRETS_ENABLED:false}
+      region: ${AWS_REGION:}
+    azure:
+      enabled: ${ORQIX_AZURE_KEYVAULT_ENABLED:false}
+      client-id: ${ORQIX_AZURE_CLIENT_ID:}
+    gcp:
+      enabled: ${ORQIX_GCP_SECRETS_ENABLED:false}
   attachments:
     # Files on requests (docs/build/S17). max-file-bytes cannot exceed 10 MiB (database, workflow schema, multipart cap).
     max-file-bytes: 10485760

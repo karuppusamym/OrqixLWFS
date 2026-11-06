@@ -237,6 +237,7 @@ final class SimulationRun {
             }
             case Node.ExternalTask n -> externalTask(n);
             case Node.SendAdapter n -> sendAdapter(n);
+            case Node.AiTask n -> aiTask(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -744,6 +745,9 @@ final class SimulationRun {
     // ------------------------------------------------------------------ http
 
     private Transition http(Node.Http n) {
+        if (n.polls()) {
+            return polled(n);
+        }
         JsonNode s = scenario.path("calls").path(n.id());
         String failure = s.path("failure").asString(null);
         if (failure != null && !Set.of("rejected", "unavailable", "unknownOutcome", "timeout").contains(failure)) {
@@ -1028,6 +1032,229 @@ final class SimulationRun {
         return t;
     }
 
+    /** Checks listed in the trace details; later ones are only counted. */
+    private static final int LISTED_CHECKS = 50;
+
+    /**
+     * A call that keeps checking until done (S129). The test may give a sequence of answers under
+     * {@code calls.<id>.checks} (each {@code {result}} or {@code {failure: "unavailable"|"rejected"}}); the last one
+     * repeats. Without a sequence the single answer ({@code result} or a sample) repeats. The checks follow the same
+     * jitter-free schedule as the runtime ({@link com.orqix.compiler.PollSchedule}) and report their simulated time.
+     */
+    private Transition polled(Node.Http n) {
+        Node.Poll p = n.poll();
+        JsonNode s = scenario.path("calls").path(n.id());
+        JsonNode checks = s.path("checks");
+        if (!checks.isMissingNode() && (!checks.isArray() || checks.isEmpty() || checks.size() > 100)) {
+            throw new IllegalArgumentException("calls." + n.id() + ".checks must list 1 to 100 answers");
+        }
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        Connections.Pinned pinned = connections.pinned(n.connectionRef());
+        String connName = pinned != null && pinned.status() == Connections.Status.OK
+                ? pinned.definition().path("name").asString(n.connectionRef()) : n.connectionRef();
+        com.orqix.compiler.PollSchedule schedule = schedule(p);
+        java.util.List<Long> offsets = schedule.offsets(Math.max(1, schedule.maxChecks()));
+        ObjectNode d = F.objectNode();
+        d.put("connection", n.connectionRef());
+        d.put("connectionName", connName);
+        d.put("operation", n.operation());
+        d.put("polling", true);
+        d.put("plannedChecks", offsets.size());
+        ArrayNode listed = d.putArray("checks");
+        String callText = Text.quote(n.label()) + " checks " + connName + " ("
+                + (op == null ? n.operation() : op.path("label").asString(n.operation())) + ")";
+        int errors = 0;
+        for (int i = 0; i < offsets.size(); i++) {
+            long at = offsets.get(i);
+            JsonNode answer = checks.isArray() ? checks.get(Math.min(i, checks.size() - 1)) : s;
+            String failure = answer.path("failure").asString(null);
+            ObjectNode entry = i < LISTED_CHECKS ? listed.addObject() : F.objectNode();
+            entry.put("check", i + 1);
+            entry.put("atSeconds", at);
+            Map<String, Object> out = failure == null ? mapped(n, answer, op) : null;
+            if (failure != null || out == null) {
+                String kind = failure == null ? "invalidResponse" : failure;
+                if (!Set.of("unavailable", "rejected", "invalidResponse").contains(kind)) {
+                    throw new IllegalArgumentException("calls." + n.id() + ".checks[" + i + "].failure must be"
+                            + " unavailable or rejected");
+                }
+                entry.put("outcome", kind);
+                if (!"unavailable".equals(kind)) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; at " + clock(at)
+                            + ("rejected".equals(kind) ? " the system refuses the request."
+                            : " the answer cannot be used.");
+                    String reason = "rejected".equals(kind) ? "EFFECT_REJECTED" : "RESPONSE_INVALID";
+                    if (next(n, Route.FAILED) != null) {
+                        return knownFailure(n, d, what, reason);
+                    }
+                    stallWith(n, what + " The request needs attention.", d, reason,
+                            "The checks stopped on an answer that cannot be used. Someone must fix the cause and retry.");
+                    return null;
+                }
+                errors++;
+                if (errors >= p.maxConsecutiveErrors()) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; the last "
+                            + Text.count(errors, "check") + " could not reach it.";
+                    if (p.errorsTimeOut()) {
+                        Transition t = next(n, Route.TIMED_OUT);
+                        add(n, what + " It gives up and takes the timed-out path.", d, null, t);
+                        return t;
+                    }
+                    stallWith(n, what + " The request needs attention until someone checks again.", d,
+                            "POLL_CHECKS_FAILING", "The checks failed " + errors + " times in a row.");
+                    return null;
+                }
+                continue;
+            }
+            errors = 0;
+            entry.set("values", DefaultWorkflowSimulator.json(out));
+            // The conditions read this answer as the step's own values; they become outputs only when done.
+            steps.put(n.id(), out);
+            boolean done = evaluate(p.until(), F.arrayNode());
+            boolean failed = !done && p.failWhen() != null && evaluate(p.failWhen(), F.arrayNode());
+            if (!done && !failed) {
+                entry.put("outcome", "pending");
+                steps.remove(n.id());
+                continue;
+            }
+            entry.put("outcome", done ? "done" : "failed");
+            d.put("checksMade", i + 1);
+            d.set("result", DefaultWorkflowSimulator.json(out));
+            String when = callText + " " + Text.count(i + 1, "time") + (i == 0 ? "" : " (" + pendingText(i) + ")")
+                    + ". At " + clock(at) + " the answer " + (done ? "says the work is done" : "says the work failed")
+                    + (out.isEmpty() ? "" : " and returns " + outputsText(out)) + ".";
+            if (done) {
+                Transition t = next(n, Route.NEXT);
+                add(n, when, d, out, t);
+                return t;
+            }
+            Map<String, Object> failure2 = new LinkedHashMap<>(out);
+            failure2.put("failureKind", "remoteFailed");
+            failure2.put("failureHttpStatus", 0);
+            failure2.put("failureMessage", "The other system reports that the work failed.");
+            steps.put(n.id(), failure2);
+            Transition t = next(n, Route.FAILED);
+            add(n, when + " The request takes the failed path.", d, failure2, t);
+            return t;
+        }
+        d.put("checksMade", offsets.size());
+        Transition t = next(n, Route.TIMED_OUT);
+        long deadline = offsets.isEmpty() ? 0 : offsets.get(offsets.size() - 1);
+        add(n, callText + " " + Text.count(offsets.size(), "time") + " until " + clock(deadline)
+                + "; the work is never done in this test, so it gives up and takes the timed-out path.", d, null, t);
+        return t;
+    }
+
+    /** @return the schedule the runtime would use for these settings */
+    static com.orqix.compiler.PollSchedule schedule(Node.Poll p) {
+        long every = com.orqix.compiler.PollSchedule.seconds(p.every());
+        long cap = com.orqix.compiler.PollSchedule.seconds(p.maxInterval());
+        long deadline = com.orqix.compiler.PollSchedule.seconds(p.giveUpAfter());
+        int worst = com.orqix.compiler.PollSchedule.worstCase(every, p.multiplier(), cap, deadline,
+                p.firstCheckImmediate(), p.finalCheckAtDeadline());
+        int max = Math.min(com.orqix.compiler.PollSchedule.CHECK_LIMIT, p.maxChecks() == null ? worst
+                : Math.min(worst, p.maxChecks()));
+        return new com.orqix.compiler.PollSchedule(every, p.multiplier(), cap, deadline, p.firstCheckImmediate(),
+                p.finalCheckAtDeadline(), max);
+    }
+
+    private static String pendingText(int pending) {
+        return pending == 1 ? "the first answer says not done yet" : "the first " + pending + " answers say not done yet";
+    }
+
+    /** @return elapsed simulated time as h:mm, or d days h:mm beyond a day */
+    private static String clock(long seconds) {
+        long days = seconds / 86_400;
+        long hours = seconds % 86_400 / 3600;
+        long minutes = seconds % 3600 / 60;
+        long secs = seconds % 60;
+        String hm = hours + ":" + (minutes < 10 ? "0" : "") + minutes + (secs == 0 ? "" : ":" + (secs < 10 ? "0" : "") + secs);
+        return days == 0 ? hm : Text.count(days, "day") + " " + hm;
+    }
+
+    /** @return the mapped values of one answer, or null when one is missing or not a single value */
+    private Map<String, Object> mapped(Node.Http n, JsonNode answer, JsonNode op) {
+        JsonNode response = answer.path("result");
+        if (!response.isObject()) {
+            response = op != null && op.path("responseSchema").isObject() ? sample(op.path("responseSchema"), "") : null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
+            JsonNode value = response == null ? null : pointer(response, e.getValue());
+            if (response == null) {
+                out.put(e.getKey(), "sample-" + e.getKey());
+            } else if ((value == null || value.isNull()) && n.poll().optional(e.getKey())) {
+                continue; // S129: an optional result is not there yet
+            } else if (value == null || value.isNull() || value.isObject() || value.isArray()) {
+                return null;
+            } else {
+                out.put(e.getKey(), DefaultWorkflowSimulator.plain(value));
+            }
+        }
+        return out;
+    }
+
+    /** @return the business code a v1 connection maps this status to (S130), else empty */
+    private static String mappedErrorCode(JsonNode op, Integer httpStatus) {
+        if (httpStatus == null) {
+            return "";
+        }
+        for (JsonNode error : op.path("errors")) {
+            if (error.path("status").asInt() == httpStatus) {
+                return error.path("code").asString("");
+            }
+        }
+        return "";
+    }
+
+    /**
+     * A worker reports a business error (S132, CG-E10): the step's failed route with the failure facts, or its
+     * section's error route when the step raises an error on failure; otherwise the request needs attention.
+     */
+    private Transition workerBusinessError(Node.ExternalTask n, JsonNode setting, ObjectNode d, String intro) {
+        String code = setting.path("errorCode").asString("WORKER_ERROR");
+        if (!code.matches("^[A-Z][A-Z0-9_]{1,39}$") || code.startsWith("ORQIX_")) {
+            throw new IllegalArgumentException("workers." + n.id() + ".errorCode must be an error code such as ADDRESS_UNKNOWN");
+        }
+        String message = setting.path("message").asString("The worker reported a business error.");
+        d.put("mocked", true);
+        d.put("failure", "businessError");
+        d.put("errorCode", code);
+        String description = intro + " and reports the business error " + Text.quote(code) + ".";
+        Transition failed = next(n, Route.FAILED);
+        if (failed != null) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("failureKind", "workerError");
+            out.put("failureCode", code);
+            out.put("failureMessage", message);
+            steps.put(n.id(), out);
+            d.put("routed", true);
+            add(n, description + " The workflow takes its authored failure path.", d, out, failed);
+            return failed;
+        }
+        if (n.raiseOnFailure() != null) {
+            WorkflowDefinition.Subprocess scope = graph.scopeOf(n);
+            Node target = scope == null || scope.errorTo() == null ? null : graph.node(scope.errorTo());
+            d.put("raisedError", n.raiseOnFailure());
+            if (target == null) {
+                stallWith(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ", which nothing"
+                        + " catches.", d, "ERROR_NOT_CAUGHT", "The raised error is not caught.");
+                return null;
+            }
+            d.put("continuesAt", target.id());
+            add(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ": the section "
+                    + Text.quote(scope.label()) + " stops and the request continues at " + Text.quote(target.label())
+                    + ".", d, null, null);
+            jump = target;
+            return null;
+        }
+        String attention = "The step has no path for when it fails, so the request needs attention.";
+        stallWith(n, description + " " + attention, d, "RETRIES_EXHAUSTED", attention);
+        return null;
+    }
+
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
         return knownFailure(n, details, description, reason, null);
@@ -1042,6 +1269,11 @@ final class SimulationRun {
         out.put("failureKind", kind);
         out.put("failureHttpStatus", httpStatus != null ? httpStatus : "rejected".equals(kind) ? 400 : 0);
         out.put("failureMessage", message);
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        if (op != null && op.has("errors")) {
+            // v1 error mapping (S130); v0 traces keep their shape.
+            out.put("failureCode", mappedErrorCode(op, httpStatus));
+        }
         steps.put(n.id(), out);
         details.put("routed", true);
         Transition route = next(n, Route.FAILED);
@@ -1072,8 +1304,13 @@ final class SimulationRun {
     }
 
     private static JsonNode pointer(JsonNode body, String pointer) {
+        List<String> tokens = JsonPointers.parse(pointer);
+        if (tokens.size() == 2 && com.orqix.compiler.ConnectionContracts.ASYNC_SEGMENT.equals(tokens.get(0))) {
+            // CG-W02: a dry run has no status location; the status reference is a sample value.
+            return F.textNode("sample-" + tokens.get(1));
+        }
         JsonNode current = body;
-        for (String token : JsonPointers.parse(pointer)) {
+        for (String token : tokens) {
             current = current == null ? null : current.get(token);
         }
         return current;
@@ -1242,6 +1479,110 @@ final class SimulationRun {
     // ------------------------------------------------------------------ message wait
 
     /** A worker is not simulated: the test supplies its result in the settings, otherwise declared fields get sample values. */
+    /**
+     * An AI task is never run by a test (S134): no model is called. The answer comes from {@code ai.<stepId>} in the
+     * test settings ({@code label}, {@code confidence}, {@code fields}, {@code score}, {@code recommendation},
+     * {@code summary}, or {@code unavailable: true}); without settings a classify task answers its first label with
+     * confidence 0.95. The route then follows the runtime rules: shadow always continues, suggest goes to a person,
+     * a confidence below the threshold takes lowConfidence (classify) or needsReview (extract). Workspace policy
+     * downgrades (low-risk labels, regulated workspaces) are applied by the runtime only.
+     */
+    private Transition aiTask(Node.AiTask n) {
+        for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
+            if (resolve(entry.getValue()) == null && !n.shadow()) {
+                stall(n, "TEST_AI_INPUT_MISSING", "A value this AI task sends is missing from this sample request.");
+                return null;
+            }
+        }
+        CompileContext.AiSkillVersion v = com.orqix.compiler.internal.rules.AiTaskRules.pinned(workspace, n);
+        JsonNode setting = scenario.path("ai").path(n.id());
+        ObjectNode d = F.objectNode();
+        d.put("skill", n.skillRef());
+        d.put("mode", n.mode());
+        d.put("autonomy", n.autonomy());
+        d.put("mocked", true);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("skillVersion", BigDecimal.valueOf(v == null ? 0 : v.version()));
+        String intro = Text.quote(n.label()) + " runs the AI skill " + Text.quote(n.skillRef());
+        if (setting.path("unavailable").asBoolean(false) || v == null) {
+            out.put("status", n.shadow() ? "shadow" : "unavailable");
+            steps.put(n.id(), out);
+            Transition t = next(n, n.shadow() ? Route.NEXT : Route.AI_UNAVAILABLE);
+            add(n, intro + ". In this test AI is unavailable, so " + (n.shadow() ? "the request continues unchanged."
+                    : "the request takes the path for when AI is unavailable."), d, out, t);
+            return t;
+        }
+        BigDecimal confidence = setting.has("confidence") ? setting.get("confidence").decimalValue()
+                : new BigDecimal("0.95");
+        out.put("confidence", confidence);
+        out.put("modelUsed", "test-mock");
+        String chosen = null;
+        switch (n.mode()) {
+            case "classify" -> {
+                chosen = setting.path("label").asString(v.labels().isEmpty() ? "" : v.labels().get(0).key());
+                String label = chosen;
+                if (v.labels().stream().noneMatch(l -> l.key().equals(label))) {
+                    throw new IllegalArgumentException("ai." + n.id() + ".label must be one of the skill's labels");
+                }
+                out.put("label", chosen);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "extract" -> {
+                Map<String, Object> fields = new LinkedHashMap<>();
+                setting.path("fields").properties().forEach(e -> fields.put(e.getKey(), Mocks.plainField(e.getValue())));
+                out.putAll(fields);
+            }
+            case "score" -> {
+                BigDecimal score = setting.has("score") ? setting.get("score").decimalValue()
+                        : v.scoreMin().add(v.scoreMax()).divide(BigDecimal.valueOf(2));
+                out.put("score", score);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "recommend" -> {
+                out.put("recommendation", setting.path("recommendation").asString(v.outcomes().get(0)));
+                out.put("rationale", "Test answer");
+            }
+            default -> out.put("summary", setting.path("summary").asString("Test summary."));
+        }
+        Route route;
+        String status;
+        if (n.shadow()) {
+            route = Route.NEXT;
+            status = "shadow";
+        } else if (("classify".equals(n.mode()) || "extract".equals(n.mode()))
+                && confidence.compareTo(n.minConfidence()) < 0) {
+            route = "classify".equals(n.mode()) ? Route.LOW_CONFIDENCE : Route.NEEDS_REVIEW;
+            status = "classify".equals(n.mode()) ? "lowConfidence" : "needsReview";
+        } else if ("classify".equals(n.mode()) && !n.routes()) {
+            route = next(n, Route.NEEDS_REVIEW) != null ? Route.NEEDS_REVIEW : Route.LOW_CONFIDENCE;
+            status = "needsReview";
+        } else if ("extract".equals(n.mode()) && (!n.routes()
+                || v.requiredFields().stream().anyMatch(f -> !out.containsKey(f)))) {
+            route = Route.NEEDS_REVIEW;
+            status = "needsReview";
+        } else {
+            route = "classify".equals(n.mode()) ? Route.AI_LABEL : Route.NEXT;
+            status = "decided";
+        }
+        out.put("status", status);
+        steps.put(n.id(), out);
+        Transition t = null;
+        if (route == Route.AI_LABEL) {
+            for (Transition candidate : graph.outgoing(n)) {
+                if (candidate.on() == Route.AI_LABEL && chosen.equals(candidate.aiLabel())) {
+                    t = candidate;
+                }
+            }
+        } else {
+            t = next(n, route);
+        }
+        d.put("route", route == Route.AI_LABEL ? "label:" + chosen : route.json());
+        add(n, intro + " (" + (setting.isObject() ? "answer from the test settings" : "sample answer")
+                + "). No model is called in a test; the request continues on " + d.path("route").asString() + ".", d,
+                out, t);
+        return t;
+    }
+
     private Transition externalTask(Node.ExternalTask n) {
         ObjectNode inputs = F.objectNode();
         for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
@@ -1255,8 +1596,8 @@ final class SimulationRun {
         JsonNode setting = scenario.path("workers").path(n.id());
         JsonNode given = setting.path("result");
         String failure = setting.path("failure").asString(null);
-        if (failure != null && !"failed".equals(failure)) {
-            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed");
+        if (failure != null && !"failed".equals(failure) && !"businessError".equals(failure)) {
+            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed or businessError");
         }
         Integer delay = setting.isObject() ? Mocks.delay("workers." + n.id(), setting) : null;
         ObjectNode d = F.objectNode();
@@ -1273,6 +1614,9 @@ final class SimulationRun {
                     + " until someone retries.";
             stallWith(n, intro + ". " + message, d, "RETRIES_EXHAUSTED", message);
             return null;
+        }
+        if ("businessError".equals(failure)) {
+            return workerBusinessError(n, setting, d, intro);
         }
         if (given.isObject()) {
             String problem = Mocks.fieldProblem(n.result(), given);
@@ -1380,8 +1724,14 @@ final class SimulationRun {
         JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
         Integer delay = setting.isObject() ? Mocks.delay("messages." + n.id(), setting) : null;
         String choice = setting.isObject() ? setting.path("outcome").asString("arrives") : setting.asString("arrives");
-        if (!Set.of("arrives", "timeout").contains(choice)) {
-            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout");
+        if (!Set.of("arrives", "timeout").contains(choice) && !("fallback".equals(choice) && n.fallbackCheck() != null)) {
+            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout"
+                    + (n.fallbackCheck() != null ? ", or fallback for the safety-net check" : ""));
+        }
+        // S129: the safety-net check finds the work done before the message arrives; it completes the wait the same way.
+        boolean fallback = "fallback".equals(choice);
+        if (fallback) {
+            choice = "arrives";
         }
         if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
             throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
@@ -1443,9 +1793,18 @@ final class SimulationRun {
             d.put("arrived", true);
             d.set("payload", DefaultWorkflowSimulator.json(out));
             t = next(n, Route.NEXT);
-            sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
-                    + d.get("correlation").asString() + "."
-                    + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            if (fallback) {
+                d.put("resumedBy", "fallbackCheck");
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " does not come, but"
+                        + " the safety-net check every " + com.orqix.compiler.PollSchedule.describe(
+                                com.orqix.compiler.PollSchedule.seconds(n.fallbackCheck().every()))
+                        + " finds the work done, so the wait ends."
+                        + (out.isEmpty() ? "" : " The check returns " + outputsText(out) + ".");
+            } else {
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
+                        + d.get("correlation").asString() + "."
+                        + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            }
         }
         if (note != null) {
             d.put("note", note);
@@ -1972,7 +2331,7 @@ final class SimulationRun {
     }
 
     private void scenarioWarnings() {
-        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters")) {
+        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters", "ai")) {
             for (String id : scenario.path(group).propertyNames()) {
                 Node n = graph.node(id);
                 boolean right = n != null && switch (group) {
@@ -1981,6 +2340,7 @@ final class SimulationRun {
                     case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
                     case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
                     case "adapters" -> n.kind() == NodeKind.SEND_ADAPTER;
+                    case "ai" -> n.kind() == NodeKind.AI_TASK;
                     default -> n.kind() == NodeKind.START_WORKFLOW;
                 };
                 if (!right) {

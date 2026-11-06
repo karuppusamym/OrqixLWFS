@@ -332,8 +332,20 @@ final class TypeRules {
                 }
             }
         }
+        if (producer instanceof Node.Http polled && polled.polls() && !FailureRules.isFailureOutput(r.key())) {
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
+                        com.orqix.compiler.internal.model.Enums.Route.NEXT, end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when the checks find the work done, but " + q(end)
+                            + " can also be reached otherwise, so the result field " + q(entry.key())
+                            + " cannot be required.");
+                    return;
+                }
+            }
+        }
         if (FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             for (Node end : g.ends()) {
                 if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
                         failureFact ? com.orqix.compiler.internal.model.Enums.Route.FAILED

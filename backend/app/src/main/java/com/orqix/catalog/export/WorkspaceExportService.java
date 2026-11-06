@@ -237,6 +237,8 @@ public class WorkspaceExportService {
         schema(archive, "schemas/workflow-v0.schema.json", "orqix/schemas/workflow-v0.schema.json");
         schema(archive, "schemas/connection-definition-v0.schema.json",
                 "orqix/schemas/connection-definition-v0.schema.json");
+        schema(archive, "schemas/connection-definition-v1.schema.json",
+                "orqix/schemas/connection-definition-v1.schema.json");
 
         int[] definitionCounts = workflows(archive, plan);
         counts.put("workflows", definitionCounts[0]);

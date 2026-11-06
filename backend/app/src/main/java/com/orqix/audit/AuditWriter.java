@@ -78,6 +78,10 @@ public class AuditWriter {
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
             // S127: workspace feature switches.
             Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
+            // CG-M04 (S136): MCP server switch and tool calls; tool name, step, outcome and ids only, never arguments.
+            Map.entry("mcp.server.updated", Set.of("enabled")),
+            Map.entry("mcp.tool-called", Set.of("tool", "step", "outcome", "errorCode", "confirmationId", "runId", "taskId",
+                    "workflowId", "messageId", "client")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
             // S126: case type drafts; the key and draft version only, never the model or its fields.
@@ -147,6 +151,8 @@ public class AuditWriter {
             Map.entry("effect.reconciled", Set.of("effectId", "resolution", "remoteReference")),
             Map.entry("connection.version.created", Set.of("key", "version", "definitionHash")),
             Map.entry("connection.binding.updated", Set.of("key", "host", "authType", "secretRef", "enabled", "revision")),
+            // CG-W04 (S131): a binding's request limit.
+            Map.entry("connection.rate-limit.updated", Set.of("key", "maxRequestsPerMinute", "revision")),
             Map.entry("connection.oauth.started", Set.of("key")),
             Map.entry("connection.oauth.connected", Set.of("key")),
             Map.entry("connection.oauth.disconnected", Set.of("key")),
@@ -218,6 +224,11 @@ public class AuditWriter {
             Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
             // S98/S99 (EX10, IN05): ids, counts and codes only - never a token, its hash, a key or a payload value.
             Map.entry("callback.token-issued", Set.of("waitId", "runId", "nodeId", "validForSeconds")),
+            // S129: operator actions on checks; ids and the new deadline only, never shown values or the reason text.
+            Map.entry("poll.checked-now", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.deadline-extended", Set.of("waitId", "nodeId", "kind", "deadline")),
+            Map.entry("poll.stopped", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.waits-purged", Set.of("count", "retentionSeconds")),
             Map.entry("callback.token-revoked", Set.of("waitId", "runId", "replaced")),
             Map.entry("callback.token-expired", Set.of("waitId", "runId")),
             Map.entry("callback.resumed", Set.of("waitId", "runId", "fieldCount", "channel")),
@@ -227,11 +238,35 @@ public class AuditWriter {
             Map.entry("webhook.subscription-deleted", Set.of("deliveries")),
             Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
             Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
+            // S133: connector packages and package triggers (ids, versions, hashes and counts; never content or secrets)
+            Map.entry("connector.package-imported", Set.of("packageId", "version", "sha256", "signatureStatus", "unsignedOverride", "keyId")),
+            Map.entry("connector.package-decided", Set.of("packageId", "version", "sha256", "decision")),
+            Map.entry("connector.package-installed", Set.of("packageId", "version", "previousVersion", "connections")),
+            Map.entry("connector.package-retired", Set.of("packageId", "version", "workspacesAffected")),
+            Map.entry("connector.trigger-configured", Set.of("packageId", "triggerKey", "kind", "action", "enabled", "version")),
+            Map.entry("connector.trigger-record-dead", Set.of("triggerId", "error")),
             Map.entry("kafka.trigger-created", Set.of("key", "action", "cluster")),
             Map.entry("kafka.trigger-updated", Set.of("key", "version", "enabled")),
             Map.entry("kafka.trigger-deleted", Set.of("key", "records", "deadLetters")),
             Map.entry("kafka.record-dead", Set.of("triggerId", "partition", "offset", "error")),
             Map.entry("kafka.test-message", Set.of("triggerId", "outcome")),
+            // S134: AI skills, evaluations, promotions, drift, policy and decision outcomes. Keys, versions and
+            // counts only; never instructions, case data, reasons or model output.
+            Map.entry("ai.skill.version.created", Set.of("skillKey", "version", "mode")),
+            Map.entry("ai.skill.version.updated", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.submitted", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.approved", Set.of("skillKey", "version", "contentHash")),
+            Map.entry("ai.skill.version.retired", Set.of("skillKey", "version")),
+            Map.entry("ai.eval-suite.saved", Set.of("suiteKey", "skillKey", "caseCount", "revision")),
+            Map.entry("ai.evaluation.started", Set.of("skillKey", "version", "suiteKey", "profile")),
+            Map.entry("ai.evaluation.finished", Set.of("skillKey", "version", "status", "caseCount")),
+            Map.entry("ai.promotion.requested", Set.of("skillKey", "version", "toAutonomy")),
+            Map.entry("ai.promotion.decided", Set.of("skillKey", "version", "toAutonomy", "decision")),
+            Map.entry("ai.skill.drift-fallback", Set.of("skillKey", "version", "agreement")),
+            Map.entry("ai.skill.drift-cleared", Set.of("skillKey", "version")),
+            Map.entry("ai.policy.updated", Set.of("regulated", "residency", "inputRetention", "version")),
+            Map.entry("ai.decision.outcome-recorded", Set.of("runId", "outcome")),
+            Map.entry("ai.eval-candidate.reviewed", Set.of("skillKey", "decision")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.
@@ -244,7 +279,17 @@ public class AuditWriter {
             Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")),
             // IN04 hardening (S85): retention of agent write records, as for files (DOC08).
             Map.entry("agent.write.retention.updated", Set.of("retentionDays", "version")),
-            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")));
+            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")),
+            // S135 (doc 29 §8): ids, names, hashes and counts only; never schemas, arguments, answers or model text.
+            Map.entry("mcp.tool-snapshot.taken", Set.of("connectionKey", "definitionVersion", "pinned", "missing")),
+            Map.entry("mcp.tool-schema-changed", Set.of("connectionKey", "toolName", "kind", "pinnedSha256",
+                    "observedSha256")),
+            Map.entry("agent.kill-switch.changed", Set.of("scope", "connectionKey", "active")),
+            Map.entry("agent.trace.settings-changed", Set.of("enabled", "retentionDays", "redactFields",
+                    "redactPatterns")),
+            Map.entry("agent.request.answered", Set.of("requestId", "runId", "kind", "toolName", "outcome")),
+            Map.entry("agent.test-suite.saved", Set.of("connectionKey", "cases")),
+            Map.entry("agent.test-suite.ran", Set.of("connectionKey", "connectionVersion", "passed", "failed")));
 
     private final JdbcClient jdbc;
     private final Json json;
@@ -265,6 +310,12 @@ public class AuditWriter {
     /** Writes a denial in its own transaction; the denied command itself is rolled back. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void writeDenied(Entry entry) {
+        insert(entry);
+    }
+
+    /** Writes in its own transaction whatever the outcome (MCP tool calls: the call itself may have rolled back). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeSeparately(Entry entry) {
         insert(entry);
     }
 

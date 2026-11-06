@@ -1,4 +1,4 @@
-import { Archive, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
+import { Archive, Bot, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -13,7 +13,9 @@ import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
+import { ConnectorPackagesPanel } from './ConnectorPackagesPanel'
 import { FeaturesPanel } from './FeaturesPanel'
+import { McpServerPanel } from './McpServerPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -28,12 +30,13 @@ export function SettingsPage() {
   const showAccess = can('workspace.manage-access')
   const showConnections = can('connection.read')
   const showWebhooks = showConnections || can('run.operate')
+  const showPackages = can('connector.manage', 'connector.approve', 'connection.read')
   const showTemplates = can('workflow.read')
   const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
 
-  if (!showAccess && !showConnections && !showTemplates && !showWebhooks) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -59,6 +62,11 @@ export function SettingsPage() {
               <ToggleRight className="size-4" aria-hidden="true" /> Features
             </TabsTrigger>
           ) : null}
+          {showAccess ? (
+            <TabsTrigger value="mcp">
+              <Bot className="size-4" aria-hidden="true" /> AI assistants
+            </TabsTrigger>
+          ) : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
@@ -66,6 +74,7 @@ export function SettingsPage() {
           ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
           {showWebhooks ? <TabsTrigger value="kafka">Kafka</TabsTrigger> : null}
+          {showPackages ? <TabsTrigger value="packages">Connector packages</TabsTrigger> : null}
           {showAi ? (
             <TabsTrigger value="ai">
               <Sparkles className="size-4" aria-hidden="true" /> AI
@@ -104,6 +113,11 @@ export function SettingsPage() {
           </TabsContent>
         ) : null}
         {showAccess ? (
+          <TabsContent value="mcp">
+            <McpServerPanel />
+          </TabsContent>
+        ) : null}
+        {showAccess ? (
           <TabsContent value="migration">
             <MigrationPolicyPanel />
           </TabsContent>
@@ -115,6 +129,7 @@ export function SettingsPage() {
         ) : null}
         {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="kafka"><KafkaTriggersPanel /></TabsContent> : null}
+        {showPackages ? <TabsContent value="packages"><ConnectorPackagesPanel /></TabsContent> : null}
         {showAi ? (
           <TabsContent value="ai">
             <AiSettingsPanel />

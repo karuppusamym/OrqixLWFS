@@ -4,7 +4,8 @@
 Checks, in order:
   1. Both JSON Schemas are valid JSON Schema 2020-12 documents and all their local $refs resolve.
   2. Every examples/*.json workflow validates against contracts/workflow-v0.schema.json and every
-     examples/connections/*.json validates against contracts/connection-definition-v0.schema.json.
+     examples/connections/*.json validates against contracts/connection-definition-v0.schema.json (or the v1
+     schema for schemaVersion 1.0).
   3. examples/fixtures/compiler-cases.json: every RFC 6902 patch applies to the base document; cases that
      expect WF_SCHEMA_INVALID / WF_SCHEMA_VERSION_UNSUPPORTED fail schema validation, all others pass it.
      (Semantic-layer codes are the compiler's job and are not evaluated here.)
@@ -293,7 +294,8 @@ class RefResolver:
 def check_schemas(report: Report, root: Path) -> dict[str, Any]:
     report.section("1. JSON Schemas (2020-12)")
     schemas: dict[str, Any] = {}
-    for name in ("workflow-v0.schema.json", "connection-definition-v0.schema.json"):
+    for name in ("workflow-v0.schema.json", "connection-definition-v0.schema.json",
+                 "connection-definition-v1.schema.json", "connector-package-v1.schema.json"):
         path = root / "contracts" / name
         if not path.is_file():
             report.fail(f"{name}: file not found")
@@ -335,6 +337,8 @@ def check_examples(report: Report, root: Path, schemas: dict[str, Any]) -> None:
     report.section("2. Examples against schemas")
     workflow_schema = schemas.get("workflow-v0.schema.json")
     connection_schema = schemas.get("connection-definition-v0.schema.json")
+    # schemaVersion 1.0 definitions (docs/build/S130) validate against the v1 schema.
+    connection_v1_schema = schemas.get("connection-definition-v1.schema.json")
 
     workflow_files = sorted((root / "examples").glob("*.json"))
     if workflow_schema is None:
@@ -351,10 +355,37 @@ def check_examples(report: Report, root: Path, schemas: dict[str, Any]) -> None:
     report.check(bool(connection_files), f"found {len(connection_files)} connection definition(s)", "no examples/connections/*.json found")
     if connection_schema is not None:
         validator = Draft202012Validator(connection_schema)
+        validator_v1 = Draft202012Validator(connection_v1_schema) if connection_v1_schema is not None else None
         for path in connection_files:
-            errors = validation_errors(validator, json.loads(path.read_text("utf-8")))
+            document = json.loads(path.read_text("utf-8"))
+            chosen = validator_v1 if document.get("schemaVersion") == "1.0" and validator_v1 is not None else validator
+            errors = validation_errors(chosen, document)
             rel = path.relative_to(root).as_posix()
             report.check(not errors, f"{rel} is a valid connection definition", f"{rel}: " + "; ".join(errors))
+
+    # Connector package sources (docs/build/S133): each file against its definition in connector-package-v1.
+    package_schema = schemas.get("connector-package-v1.schema.json")
+    if package_schema is not None:
+        def part(name: str) -> Draft202012Validator:
+            return Draft202012Validator({"$ref": f"#/$defs/{name}", "$defs": package_schema["$defs"]})
+        roles = {"triggers": part("trigger"), "templates/steps": part("stepTemplate"),
+                 "templates/workflows": part("workflowTemplate"), "fixtures": part("fixture")}
+        for folder in sorted(p for p in (root / "examples" / "packages").glob("*") if p.is_dir()):
+            manifest = folder / "manifest.json"
+            rel = manifest.relative_to(root).as_posix()
+            errors = validation_errors(part("manifest"), json.loads(manifest.read_text("utf-8")))
+            report.check(not errors, f"{rel} is a valid package manifest", f"{rel}: " + "; ".join(errors))
+            for prefix, validator in roles.items():
+                for path in sorted((folder / prefix).rglob("*.json")):
+                    rel = path.relative_to(root).as_posix()
+                    errors = validation_errors(validator, json.loads(path.read_text("utf-8")))
+                    report.check(not errors, f"{rel} is a valid package file", f"{rel}: " + "; ".join(errors))
+            for path in sorted((folder / "connections").glob("*.json")):
+                document = json.loads(path.read_text("utf-8"))
+                chosen = Draft202012Validator(connection_v1_schema) if document.get("schemaVersion") == "1.0" else Draft202012Validator(connection_schema)
+                errors = validation_errors(chosen, document)
+                rel = path.relative_to(root).as_posix()
+                report.check(not errors, f"{rel} is a valid connection definition", f"{rel}: " + "; ".join(errors))
 
 
 def check_compiler_cases(report: Report, root: Path, schemas: dict[str, Any]) -> None:

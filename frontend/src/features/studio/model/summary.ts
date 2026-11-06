@@ -30,6 +30,14 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return t.label || (t.condition && conditionTerms(t.condition).length ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)')
     case 'next':
       return t.label ?? ''
+    case 'aiLabel':
+      return t.label || (t.aiLabel ? `Label ${t.aiLabel}` : 'Label (not set)')
+    case 'lowConfidence':
+      return t.label || 'Low confidence'
+    case 'needsReview':
+      return t.label || 'Needs review'
+    case 'aiUnavailable':
+      return t.label || 'AI unavailable'
   }
 }
 
@@ -40,6 +48,10 @@ export function routeSlotLabel(def: Definition, t: Transition | undefined, on: T
   if (on === 'failed') return 'When failed'
   if (on === 'default') return 'Otherwise'
   if (on === 'condition' && t) return t.label ? `When ${t.label}` : t.condition?.fieldRef ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)'
+  if (on === 'aiLabel') return t?.aiLabel ? `When AI says ${t.aiLabel}` : 'When AI says (label not set)'
+  if (on === 'lowConfidence') return 'When AI is not confident enough'
+  if (on === 'needsReview') return 'When a person must review'
+  if (on === 'aiUnavailable') return 'When AI is unavailable'
   return ROUTE_LABEL[on]
 }
 
@@ -90,6 +102,8 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
     case 'sendAdapter':
       return (c.adapter as string) ? `Through ${c.adapter as string} (${String(c.kind ?? '')})` : 'No adapter chosen'
+    case 'aiTask':
+      return (c.skillRef as string) ? `${String(c.mode ?? 'classify')} with ${c.skillRef as string} (${String(c.autonomy ?? 'suggest')})` : 'No AI skill chosen'
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':

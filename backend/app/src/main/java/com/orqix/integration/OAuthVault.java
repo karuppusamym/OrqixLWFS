@@ -52,9 +52,14 @@ public class OAuthVault {
     }
 
     public String open(String context, String keyId, String ciphertext) {
+        return open(context, keyId, ciphertext, 32768);
+    }
+
+    /** As {@link #open(String, String, String)} with a larger bound (agent loop state, CG-M03 S135). */
+    public String open(String context, String keyId, String ciphertext, int maxBytes) {
         try {
             byte[] envelope = Base64.getDecoder().decode(ciphertext);
-            if (envelope.length < 29 || envelope.length > 32768) throw unavailable();
+            if (envelope.length < 29 || envelope.length > maxBytes) throw unavailable();
             var cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key(ring(), keyId), new GCMParameterSpec(128, Arrays.copyOf(envelope, 12)));
             cipher.updateAAD(context.getBytes(StandardCharsets.UTF_8));

@@ -35,7 +35,8 @@ test('real administrator reviews an OpenAPI file and separately registers the co
   const blocked = panel.getByRole('checkbox', { name: /GET \/items\/\{id\}/ })
   await expect(allowed).toBeEnabled()
   await expect(blocked).toBeDisabled()
-  await expect(panel.getByText(/address contains a variable part/)).toBeVisible()
+  // Connection v1 (S130) sends path parameters, but this file never describes {id}, so the operation stays blocked.
+  await expect(panel.getByText(/does not describe that parameter/)).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Register reviewed connection', exact: true })).toHaveCount(0)
   await expect(panel.getByRole('button', { name: 'Build reviewed definition', exact: true })).toBeDisabled()
   await allowed.check()

@@ -118,5 +118,7 @@ One AI conversation: clarifying questions, new edit operations, conversation sav
 Shared field editor for case data: case fields edited, rendered and checked like request questions (forms review slice 3): [S125](S125-shared-case-field-editor.md) (additive contract change, no migration).
 Case designer page: case type drafts with a check before publishing, Cases page for working cases only (forms review, C3 and C1): [S126](S126-case-designer-page.md) (V206, additive contract change).
 Shared forms: a form (questions, rules and groups) as a fourth kind of shared asset, inserted with version pins and copy-on-insert: [S128](S128-shared-forms.md) (V207, additive contract change).
+Check until done, callback safety net and "Waiting for" (Camunda gap plan Wave A: CG-W01, CG-W03, CG-W08): [S129](S129-check-until-and-waits.md) (V210, V211, OpenAPI tag Waits).
 Workspace feature switches (administrators turn AI, cases, import, agents, apps and Kafka on or off per workspace; `409 FEATURE_DISABLED`): [S127](S127-workspace-feature-switches.md) (V208).
 Generated test cases for every path (Test tab, docs/26): [S122](S122-generated-test-cases.md) (frontend only).
+Step retry policy with backoff, jitter and `Retry-After`; circuit breaker and request limit per binding; connection health in Settings (CG-W04, CG-C09): [S131](S131-retry-and-circuit-breaker.md) (V220, compiler 0.3.0, additive contract change).

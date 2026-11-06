@@ -247,6 +247,20 @@ public class ReleaseService {
         ArrayNode closure = manifest.putArray("callClosure");
         compiled.callClosure().forEach(closure::add);
         manifest.put("callHeight", compiled.callHeight());
+        // AI skill versions pinned at publish time (S134) with the evaluation run that passed the publish gate.
+        if (!compiled.aiSkills().isEmpty()) {
+            ArrayNode skills = manifest.putArray("aiSkills");
+            compiled.aiSkills().forEach(a -> {
+                ObjectNode ref = skills.addObject().put("nodeId", a.nodeId()).put("skillKey", a.skillKey())
+                        .put("version", a.version()).put("contentHash", a.contentHash())
+                        .put("modelProfile", a.modelProfile()).put("autonomy", a.autonomy());
+                if (a.evaluationRunId() == null) {
+                    ref.putNull("evaluationRunId");
+                } else {
+                    ref.put("evaluationRunId", a.evaluationRunId());
+                }
+            });
+        }
         return manifest;
     }
 

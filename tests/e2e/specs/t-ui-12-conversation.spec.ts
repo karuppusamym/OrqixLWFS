@@ -13,6 +13,10 @@ test('guided request survives reload, requires confirmation, and supports reques
   const send = async (message: string) => {
     await page.locator('#conversation-message').fill(message)
     await page.getByRole('button', { name: 'Send', exact: true }).click()
+    // The reply has arrived once the answer box is cleared and editable again; checking the Send button alone passes
+    // before the turn starts, and a reply that lands after the next answer was typed clears that answer.
+    await expect(page.locator('#conversation-message')).toHaveValue('', { timeout: 30_000 })
+    await expect(page.locator('#conversation-message')).toBeEditable()
     await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
   }
   await send('start purchase-approval')

@@ -1,0 +1,260 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "http",
+  "key": "servicenow-catalog",
+  "version": 1,
+  "name": "ServiceNow Service Catalog",
+  "description": "Service Catalog operations of the ServiceNow ITSM connector package (docs/build/S133). orderCatalogItem has no idempotency key: Orqix sends its reconciliation key in the catalog variable orqix_reference, which a business rule on sc_request copies into correlation_id (docs/README.md), and reconciles uncertain outcomes by looking the request up. Illustrative; check the variable and table names on the customer's release.",
+  "operations": {
+    "orderCatalogItem": {
+      "label": "Order a catalog item",
+      "description": "Orders one catalog item (for example a laptop or an access) for a user.",
+      "method": "POST",
+      "path": "/api/sn_sc/servicecatalog/items/{itemSysId}/order_now",
+      "pathParams": {
+        "itemSysId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$",
+          "description": "The catalog item's sys_id."
+        }
+      },
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "requestedFor",
+          "justification"
+        ],
+        "properties": {
+          "requestedFor": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "body": {
+        "sysparm_quantity": {
+          "const": "1"
+        },
+        "sysparm_requested_for": {
+          "input": "requestedFor"
+        },
+        "variables": {
+          "object": {
+            "justification": {
+              "input": "justification"
+            },
+            "orqix_reference": {
+              "input": "reference"
+            }
+          }
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "object",
+            "required": [
+              "sys_id",
+              "number"
+            ],
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "correlation_id": {
+                "type": "string",
+                "maxLength": 100
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "errors": [
+        {
+          "status": 400,
+          "code": "ORDER_INVALID",
+          "bodyPointer": "/error/message"
+        },
+        {
+          "status": 404,
+          "code": "CATALOG_ITEM_NOT_FOUND"
+        }
+      ],
+      "effectClass": "idempotentByLookup",
+      "reconcile": {
+        "operation": "findRequestByReference",
+        "keyField": "reference",
+        "keyFrom": "request.reference",
+        "found": "/result/0",
+        "resultFrom": "found",
+        "foundAs": "/result",
+        "lookupSettleSeconds": 30
+      },
+      "maxTimeoutSeconds": 30,
+      "testable": false
+    },
+    "findRequestByReference": {
+      "label": "Find a catalog request by Orqix reference",
+      "description": "Lookup used to reconcile orderCatalogItem.",
+      "method": "GET",
+      "path": "/api/now/table/sc_request",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "reference"
+        ],
+        "properties": {
+          "reference": {
+            "type": "string",
+            "pattern": "^ORQ-[0-9]{4,}-[A-Za-z][A-Za-z0-9_-]{0,63}-[0-9]{1,6}$",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_query": {
+          "template": "correlation_id={reference}",
+          "encoder": "servicenowEncodedQuery"
+        },
+        "sysparm_fields": {
+          "const": "sys_id,number,correlation_id"
+        },
+        "sysparm_limit": {
+          "const": 1
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sys_id": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "correlation_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    },
+    "getRequestItem": {
+      "label": "Get a requested item",
+      "description": "Reads one requested item (RITM) to check fulfilment.",
+      "method": "GET",
+      "path": "/api/now/table/sc_req_item/{sysId}",
+      "pathParams": {
+        "sysId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "query": {
+        "sysparm_fields": {
+          "const": "sys_id,number,state,stage"
+        },
+        "sysparm_exclude_reference_link": {
+          "const": "true"
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "object",
+            "required": [
+              "sys_id",
+              "number",
+              "state"
+            ],
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "state": {
+                "type": "string",
+                "maxLength": 10
+              },
+              "stage": {
+                "type": "string",
+                "maxLength": 60
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "errors": [
+        {
+          "status": 404,
+          "code": "REQUEST_ITEM_NOT_FOUND"
+        }
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    }
+  }
+}

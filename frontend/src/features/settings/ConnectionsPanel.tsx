@@ -28,6 +28,7 @@ import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersion
 import { OpenApiImport } from './OpenApiImport'
 import { AdaptersPanel } from './AdaptersPanel'
 import { OAuthConsent } from './OAuthConsent'
+import { ConnectionHealthNotices, ConnectionHealthSection } from './ConnectionHealthPanel'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
@@ -36,6 +37,7 @@ export function ConnectionsPanel() {
   if (query.isError) return <QueryError error={query.error} onRetry={() => void query.refetch()} what="connections" />
   return (
     <div className="space-y-8">
+      <ConnectionHealthNotices />
       <OpenApiImport />
       <AdaptersPanel />
       {query.data.items.length === 0 ? <p>No connections are registered in this workspace.</p> : null}
@@ -114,6 +116,7 @@ function ConnectionCard({ connection: c }: { connection: ConnectionSummary }) {
           </Table>
         </div>
       </div>
+      <ConnectionHealthSection connectionKey={c.key} name={c.name} />
       {can('connection.manage') ? <ManageConnection connection={c} /> : null}
     </section>
   )

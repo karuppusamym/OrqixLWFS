@@ -354,6 +354,46 @@ export const getAgentWriteRetention = (ws: string) =>
 export const setAgentWriteRetention = (ws: string, retentionDays: number | null, expectedVersion: number) =>
   call(api.PUT('/workspaces/{workspaceId}/agent-write-retention', { params: { path: { workspaceId: ws } }, body: { retentionDays, expectedVersion } }))
 
+// Agent tools (docs/build/S135, tag AgentTools)
+export const getMcpToolSnapshot = (ws: string, connectionKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const takeMcpToolSnapshot = (ws: string, connectionKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const listAgentKillSwitches = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-kill-switches', { params: { path: { workspaceId: ws } } }))
+
+export const setAgentKillSwitch = (ws: string, scope: 'agent' | 'server', connectionKey: string, body: S['SetAgentKillSwitch']) =>
+  call(api.PUT('/workspaces/{workspaceId}/agent-kill-switches/{scope}/{connectionKey}', { params: { path: { workspaceId: ws, scope, connectionKey } }, body }))
+
+export const getAgentTraceSettings = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-trace-settings', { params: { path: { workspaceId: ws } } }))
+
+export const setAgentTraceSettings = (ws: string, body: S['SetAgentTraceSettings']) =>
+  call(api.PUT('/workspaces/{workspaceId}/agent-trace-settings', { params: { path: { workspaceId: ws } }, body }))
+
+export const getAgentTrace = (ws: string, runId: string, nodeId?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/agent-trace', { params: { path: { workspaceId: ws, runId }, query: nodeId ? { nodeId } : {} } }))
+
+export const getAgentTestSuite = (ws: string, connectionKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const saveAgentTestSuite = (ws: string, connectionKey: string, body: S['SaveAgentTestSuite']) =>
+  call(api.PUT('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests', { params: { path: { workspaceId: ws, connectionKey } }, body }))
+
+export const runAgentTestSuite = (ws: string, connectionKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests/run', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const listAgentRequests = (ws: string, status?: S['AgentHumanRequest']['status']) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-requests', { params: { path: { workspaceId: ws }, query: status ? { status } : {} } }))
+
+export const answerAgentRequest = (ws: string, requestId: string, body: S['AnswerAgentRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/agent-requests/{requestId}/answer', { params: { path: { workspaceId: ws, requestId } }, body }))
+
+export const getAgentDashboard = (ws: string, days?: number) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-dashboard', { params: { path: { workspaceId: ws }, query: days ? { days } : {} } }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))
@@ -695,6 +735,16 @@ export const getWorkspaceFeatures = (ws: string) =>
 
 export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))
+
+// CG-M04 MCP server (docs/build/S136): per-workspace switch, connection details and recent tool calls.
+export const getMcpServer = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } } }))
+
+export const setMcpServer = (ws: string, enabled: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } }, body: { enabled } }))
+
+export const listMcpCalls = (ws: string, limit = 50) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server/calls', { params: { path: { workspaceId: ws }, query: { limit } } }))
 
 // Control evidence packs (docs/27 section 3): per release and per run, as PDF, DOCX or JSON.
 export type EvidencePackFormat = 'pdf' | 'docx' | 'json'

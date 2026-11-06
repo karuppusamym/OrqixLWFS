@@ -100,7 +100,14 @@ public sealed interface Node {
      */
     record Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
-                String compensates, boolean automaticUndo, String raiseOnFailure) implements Node {
+                String compensates, boolean automaticUndo, String raiseOnFailure, Poll poll) implements Node {
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates, boolean automaticUndo, String raiseOnFailure) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
+                    automaticUndo, raiseOnFailure, null);
+        }
+
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
             this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false,
@@ -126,6 +133,11 @@ public sealed interface Node {
             return automaticUndo && compensates != null;
         }
 
+        /** @return true when the step keeps checking until done (S129, {@code config.poll}) */
+        public boolean polls() {
+            return poll != null;
+        }
+
         /**
          * @return the business error code this call raises when it fails for good with a known failure (S71 opt-in,
          *         {@code config.raiseErrorOnFailure}), or null for the S32 behavior (failed path or needs attention)
@@ -149,7 +161,13 @@ public sealed interface Node {
      * receives (name to field reference, sorted by name) and {@code result} declares what it must return.
      */
     record ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
-                        java.util.List<PayloadField> result, int leaseSeconds) implements Node {
+                        java.util.List<PayloadField> result, int leaseSeconds, String raiseOnFailure) implements Node {
+
+        public ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
+                java.util.List<PayloadField> result, int leaseSeconds) {
+            this(index, id, label, topic, inputMapping, result, leaseSeconds, null);
+        }
+
         @Override
         public NodeKind kind() {
             return NodeKind.EXTERNAL_TASK;
@@ -174,6 +192,39 @@ public sealed interface Node {
         @Override
         public NodeKind kind() {
             return NodeKind.SEND_ADAPTER;
+        }
+    }
+
+    /**
+     * AI task (CG-A01, docs/build/S134): runs a pinned, approved AI skill on the mapped values. {@code skillVersion} is
+     * null when the designer leaves the pin to publishing (latest approved version). {@code mode} must equal the
+     * skill's mode; {@code autonomy} is {@code shadow}, {@code suggest}, {@code autoWithReview} or {@code auto}.
+     * Mapping maps are sorted by key.
+     */
+    record AiTask(int index, String id, String label, String skillRef, Integer skillVersion, String mode,
+                  Map<String, String> inputMapping, String autonomy, java.math.BigDecimal minConfidence,
+                  int reviewSamplePercent, Map<String, String> redaction) implements Node {
+
+        public static final String SHADOW = "shadow";
+        public static final String SUGGEST = "suggest";
+        public static final String AUTO_WITH_REVIEW = "autoWithReview";
+        public static final String AUTO = "auto";
+        public static final java.math.BigDecimal DEFAULT_MIN_CONFIDENCE = new java.math.BigDecimal("0.8");
+        public static final int DEFAULT_REVIEW_PERCENT = 10;
+
+        /** @return true for shadow mode: the step records a decision and always continues on next */
+        public boolean shadow() {
+            return SHADOW.equals(autonomy);
+        }
+
+        /** @return true when the AI result chooses the path (autoWithReview or auto) */
+        public boolean routes() {
+            return AUTO.equals(autonomy) || AUTO_WITH_REVIEW.equals(autonomy);
+        }
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.AI_TASK;
         }
     }
 
@@ -300,8 +351,14 @@ public sealed interface Node {
      * token valid for that ISO-8601 duration.
      */
     record WaitForMessage(int index, String id, String label, String message, String correlationField,
-                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor)
+                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
+                          FallbackCheck fallbackCheck)
             implements Node {
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, callbackTokenValidFor, null);
+        }
 
         public WaitForMessage(int index, String id, String label, String message, String correlationField,
                 String timeoutAfter, java.util.List<PayloadField> payload) {
@@ -317,6 +374,31 @@ public sealed interface Node {
             return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
         }
     }
+
+    /**
+     * Keep checking until done (S129, CG-W01). Durations are ISO-8601 texts with seconds allowed; {@code multiplier}
+     * is 1 without backoff; {@code maxInterval} equals {@code every} without backoff. {@code maxChecks} is null when
+     * the designer left it to the computed worst case. {@code failWhen} may be null.
+     */
+    record Poll(boolean firstCheckImmediate, String every, java.math.BigDecimal multiplier, String maxInterval,
+                int jitterPercent, WorkflowDefinition.Condition until, WorkflowDefinition.Condition failWhen,
+                String giveUpAfter, Integer maxChecks, int maxConsecutiveErrors, boolean errorsTimeOut,
+                boolean finalCheckAtDeadline, java.util.List<String> showWhileWaiting,
+                java.util.List<String> optionalResults, tools.jackson.databind.JsonNode json) {
+
+        /** @return true when this mapped result may be missing in an answer (it is then an optional output) */
+        public boolean optional(String key) {
+            return optionalResults.contains(key);
+        }
+    }
+
+    /**
+     * Safety-net check of a message wait (S129, CG-W03): the same call settings as a "Call a system" step and a slow
+     * interval; when {@code until} holds the mapped fields complete the wait as its payload.
+     */
+    record FallbackCheck(String connectionRef, String operation, Map<String, String> inputMapping,
+                         Map<String, String> resultMapping, int timeoutSeconds, String every, int jitterPercent,
+                         WorkflowDefinition.Condition until, Integer maxChecks, tools.jackson.databind.JsonNode json) { }
 
     /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
     record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }

@@ -35,19 +35,25 @@ tags:
   - name: Workflows
   - name: Releases
   - name: Runs
+  - name: Waits
   - name: Tasks
   - name: Notifications
   - name: Connections
+  - name: ConnectionHealth
+  - name: ConnectorPackages
   - name: Adapters
   - name: Agent write tools
+  - name: AgentTools
   - name: Access
   - name: AI
+  - name: AiSkills
   - name: Migration
   - name: Conversation
   - name: Insights
   - name: Attachments
   - name: Cases
   - name: Views
+  - name: McpServer
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -3824,6 +3830,134 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  # ------------------------------------------------------------------ Waits (docs/build/S129, CG-W01, CG-W03, CG-W08)
+  /workspaces/{workspaceId}/runs/{runId}/waits:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Waits]
+      operationId: listRunWaits
+      summary: What the request is waiting for, one entry per open wait (docs/build/S129)
+      description: |
+        Uniform across wait kinds (approval, timer, message, callback, poll, external job, child request, signal). A
+        "Keep checking until..." step or a safety-net check carries its checks; ended checks of the request are listed
+        separately. Values the step shows while waiting are included only for callers who may read the request data.
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200': { description: Open waits, content: { application/json: { schema: { $ref: '#/components/schemas/RunWaitList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/waits:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Waits]
+      operationId: searchWaits
+      summary: Open waits across the workspace, oldest first ("waiting on connection X for longer than Y")
+      x-orqix-permission: run.read
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] } }
+        - { name: connectionKey, in: query, required: false, schema: { type: string, maxLength: 64 } }
+        - { name: waitingLongerThan, in: query, required: false, description: 'ISO-8601 duration, for example PT1H or P2D', schema: { type: string, maxLength: 24 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200': { description: Matching waits, content: { application/json: { schema: { $ref: '#/components/schemas/WaitSearchResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/check-now:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: checkWaitNow
+      summary: Check now (at most once a minute; also restarts checks that stopped and need attention)
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.checked-now
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WaitActionRequest' } } } }
+      responses:
+        '200': { description: The check is due now, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/extend-deadline:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: extendWaitDeadline
+      summary: Extend the deadline (up to twice the authored time, never beyond 90 days from the start)
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.deadline-extended
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExtendWaitRequest' } } } }
+      responses:
+        '200': { description: The new deadline, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/stop:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: stopWaiting
+      summary: Stop waiting; a check-until step takes its timed-out path, a safety-net check simply stops
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.stopped
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WaitActionRequest' } } } }
+      responses:
+        '200': { description: Stopped, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/insights/outside-waits:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Insights]
+      operationId: getInsightsOutsideWaits
+      summary: Time spent waiting on outside systems (connections, messages, workers), longest total waiting first
+      description: Open waits from the "Waiting for" projection; finished checks and safety nets that ended in the range. At most 200 rows.
+      x-orqix-permission: run.read
+      parameters:
+        - $ref: '#/components/parameters/InsightsFrom'
+        - $ref: '#/components/parameters/InsightsTo'
+        - $ref: '#/components/parameters/InsightsWorkflowId'
+      responses:
+        '200': { description: Waits on outside systems, content: { application/json: { schema: { $ref: '#/components/schemas/InsightsOutsideWaits' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ------------------------------------------------------------------ end of Waits
+
   /workspaces/{workspaceId}/kafka-triggers:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -5158,7 +5292,9 @@ paths:
       summary: Report that a leased job could not be done
       description: >-
         A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay)
-        until the attempt limit; otherwise the request needs attention and an operator decides.
+        until the attempt limit; otherwise the request needs attention and an operator decides. With `errorCode`
+        (a business error, docs/build/S132) the step takes its failed route or raises its section error when the
+        workflow declares one; 422 when `errorCode` comes with `retryable: true` or uses the ORQIX_ prefix.
       x-orqix-permission: job.work
       x-orqix-audit: externaljob.failed
       parameters:
@@ -5174,6 +5310,55 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # S132 (CG-C08 / CG-I04): secret-access audit. Counts only, never values.
+  /workspaces/{workspaceId}/secret-access:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Connections]
+      operationId: getSecretAccess
+      summary: How often each secret reference was resolved, by provider
+      description: >-
+        Sums the secret-access audit of this workspace over the last `days` UTC days (today included): resolutions
+        (cache hits included), cache hits, references the store did not have, and failures (provider off or
+        unreachable), with the connection bindings that use each reference. No value, hash or length of a secret is
+        recorded (docs/build/S132).
+      x-orqix-permission: connection.manage
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90, default: 7 } }
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [since, items]
+                properties:
+                  since: { type: string, format: date }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [secretRef, provider, connectionKeys, resolutions, cacheHits, notFound, failures]
+                      properties:
+                        secretRef: { type: string, maxLength: 400 }
+                        provider: { type: string, enum: [file, vault, aws-sm, azure-kv, gcp-sm] }
+                        connectionKeys: { type: array, items: { $ref: '#/components/schemas/Key' } }
+                        resolutions: { type: integer, minimum: 0 }
+                        cacheHits: { type: integer, minimum: 0 }
+                        notFound: { type: integer, minimum: 0 }
+                        failures: { type: integer, minimum: 0 }
+                        lastResolvedAt: { type: [string, 'null'], format: date-time }
+                        lastFailedAt: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/runs/{runId}/retry:
     parameters:
@@ -6191,6 +6376,300 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  # ------------------------------------------------------------------ AgentTools (docs/build/S135, doc 29 §8)
+  /workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    get:
+      tags: [AgentTools]
+      operationId: getMcpToolSnapshot
+      summary: The tool pins of a registered MCP server (CG-M01) and the drift the runtime observed
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Pins of the latest definition version (status pinned or unpinned per allow-listed tool) and open drift
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpToolSnapshot' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AgentTools]
+      operationId: takeMcpToolSnapshot
+      summary: Pin the tools of a registered MCP server as the bound server lists them now
+      description: |
+        Connects to the server in the workspace binding, lists its tools and, for every tool in the definition's
+        catalog, stores the inputSchema and the SHA-256 of its canonical JSON. At runtime a tool whose live schema
+        differs, that is missing or that has no pin is refused (TOOL_SCHEMA_CHANGED / TOOL_NOT_PINNED) and the
+        administrator who pinned it is notified. Taking a new snapshot resolves the drift. The server's own tool
+        descriptions are never stored or offered. Fresh connection.manage.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: mcp.tool-snapshot.taken
+      responses:
+        '200':
+          description: The new pins (status pinned or missing per catalog tool)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpToolSnapshot' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/agent-kill-switches:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AgentTools]
+      operationId: listAgentKillSwitches
+      summary: Kill switches of agents and MCP servers (CG-M03)
+      x-orqix-permission: connection.read
+      description: Also readable with run.operate.
+      responses:
+        '200':
+          description: Every switch that was ever set, active first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AgentKillSwitch' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/agent-kill-switches/{scope}/{connectionKey}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: scope, in: path, required: true, schema: { type: string, enum: [agent, server] } }
+      - { $ref: '#/components/parameters/ConnectionKey' }
+    put:
+      tags: [AgentTools]
+      operationId: setAgentKillSwitch
+      summary: Switch an agent (scope agent) or an MCP server (scope server) off or on again
+      description: |
+        Off stops new calls at once: an agent makes no further execution or durable turn (AGENT_STOPPED), a server's
+        tools are refused before every call. A call already in flight finishes. Fresh connection.manage, reason
+        required, expectedVersion once the switch exists.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.kill-switch.changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAgentKillSwitch' }
+      responses:
+        '200':
+          description: The switch now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentKillSwitch' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-trace-settings:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTraceSettings
+      summary: The workspace's opt-in conversation trace setting (CG-M05)
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The setting (version 0 and enabled false until one is saved)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTraceSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AgentTools]
+      operationId: setAgentTraceSettings
+      summary: Enable or disable the conversation trace, with redaction rules and retention (1-30 days, default 7)
+      description: |
+        Off (the default) keeps agent records metadata only. On keeps turns and tool calls with arguments, results and
+        model text after redaction: built-in rules (e-mail addresses, runs of 12-19 digits, bearer and API tokens),
+        the named JSON fields and the workspace patterns (regular expressions without nested repetition). Rows are
+        deleted when the retention passes.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: agent.trace.settings-changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAgentTraceSettings' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTraceSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/agent-trace:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/RunId' }
+      - { name: nodeId, in: query, required: false, schema: { type: string, maxLength: 200 } }
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTrace
+      summary: The redacted conversation trace of a run's agent steps (one step with nodeId), linked to the diagram
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Events in order per step (empty when the trace is off or has expired)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTrace' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/agent-tests:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTestSuite
+      summary: The agent test suite of an agent connection (CG-M07) and its last result
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: The suite (an empty one with version 0 until saved)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AgentTools]
+      operationId: saveAgentTestSuite
+      summary: Save the test suite (cases with input, tool fixtures and expectations; a pinned judge model)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.test-suite.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveAgentTestSuite' }
+      responses:
+        '200':
+          description: Saved (the last result is cleared)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/agent-tests/run:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    post:
+      tags: [AgentTools]
+      operationId: runAgentTestSuite
+      summary: Run every case of the saved suite against the latest connection version
+      description: |
+        Every tool is replaced by its fixtures (no MCP server, connection, workflow or person is involved); the model
+        runs for real and is metered like any AI use. Judge assertions use the suite's judge profile and fail with
+        JUDGE_MODEL_CHANGED when it resolves to another model than the pinned one.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.test-suite.ran
+      responses:
+        '200':
+          description: The suite with lastResult (verdicts, tool sequences, judge scores)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-requests:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: status, in: query, required: false, schema: { type: string, enum: [open, answered, approved, rejected, cancelled, expired] } }
+    get:
+      tags: [AgentTools]
+      operationId: listAgentRequests
+      summary: Questions, approvals and elicitations that durable agents raised for people (CG-M03)
+      description: |
+        Members of the request's group (with task.act) see the question, the proposed arguments or the server's
+        message; operators (run.operate) see the requests without those details. Default status open.
+      x-orqix-permission: task.act
+      responses:
+        '200':
+          description: Requests, newest first (at most 200)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AgentHumanRequest' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/agent-requests/{requestId}/answer:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [AgentTools]
+      operationId: answerAgentRequest
+      summary: Answer an agent's question or elicitation, or approve or reject a proposed tool call
+      description: |
+        Fresh task.act and membership of the request's group. An approval is never decided by the person whose request
+        the agent works on (403 SEPARATION_OF_DUTIES). An answer must fit the answer form. The answer wakes the agent.
+      x-orqix-permission: task.act
+      x-orqix-audit: agent.request.answered
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerAgentRequest' }
+      responses:
+        '200':
+          description: The request after the answer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentHumanRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-dashboard:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90 } }
+    get:
+      tags: [AgentTools]
+      operationId: getAgentDashboard
+      summary: Agent control plane (CG-M05) - calls, cost, refusals, schema changes, failure codes, p95 duration
+      description: Also readable with connection.read. Facts only, never prompts, arguments or results.
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: The figures for the window (default 7 days)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentDashboard' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/agent-writes/{writeId}/reconcile:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -6312,7 +6791,7 @@ paths:
               additionalProperties: false
               required: [definition]
               properties:
-                definition: { $ref: './connection-definition-v0.schema.json' }
+                definition: { $ref: '#/components/schemas/ConnectionDefinitionDocument' }
       responses:
         '201':
           description: Registered
@@ -6529,6 +7008,326 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '409': { $ref: '#/components/responses/FeatureDisabled' }
 
+  # ---- ConnectionHealth (CG-W04, CG-C09, docs/build/S131): health, circuit state and binding request limits ----
+  /workspaces/{workspaceId}/connection-health:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectionHealth]
+      operationId: listConnectionHealth
+      summary: Health of every connection binding (calls, success rate, latency, circuit, limits, notices)
+      description: |
+        Per binding over the last hour and day: calls and success rate, p50 and p95 latency, HTTP 429 count, token
+        refresh failures, deferred calls and the last error code, plus the circuit state and the request limit.
+        Notices are derived from thresholds (open circuit, failing token refresh, success rate under 90 percent over
+        at least 10 calls, 429 answers, deferred calls). Never payloads, headers or secrets.
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Health by connection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealthList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/health:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    get:
+      tags: [ConnectionHealth]
+      operationId: getConnectionHealth
+      summary: Health, circuit state and request limit of one connection binding
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Connection health
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealth' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/rate-limit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    put:
+      tags: [ConnectionHealth]
+      operationId: putConnectionRateLimit
+      summary: Set or clear the binding's maxRequestsPerMinute
+      description: |
+        Enforced on each pod as the limit divided by the live pods (at least 1 a minute per pod). A call over the
+        limit waits until a slot is free without using one of the step's attempts. null removes the limit.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.rate-limit.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [maxRequestsPerMinute]
+              properties:
+                maxRequestsPerMinute: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+      responses:
+        '200':
+          description: Saved; the binding's health with the new limit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionHealth' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end ConnectionHealth paths ----
+
+  # ---- ConnectorPackages (CG-C03, CG-C04, CG-C05, CG-C10, docs/build/S133): packages, catalog, palette, triggers ----
+  /workspaces/{workspaceId}/connector-packages:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: listConnectorPackages
+      summary: List the organization's connector package versions with their state in this workspace
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Package versions, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [ConnectorPackages]
+      operationId: importConnectorPackage
+      summary: Import a signed .orqpkg connector package for review
+      description: |
+        Needs fresh connector.manage. The archive is unzipped in memory with size, file and path limits, its checksums
+        and signature are checked against the deployment's trusted publisher keys, and every file is validated (schemas,
+        connection registration rules, compiler on step templates and starter workflows, fixture replay). An unsigned
+        package, or one signed with an untrusted key, needs `unsignedReason` (audited). A broken signature is always
+        refused. Nothing is active until a different person approves the exact hash and someone installs it.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-imported
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageImport' } } } }
+      responses:
+        '201': { description: 'Imported, pending approval', content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [ConnectorPackages]
+      operationId: getConnectorPackage
+      summary: Review a package version (hosts, operations by effect class, data leaving Orqix, auth, triggers, comparison and where-used)
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Package version, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/decision:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: decideConnectorPackage
+      summary: Approve or reject exactly this package hash (a different person than the importer)
+      description: Needs the grant-only permission connector.approve (no role carries it). sha256 must be the hash shown on the review screen and expectedRevision the revision loaded (409 CONFIGURATION_VERSION_CONFLICT otherwise). The importer gets 403.
+      x-orqix-permission: connector.approve
+      x-orqix-audit: connector.package-decided
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDecision' } } } }
+      responses:
+        '200': { description: Decided, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/install:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: installConnectorPackage
+      summary: Install (or upgrade to) an approved package version in this workspace
+      description: Needs fresh connector.manage. The package connections become connection versions of this workspace (an unchanged definition reuses its version); install never creates bindings or credentials. The previously active version is superseded; published releases stay pinned.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-installed
+      responses:
+        '201': { description: Installed, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageInstall' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/retire:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: retireConnectorPackage
+      summary: Retire a package version (no new installs; no new use here; pinned releases keep working)
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-retired
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageRetire' } } } }
+      responses:
+        '200': { description: Retired, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPackageDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-packages/{packageVersionId}/workflow-templates/{templateKey}/workflows:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageVersionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: templateKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: createWorkflowFromPackageTemplate
+      summary: Create a workflow draft from a starter workflow of an installed package
+      description: The template's package connections are pinned to the versions installed here. Only an approved, actively installed version gives templates (404 otherwise).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkflowRequest' } } } }
+      responses:
+        '201':
+          description: Created
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Workflow' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/connector-catalog:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: getConnectorCatalog
+      summary: Internal catalog of the organization's packages, versions, signature status, installs and outdated pins
+      x-orqix-permission: connector.manage | connector.approve | connection.read
+      responses:
+        '200': { description: Catalog, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorCatalog' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/connector-palette:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: searchConnectorPalette
+      summary: Search the Studio palette by operation ("Create incident · ServiceNow") and package step templates
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Palette items, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectorPalette' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [ConnectorPackages]
+      operationId: listPackageTriggers
+      summary: Package webhook and polling triggers with their status (watermark, last run, lag, duplicates, dead records)
+      x-orqix-permission: connector.manage | run.operate
+      responses:
+        '200': { description: Triggers, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [ConnectorPackages]
+      operationId: createPackageTrigger
+      summary: Set up a trigger of an installed package in this workspace
+      description: Needs fresh connector.manage. The caller becomes the run-as person and needs workflow.start for a start trigger or message.send for a message trigger. A webhook trigger names the secret it verifies with (and, for JWT, the issuer and audience); a polling trigger reads through the package connection's binding.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.trigger-configured
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerConfigure' } } } }
+      responses:
+        '201': { description: Configured, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTrigger' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    put:
+      tags: [ConnectorPackages]
+      operationId: updatePackageTrigger
+      summary: Change, enable or disable a package trigger
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.trigger-configured
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerConfigure' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTrigger' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}/dead-records:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [ConnectorPackages]
+      operationId: listPackageTriggerDeadRecords
+      summary: Events a trigger could not use (error code, digest and time only; never content)
+      x-orqix-permission: connector.manage | run.operate
+      responses:
+        '200': { description: Dead records, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerDeadRecordList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/package-triggers/{packageTriggerId}/events:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: packageTriggerId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [ConnectorPackages]
+      operationId: receivePackageTriggerEvent
+      summary: Receive one webhook event for a package trigger (no session or token)
+      description: |
+        Verified by the scheme the package declares: an HMAC-SHA256 over `timestamp + "." + rawBody` in the package's
+        signature and timestamp headers (hex or base64, within the tolerance), a bearer JWT (HS256 with the trigger
+        secret or RS256 with its public key; issuer, audience and exp checked, lifetime bounded), or basic credentials
+        (weaker, HTTPS only). Every verification failure is 401; unknown or disabled triggers are 404. Bodies up to
+        64 KiB. A repeated event (same dedupe key) is acknowledged as a duplicate and never starts or resumes twice.
+      x-orqix-permission: packageTriggerVerification
+      x-orqix-audit: connector.trigger-record-dead
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '202': { description: Accepted, content: { application/json: { schema: { $ref: '#/components/schemas/PackageTriggerAccepted' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  # ---- end ConnectorPackages ----
   /workspaces/{workspaceId}/features:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -6579,6 +7378,76 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceFeatures' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/mcp-server:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [McpServer]
+      operationId: getMcpServer
+      summary: Whether AI assistants may use Orqix through MCP in this workspace (CG-M04, S136)
+      description: |
+        The Orqix MCP server (endpoint /mcp, Streamable HTTP, protocol 2025-11-25) lets an assistant act for the
+        signed-in person with that person's own permissions. It is off in every workspace until a workspace
+        administrator switches it on. The endpoint and protected resource metadata URLs are what an MCP client needs.
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The switch and the connection details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpServer' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [McpServer]
+      operationId: setMcpServer
+      summary: Switch the MCP server on or off for this workspace (S136)
+      description: |
+        Takes effect on the next MCP call on every replica (no cache). Switching off hides the workspace from MCP
+        clients at once (its tools disappear, calls answer like an unknown workspace) and pending confirmations can no
+        longer be confirmed. Setting the current value again changes nothing and writes no audit record.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: mcp.server.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetMcpServer' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpServer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/mcp-server/calls:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [McpServer]
+      operationId: listMcpCalls
+      summary: Recent MCP tool calls in this workspace, newest first (S136)
+      description: |
+        Read from the audit log (action mcp.tool-called): who called which tool, the step (read, prepare, confirm,
+        elicitation answer), the outcome and the IDs involved. Never arguments, values or results.
+      x-orqix-permission: workspace.manage-access
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Recent calls
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpCallList' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -6662,7 +7531,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -6757,6 +7626,734 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---- AiSkills (docs/build/S134): AI skills, evaluations, shadow mode, promotions, policy, decisions ----
+  /workspaces/{workspaceId}/ai-skills:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiSkills
+      summary: 'AI skills of the workspace with their versions (S134)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AiSkills]
+      operationId: createAiSkill
+      summary: 'Create an AI skill with its first draft version'
+      description: |
+        The document follows contracts/ai-skill-v1.schema.json (kind skill); 422 VALIDATION_FAILED lists the problems.
+        409 DUPLICATE_KEY when the key exists.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkill' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiSkill
+      summary: 'One AI skill with every version and document'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkill' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    post:
+      tags: [AiSkills]
+      operationId: createAiSkillVersion
+      summary: 'Add a draft version (approved versions never change)'
+      description: |
+        409 AI_SKILL_STATE_CONFLICT while another version is in draft or submitted.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    put:
+      tags: [AiSkills]
+      operationId: updateAiSkillVersion
+      summary: 'Replace the document of a draft or submitted version (returns it to draft)'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/submit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: submitAiSkillVersion
+      summary: 'Submit a draft for approval'
+      description: |
+        The model profile must be usable (422 otherwise).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.submitted
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/approve:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: approveAiSkillVersion
+      summary: 'Approve a submitted version (four eyes)'
+      description: |
+        Grant-only ai.approve-skill, checked fresh; never the author (403 SELF_APPROVAL_DENIED); reason required.
+        Earlier approved versions stay approved for the releases that pinned them.
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.skill.version.approved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiReasonRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/retire:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: retireAiSkillVersion
+      summary: 'Retire a version: AI tasks pinned to it go to aiUnavailable (kill switch)'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.retired
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/evaluations:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: startAiEvaluation
+      summary: 'Run an evaluation suite on the version and its model profile (async)'
+      description: |
+        Answers 202 at once with status running; poll getAiEvaluation. A passing run within 30 days on the pinned
+        profile is the publish gate of AI tasks (WF_AI_EVALUATION_REQUIRED).
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.evaluation.started
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvaluationStartRequest' }
+      responses:
+        '202':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvaluations
+      summary: 'Evaluation runs of a version, newest first'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluationList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-evaluations/{evaluationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiEvaluation
+      summary: 'One evaluation run with metrics and calibration'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-suites:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvalSuites
+      summary: 'Evaluation suites (shared test assets)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuiteList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-suites/{suiteKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: suiteKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiEvalSuite
+      summary: 'One evaluation suite with its cases'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AiSkills]
+      operationId: saveAiEvalSuite
+      summary: 'Create or replace an evaluation suite'
+      description: |
+        Cases are synthetic or deliberately redacted; nothing imports production data.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.eval-suite.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvalSuiteSaveRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/shadow:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [AiSkills]
+      operationId: getAiShadowDashboard
+      summary: 'Agreement with human outcomes: confusion matrix, precision, recall, cost, latency'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiShadowDashboard' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/promotions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: requestAiSkillPromotion
+      summary: 'Ask to raise the autonomy ceiling one step (suggest, autoWithReview, auto)'
+      description: |
+        Needs the skill minimum of compared shadow cases (default 200) with agreement at or above its target
+        (default 0.9); otherwise 422.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.promotion.requested
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillPromotionRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/promotions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: listAiSkillPromotions
+      summary: 'Promotions of a skill, newest first'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotionList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skill-promotions/{promotionId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: promotionId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: decideAiSkillPromotion
+      summary: 'Approve or reject a promotion (four eyes)'
+      description: |
+        Never the person who asked for it (403 SELF_APPROVAL_DENIED); reason required.
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.promotion.decided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillPromotionDecision' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/drift-check:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: checkAiSkillDrift
+      summary: 'Run the drift check now (also weekly)'
+      description: |
+        Compares agreement over the last 7 days with the promotion baseline; a drop beyond the skill threshold with
+        at least 20 cases falls back to suggest.
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.skill.drift-fallback
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDriftCheck' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/clear-drift:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: clearAiSkillDrift
+      summary: 'Let a version decide automatically again after a drift fallback'
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.skill.drift-cleared
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiReasonRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiShadowDashboard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-review-queue:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiReviewQueue
+      summary: 'Automatic AI decisions sampled for review that nobody reviewed yet'
+      x-orqix-permission: ai.evaluate | run.operate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiReviewQueue' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-candidates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvalCandidates
+      summary: 'Overrides waiting to become evaluation cases'
+      x-orqix-permission: ai.evaluate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalCandidateList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-candidates/{candidateId}/review:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: candidateId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: reviewAiEvalCandidate
+      summary: 'Accept a candidate into a suite (redacted or synthetic input) or discard it'
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.eval-candidate.reviewed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvalCandidateReview' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalCandidateReviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: getAiPolicy
+      summary: 'Workspace AI policy: residency, retention, low-risk labels, classification actions'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill | workspace.manage-access
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiPolicy' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AiSkills]
+      operationId: updateAiPolicy
+      summary: 'Update the workspace AI policy'
+      description: |
+        expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT). A regulated workspace never sends sensitive
+        fields, and adverse outcomes always need a person there.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: ai.policy.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiPolicyUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-decisions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [AiSkills]
+      operationId: listRunAiDecisions
+      summary: 'AI decision records of a run (S134 section 7.8)'
+      description: |
+        Input values appear only when retained by the workspace policy and the caller may see the run data.
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDecisionList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-decisions/{decisionId}/outcome:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: decisionId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: recordAiDecisionOutcome
+      summary: 'Record that a person accepted or overrode an AI decision'
+      description: |
+        An override names the final label or outcome and a reason; it becomes a candidate evaluation case.
+      x-orqix-permission: taskParticipant | run.operate | ai.evaluate
+      x-orqix-audit: ai.decision.outcome-recorded
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiDecisionOutcomeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDecision' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end AiSkills ----
 
   /workspaces/{workspaceId}/ai/status:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -9484,6 +11081,114 @@ components:
         state: { type: string, const: resumed }
         resumedAt: { type: string, format: date-time }
         acceptedFields: { type: array, items: { type: string } }
+    # ---------------------------------------------------------------- Waits (docs/build/S129)
+    RunWait:
+      type: object
+      additionalProperties: false
+      required: [nodeId, kind, label, subject, since, nextCheckAt, dueAt, deadlineAt, attempts, correlationRef, connectionKey, check]
+      properties:
+        nodeId: { type: string }
+        kind: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] }
+        label: { type: string }
+        subject: { type: string, description: 'Plain language, for example "Order tracking to report that “Track the order” is done (state: pending)"' }
+        since: { type: string, format: date-time }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+        dueAt: { type: [string, 'null'], format: date-time }
+        deadlineAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0, description: Checks made so far (poll and safety-net checks) }
+        correlationRef: { type: [string, 'null'], description: 'Message name, signal or worker topic; never a request value' }
+        connectionKey: { type: [string, 'null'] }
+        check: { oneOf: [{ $ref: '#/components/schemas/PollCheck' }, { type: 'null' }] }
+    PollCheck:
+      type: object
+      additionalProperties: false
+      required: [waitId, kind, state, checksDone, maxChecks, consecutiveErrors, startedAt, lastCheckedAt, lastHttpStatus,
+                 lastOutcome, deadlineAt, authoredDeadlineAt, extensionLimit, deadlineExtensions, shown, canOperate,
+                 checkNowAvailableAt, endedAt, endReason]
+      properties:
+        waitId: { type: string, format: uuid }
+        kind: { type: string, enum: [check, fallback], description: 'check: a "Keep checking until..." step; fallback: the safety-net check of a message wait' }
+        state: { type: string, enum: [waiting, checking, met, failed, timedOut, cancelled, attention] }
+        checksDone: { type: integer, minimum: 0 }
+        maxChecks: { type: integer, minimum: 1, maximum: 1000 }
+        consecutiveErrors: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time }
+        lastCheckedAt: { type: [string, 'null'], format: date-time }
+        lastHttpStatus: { type: [integer, 'null'] }
+        lastOutcome: { type: [string, 'null'], description: 'pending, done, failed or an error code such as HTTP_503' }
+        deadlineAt: { type: string, format: date-time }
+        authoredDeadlineAt: { type: string, format: date-time }
+        extensionLimit: { type: string, format: date-time }
+        deadlineExtensions: { type: integer, minimum: 0 }
+        shown: { type: [object, 'null'], maxProperties: 3, additionalProperties: { type: [string, number, boolean] }, description: Values shown while waiting; null without request-data access }
+        canOperate: { type: boolean }
+        checkNowAvailableAt: { type: [string, 'null'], format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+        endReason: { type: [string, 'null'] }
+    RunWaitList:
+      type: object
+      additionalProperties: false
+      required: [items, endedChecks]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RunWait' } }
+        endedChecks: { type: array, items: { $ref: '#/components/schemas/PollCheck' } }
+    WaitSearchItem:
+      type: object
+      additionalProperties: false
+      required: [runId, runReference, nodeId, kind, label, subject, since, nextCheckAt, deadlineAt, attempts, connectionKey]
+      properties:
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        kind: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] }
+        label: { type: string }
+        subject: { type: string }
+        since: { type: string, format: date-time }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+        deadlineAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0 }
+        connectionKey: { type: [string, 'null'] }
+    WaitSearchResult:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/WaitSearchItem' } }
+    WaitActionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ExtendWaitRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, extendBy]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        extendBy: { type: string, maxLength: 24, description: 'ISO-8601 duration, for example PT6H or P1D' }
+    InsightsOutsideWait:
+      type: object
+      additionalProperties: false
+      required: [kind, source, openNow, longestOpenSeconds, totalOpenSeconds, finished, averageFinishedSeconds, p90FinishedSeconds]
+      properties:
+        kind: { type: string, enum: [poll, message, callback, externalJob] }
+        source: { type: string, description: 'Connection key, message name or worker topic' }
+        openNow: { type: integer, minimum: 0 }
+        longestOpenSeconds: { type: [integer, 'null'], minimum: 0 }
+        totalOpenSeconds: { type: [integer, 'null'], minimum: 0 }
+        finished: { type: integer, minimum: 0, description: Checks and safety nets that ended in the range }
+        averageFinishedSeconds: { type: [integer, 'null'], minimum: 0 }
+        p90FinishedSeconds: { type: [integer, 'null'], minimum: 0 }
+    InsightsOutsideWaits:
+      type: object
+      additionalProperties: false
+      required: [range, items, totalOpenSeconds]
+      properties:
+        range: { $ref: '#/components/schemas/InsightsRange' }
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InsightsOutsideWait' } }
+        totalOpenSeconds: { type: integer, minimum: 0 }
+    # ---------------------------------------------------------------- end of Waits
     KafkaCluster:
       type: object
       additionalProperties: false
@@ -9744,7 +11449,7 @@ components:
             required: [key, effectClass]
             properties:
               key: { type: string, minLength: 1, maxLength: 80 }
-              effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+              effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentNatural, nonIdempotent] }
               idempotencyHeader: { type: string, maxLength: 64 }
     OpenApiReviewResult:
       type: object
@@ -9753,7 +11458,7 @@ components:
       properties:
         definition:
           oneOf:
-            - $ref: './connection-definition-v0.schema.json'
+            - $ref: '#/components/schemas/ConnectionDefinitionDocument'
             - type: 'null'
         report:
           type: object
@@ -9972,6 +11677,10 @@ components:
         - job.work
         - workflow.approve-promotion
         - agent.approve-write-tool
+        - connector.manage
+        - connector.approve
+        - ai.approve-skill
+        - ai.evaluate
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -10103,6 +11812,194 @@ components:
       properties:
         retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
         expectedVersion: { type: integer, minimum: 0 }
+    # ---------------------------------------------------------------- AgentTools (docs/build/S135)
+    McpToolDrift:
+      type: object
+      additionalProperties: false
+      required: [id, connectionKey, toolName, kind, occurrences, firstSeenAt, lastSeenAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        toolName: { type: string, maxLength: 64 }
+        kind: { type: string, enum: [changed, missing, unpinned] }
+        pinnedSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        observedSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        occurrences: { type: integer, minimum: 1 }
+        firstSeenAt: { $ref: '#/components/schemas/Timestamp' }
+        lastSeenAt: { $ref: '#/components/schemas/Timestamp' }
+    McpToolSnapshot:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, definitionVersion, tools, drift]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        definitionVersion: { type: integer, minimum: 1 }
+        takenAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        tools:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, label, status]
+            properties:
+              name: { type: string, maxLength: 64 }
+              label: { type: string, maxLength: 80 }
+              status: { type: string, enum: [pinned, unpinned, missing] }
+              schemaSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        drift: { type: array, items: { $ref: '#/components/schemas/McpToolDrift' } }
+    AgentKillSwitch:
+      type: object
+      additionalProperties: false
+      required: [scope, connectionKey, active, reason, changedBy, changedAt, version]
+      properties:
+        scope: { type: string, enum: [agent, server] }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        active: { type: boolean, description: 'true: switched off (no new calls)' }
+        reason: { type: string, maxLength: 500 }
+        changedBy: { $ref: '#/components/schemas/Uuid' }
+        changedAt: { $ref: '#/components/schemas/Timestamp' }
+        version: { type: integer, minimum: 1 }
+    SetAgentKillSwitch:
+      type: object
+      additionalProperties: false
+      required: [active, reason]
+      properties:
+        active: { type: boolean }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: [integer, 'null'], minimum: 1, description: Required once the switch exists }
+    AgentTraceSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, retentionDays, redactFields, redactPatterns, version]
+      properties:
+        enabled: { type: boolean }
+        retentionDays: { type: integer, minimum: 1, maximum: 30 }
+        redactFields: { type: array, maxItems: 50, items: { type: string, maxLength: 64 } }
+        redactPatterns: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        changedBy: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        changedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0 }
+    SetAgentTraceSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 30 }
+        redactFields: { type: [array, 'null'], maxItems: 50, items: { type: string, minLength: 1, maxLength: 64 } }
+        redactPatterns: { type: [array, 'null'], maxItems: 20, items: { type: string, minLength: 1, maxLength: 200 } }
+        expectedVersion: { type: [integer, 'null'], minimum: 0 }
+    AgentTrace:
+      type: object
+      additionalProperties: false
+      required: [runId, enabled, events]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [seq, kind, content, createdAt]
+            properties:
+              seq: { type: integer, minimum: 1 }
+              kind: { type: string, enum: [input, turn, toolCall, wait, answer, end] }
+              toolName: { type: [string, 'null'] }
+              model: { type: [string, 'null'] }
+              outcome: { type: [string, 'null'] }
+              durationMs: { type: [integer, 'null'], minimum: 0 }
+              costUsd: { type: [number, 'null'], minimum: 0 }
+              content: { type: object, additionalProperties: true, description: 'Redacted arguments, results and model text' }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AgentTestSuite:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, suite, version]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        suite: { $ref: '#/components/schemas/AgentTestSuiteDocument' }
+        lastResult: { type: [object, 'null'], additionalProperties: true, description: 'connectionVersion, passed, failed, ranAt and per case: name, passed, outcome, errorCode, toolSequence, output, assertions (kind, passed, message; judge: score and judgeModel)' }
+        lastRunAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0 }
+    AgentTestSuiteDocument:
+      type: object
+      description: |
+        operation: the agent operation; judge: {profile, model} pins the judge (the profile must resolve to model);
+        cases (1-20): {name, input, fixtures: {<tool name>: [{args?, result, isError?}]}, expect: {calledOnce, called,
+        never: [tool names], neverWriteTools, order: [tool names], output: {field: value}, failure: errorCode,
+        judge: {criteria, minScore 1-5}}}. Fixture args are matched as a subset of the call's arguments.
+      properties:
+        operation: { type: string }
+        judge:
+          type: object
+          properties:
+            profile: { type: string }
+            model: { type: string }
+        cases: { type: array, maxItems: 20, items: { type: object } }
+    SaveAgentTestSuite:
+      type: object
+      additionalProperties: false
+      required: [suite]
+      properties:
+        suite: { $ref: '#/components/schemas/AgentTestSuiteDocument' }
+        expectedVersion: { type: [integer, 'null'], minimum: 0 }
+    AgentHumanRequest:
+      type: object
+      additionalProperties: false
+      required: [id, runId, runReference, nodeId, kind, toolName, toolLabel, groupKey, status, createdAt, canAnswer, version]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        runReference: { type: string }
+        nodeId: { type: string }
+        kind: { type: string, enum: [ask, approval, elicitation] }
+        toolName: { type: string }
+        toolLabel: { type: string, maxLength: 80 }
+        groupKey: { $ref: '#/components/schemas/Key' }
+        status: { type: string, enum: [open, answered, approved, rejected, cancelled, expired] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        answerSchema: { type: [object, 'null'], additionalProperties: true, description: 'ask and elicitation: the flat answer form (JSON Schema)' }
+        detail: { type: [object, 'null'], additionalProperties: true, description: 'Only for members of the group: question (ask), arguments (approval) or message (elicitation); cleared when the agent moves on' }
+        canAnswer: { type: boolean }
+        version: { type: integer, minimum: 1 }
+    AnswerAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        decision: { type: [string, 'null'], enum: [approve, reject, null], description: Approvals only }
+        answer: { type: [object, 'null'], additionalProperties: true, description: 'Ask and elicitation: values for the answer form' }
+        reason: { type: [string, 'null'], maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    AgentDashboard:
+      type: object
+      additionalProperties: false
+      required: [days, from, agents, refusedToolCalls, schemaRefusals, killSwitches, loops, openRequests]
+      properties:
+        days: { type: integer, minimum: 1, maximum: 90 }
+        from: { $ref: '#/components/schemas/Timestamp' }
+        agents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [connectionKey, calls, succeeded, failed, costUsd, failureCodes]
+            properties:
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              calls: { type: integer, minimum: 0 }
+              succeeded: { type: integer, minimum: 0 }
+              failed: { type: integer, minimum: 0 }
+              costUsd: { type: number, minimum: 0 }
+              p95DurationMs: { type: [integer, 'null'], minimum: 0 }
+              failureCodes: { type: object, additionalProperties: { type: integer } }
+        refusedToolCalls: { type: object, additionalProperties: { type: integer }, description: 'Refused tool calls by outcome (refusedNotAllowed, refusedSchemaChanged, refusedDataClass, refusedKillSwitch, invalidArguments, declined, ...)' }
+        schemaRefusals: { type: array, items: { $ref: '#/components/schemas/McpToolDrift' } }
+        killSwitches: { type: array, items: { $ref: '#/components/schemas/AgentKillSwitch' } }
+        loops: { type: object, additionalProperties: { type: integer }, description: Durable loops by status }
+        openRequests: { type: integer, minimum: 0 }
+        aiTaskAgreement: { type: [number, 'null'], description: 'Agreement of AI tasks with people; null until AI task decisions (CG-A03) record it' }
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -10177,6 +12074,7 @@ components:
             - AI_OUTPUT_INVALID
             - AI_PROVIDER_UNAVAILABLE
             - AI_BUDGET_EXCEEDED
+            - AI_SKILL_STATE_CONFLICT
             - SOURCE_INVALID
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
@@ -10290,6 +12188,48 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceFeatureState' }
+    McpServer:
+      type: object
+      additionalProperties: false
+      required: [enabled, endpoint, metadataUrl, audiences, callsPerMinute, confirmationSeconds, updatedAt, updatedBy]
+      properties:
+        enabled: { type: boolean, description: 'false until a workspace administrator switches it on' }
+        endpoint: { type: string, format: uri, description: 'The MCP endpoint (resource URI) to give an MCP client' }
+        metadataUrl: { type: string, format: uri, description: 'OAuth protected resource metadata (RFC 9728)' }
+        audiences: { type: array, items: { type: string }, description: 'Token audiences accepted besides the endpoint URI' }
+        callsPerMinute: { type: integer, minimum: 1, description: 'Tool calls one person may make per minute (per pod)' }
+        confirmationSeconds: { type: integer, minimum: 1, description: 'How long a prepared write can be confirmed' }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: 'null until first switched' }
+        updatedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+    SetMcpServer:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    McpCall:
+      type: object
+      additionalProperties: false
+      required: [occurredAt, actor, tool, step, outcome, errorCode, runId, taskId, workflowId, confirmationId]
+      properties:
+        occurredAt: { $ref: '#/components/schemas/Timestamp' }
+        actor: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        tool: { type: string, description: 'Tool name, or unknown for a name that is not an Orqix tool' }
+        step: { type: [string, 'null'], description: 'read, prepare, confirm, elicitationAccepted or elicitationDeclined' }
+        outcome: { type: string, description: 'success, confirmationRequired, replayed, declined, expired, rateLimited, denied or failed' }
+        errorCode: { type: [string, 'null'] }
+        runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        taskId: { type: [string, 'null'] }
+        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        confirmationId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+    McpCallList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/McpCall' }
     SetWorkspaceFeature:
       type: object
       additionalProperties: false
@@ -11083,6 +13023,17 @@ components:
               status: { type: integer, minimum: 200, maximum: 599, description: 'HTTP status of the mocked answer; default the first success status' }
               body: { type: [object, array], description: 'The full mocked response body, checked against the response schema of the operation' }
               delaySeconds: { type: integer, minimum: 0, maximum: 2592000, description: 'How long the answer takes; above the step time limit it is a timeout' }
+              checks:
+                type: array
+                minItems: 1
+                maxItems: 100
+                description: 'A step that keeps checking until done (docs/build/S129): the answers of its checks in order; the last one repeats'
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    result: { type: object, additionalProperties: true }
+                    failure: { type: string, enum: [unavailable, rejected] }
         workers:
           type: object
           description: By step ID of a Work by an external worker step. Default is a sample result.
@@ -11091,8 +13042,24 @@ components:
             additionalProperties: false
             properties:
               result: { type: object, additionalProperties: true, description: 'The result fields (checked against the declared fields)' }
-              failure: { type: string, enum: [failed] }
+              failure: { type: string, enum: [failed, businessError], description: 'failed - every attempt fails; businessError - the worker reports errorCode (S132)' }
+              errorCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$', description: 'For businessError; default WORKER_ERROR' }
+              message: { type: string, maxLength: 500, description: 'For businessError' }
               delaySeconds: { type: integer, minimum: 0, maximum: 2592000 }
+        ai:
+          type: object
+          description: By step ID of an AI task (docs/build/S134). No model is called; without settings a classify task answers its first label with confidence 0.95.
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              unavailable: { type: boolean, description: 'Take the path for when AI is unavailable' }
+              label: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              fields: { type: object, description: 'Extracted values (extract)' }
+              score: { type: number }
+              recommendation: { type: string }
+              summary: { type: string, maxLength: 8000 }
         adapters:
           type: object
           description: By step ID of a Send through an adapter step. Default is delivered to the local stub.
@@ -11346,7 +13313,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -11939,7 +13906,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error], description: 'error only on a section error route (S59).' }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object
@@ -11962,7 +13929,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -12230,6 +14197,14 @@ components:
         message: { type: string, minLength: 1, maxLength: 500 }
         retryable: { type: boolean }
         retryAfterSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        errorCode:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{1,39}$'
+          description: >-
+            A business error (docs/build/S132): the work was done and the answer is no. Final (send retryable
+            false); codes starting with ORQIX_ are reserved. The step takes its failed route (outputs failureKind
+            workerError, failureCode, failureMessage) or raises its section error when it is set to; otherwise the
+            request needs attention.
     SendBackOpen:
       type: object
       additionalProperties: false
@@ -12452,7 +14427,7 @@ components:
         label: { type: string }
         connectionKey: { $ref: '#/components/schemas/Key' }
         operation: { type: string }
-        effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+        effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentByLookup, idempotentNatural, nonIdempotent] }
         state: { type: string, enum: [pending, inFlight, succeeded, retryableFailure, permanentFailure, unknown, notApplied] }
         attempts: { type: integer }
         lastHttpStatus: { type: [integer, 'null'] }
@@ -12601,7 +14576,7 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision], description: 'promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision, agentToolChanged], description: 'agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
         message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
@@ -12616,8 +14591,8 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [http, agent, microsoftGraph]
-          description: http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
+          enum: [http, agent, microsoftGraph, mcpServer]
+          description: http (default), agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md), microsoftGraph, or mcpServer (a registered MCP tool server, docs/build/S135-agent-tools.md)
         latestVersion: { type: integer }
         versions: { type: array, items: { type: integer } }
         binding:
@@ -12635,17 +14610,28 @@ components:
             properties:
               name: { type: string }
               label: { type: string }
-              effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+              effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentByLookup, idempotentNatural, nonIdempotent] }
               testable: { type: boolean }
     ConnectionDefinitionRecord:
       type: object
       required: [version, definition, definitionHash, createdAt, createdBy]
       properties:
         version: { type: integer }
-        definition: { $ref: './connection-definition-v0.schema.json' }
+        definition: { $ref: '#/components/schemas/ConnectionDefinitionDocument' }
         definitionHash: { type: string }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         createdBy: { $ref: '#/components/schemas/SubjectRef' }
+    # --- CG-C01 connection definition v1 (docs/build/S130-connection-definition-v1.md) ---
+    ConnectionDefinitionDocument:
+      description: >-
+        A connection definition version: schemaVersion 0.1 (http, agent, microsoftGraph) or 1.0 (http with path
+        templates, query encoders, headers, DELETE, nested, form, multipart and binary bodies, row lists, response
+        headers, pagination, error mapping, long operations, async declarations and lookup reconciliation).
+        Registration validates against the schema the schemaVersion names, then the CONN_V1_* rules.
+      oneOf:
+        - $ref: './connection-definition-v0.schema.json'
+        - $ref: './connection-definition-v1.schema.json'
+    # --- end CG-C01 ---
     ConnectionDetail:
       type: object
       required: [key, definitions, binding]
@@ -12682,7 +14668,15 @@ components:
       properties:
         type: { type: string, enum: [none, bearerToken, apiKeyHeader, oauth2ClientCredentials, oauth2AuthorizationCode] }
         headerName: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$' }
-        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: 'Name of a mounted secret, never the secret value' }
+        secretRef:
+          type: string
+          maxLength: 400
+          pattern: '^([a-z0-9][a-z0-9-]{0,62}|(vault|aws-sm|azure-kv|gcp-sm):[A-Za-z0-9][A-Za-z0-9/_.+=@:-]{0,255}(#[A-Za-z0-9_.-]{1,128})?)$'
+          description: >-
+            Where the secret lives, never the secret value (docs/build/S132): a plain name is a mounted secret file;
+            `vault:<mount>/<path>#<key>` (HashiCorp Vault KV v2), `aws-sm:<secret id>#<json key>`,
+            `azure-kv:<vault>/<secret>[/<version>]#<json key>` and `gcp-sm:<project>/<secret>[/<version>]#<json key>`
+            name a secret in an external store; the `#key` part is optional.
     PutConnectionBindingRequest:
       type: object
       additionalProperties: false
@@ -12718,6 +14712,400 @@ components:
           type: [string, 'null']
           description: Agent test only. The business sentence the run timeline would show.
 
+    # ---- ConnectionHealth schemas (CG-W04, CG-C09, docs/build/S131) ----
+    ConnectionHealthList:
+      type: object
+      additionalProperties: false
+      required: [items, noticeCount]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ConnectionHealth' } }
+        noticeCount: { type: integer, minimum: 0 }
+    ConnectionHealth:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, name, bound, enabled, lastHour, lastDay, lastError, circuit, rateLimit, notices, asOf]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        bound: { type: boolean }
+        enabled: { type: boolean }
+        lastHour: { $ref: '#/components/schemas/ConnectionHealthWindow' }
+        lastDay: { $ref: '#/components/schemas/ConnectionHealthWindow' }
+        lastError:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [errorCode, httpStatus, outcome, at]
+              properties:
+                errorCode: { type: [string, 'null'], description: 'e.g. RATE_LIMITED, HTTP_503, TIMEOUT, CONNECT_FAILED, TOKEN_REFRESH_FAILED' }
+                httpStatus: { type: [integer, 'null'] }
+                outcome: { type: string, enum: [retryable, permanent, unknown, tokenFailure] }
+                at: { $ref: '#/components/schemas/Timestamp' }
+        circuit:
+          type: object
+          additionalProperties: false
+          required: [state, consecutiveFailures, failureThreshold, openedAt, openUntil, reason, timesOpened]
+          properties:
+            state: { type: string, enum: [closed, open, halfOpen] }
+            consecutiveFailures: { type: integer, minimum: 0 }
+            failureThreshold: { type: integer, minimum: 1 }
+            openedAt: { type: [string, 'null'], format: date-time }
+            openUntil: { type: [string, 'null'], format: date-time, description: End of the cool-down while open or half-open }
+            reason: { type: [string, 'null'] }
+            timesOpened: { type: integer, minimum: 0 }
+        rateLimit:
+          type: object
+          additionalProperties: false
+          required: [maxRequestsPerMinute, perPod, livePods]
+          properties:
+            maxRequestsPerMinute: { type: [integer, 'null'] }
+            perPod: { type: [integer, 'null'], description: The share each live pod enforces }
+            livePods: { type: integer, minimum: 1 }
+        notices:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, severity, message]
+            properties:
+              code: { type: string, enum: [CIRCUIT_OPEN, CIRCUIT_TRIAL, TOKEN_REFRESH_FAILING, LOW_SUCCESS_RATE, RATE_LIMITED_BY_SYSTEM, CALLS_DEFERRED] }
+              severity: { type: string, enum: [info, warning, critical] }
+              message: { type: string }
+        asOf: { $ref: '#/components/schemas/Timestamp' }
+    ConnectionHealthWindow:
+      type: object
+      additionalProperties: false
+      required: [calls, succeeded, successRate, p50Ms, p95Ms, rateLimited, tokenRefreshFailures, deferred]
+      properties:
+        calls: { type: integer, minimum: 0, description: Calls that went out }
+        succeeded: { type: integer, minimum: 0 }
+        successRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        p50Ms: { type: [integer, 'null'] }
+        p95Ms: { type: [integer, 'null'] }
+        rateLimited: { type: integer, minimum: 0, description: Answers with HTTP 429 }
+        tokenRefreshFailures: { type: integer, minimum: 0 }
+        deferred: { type: integer, minimum: 0, description: Calls that waited for an open circuit or the request limit }
+    # ---- end ConnectionHealth schemas ----
+
+    # ---- ConnectorPackages schemas (docs/build/S133) ----
+    ConnectorPackageSubject:
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        displayName: { type: [string, 'null'] }
+    ConnectorPackageSummary:
+      type: object
+      additionalProperties: false
+      required: [id, packageId, name, version, publisher, keyId, sha256, signatureStatus, status, importedBy, importedAt, decidedBy, decidedAt, decisionNote, installStatus, revision]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        packageId: { type: string, maxLength: 120 }
+        name: { type: string }
+        version: { type: string }
+        publisher: { type: string }
+        keyId: { type: string }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        signatureStatus: { type: string, enum: [verified, unsigned] }
+        status: { type: string, enum: [pending, approved, rejected, retired] }
+        importedBy: { $ref: '#/components/schemas/ConnectorPackageSubject' }
+        importedAt: { $ref: '#/components/schemas/Timestamp' }
+        decidedBy: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/ConnectorPackageSubject' }] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionNote: { type: [string, 'null'] }
+        installStatus: { type: [string, 'null'], enum: [active, superseded, retired, null], description: State of this version's install in the current workspace }
+        revision: { type: integer, minimum: 1 }
+    ConnectorPackageList:
+      type: object
+      additionalProperties: false
+      required: [items, canManage, canApprove]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ConnectorPackageSummary' } }
+        canManage: { type: boolean }
+        canApprove: { type: boolean }
+    ConnectorPackageDetail:
+      type: object
+      additionalProperties: false
+      required: [summary, manifest, review, comparison, whereUsed, unsignedReason, retireReason, canManage, canApprove, canDecide]
+      properties:
+        summary: { $ref: '#/components/schemas/ConnectorPackageSummary' }
+        manifest: { type: object, description: The package manifest (connector-package-v1.schema.json#/$defs/manifest) }
+        review: { $ref: '#/components/schemas/ConnectorPackageReview' }
+        comparison: { $ref: '#/components/schemas/ConnectorPackageComparison' }
+        whereUsed:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [workflowId, workflowKey, workflowName, connectionKey, draftVersion, releaseVersion, outdated]
+            properties:
+              workflowId: { $ref: '#/components/schemas/Uuid' }
+              workflowKey: { type: string }
+              workflowName: { type: string }
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              draftVersion: { type: [integer, 'null'] }
+              releaseVersion: { type: [integer, 'null'] }
+              outdated: { type: boolean, description: Pins an older connection version than this package version installs }
+        unsignedReason: { type: [string, 'null'] }
+        retireReason: { type: [string, 'null'] }
+        canManage: { type: boolean }
+        canApprove: { type: boolean }
+        canDecide: { type: boolean, description: 'The caller holds connector.approve, did not import it, and it is pending' }
+    ConnectorPackageReview:
+      type: object
+      description: What the review screen shows; computed at import from the validated files.
+      required: [hosts, authSchemes, dataLeavingOrqix, connections, operations, operationsByEffect, triggers, stepTemplates, workflowTemplates, fixtures, docs]
+      properties:
+        hosts: { type: array, items: { type: object, properties: { pattern: { type: string }, purpose: { type: string } } } }
+        authSchemes: { type: array, items: { type: string } }
+        dataLeavingOrqix: { type: array, items: { type: string } }
+        connections: { type: array, items: { type: object } }
+        operations:
+          type: array
+          items:
+            type: object
+            properties:
+              connection: { type: string }
+              operation: { type: string }
+              label: { type: string }
+              method: { type: string }
+              path: { type: string }
+              effectClass: { type: string }
+              inputs: { type: array, items: { type: string } }
+              asynchronous: { type: boolean }
+        operationsByEffect: { type: object, additionalProperties: { type: integer } }
+        triggers: { type: array, items: { type: object } }
+        stepTemplates: { type: array, items: { type: object } }
+        workflowTemplates: { type: array, items: { type: object } }
+        fixtures: { type: object, properties: { count: { type: integer }, passed: { type: integer } } }
+        docs: { type: array, items: { type: string } }
+    ConnectorPackageComparison:
+      type: object
+      additionalProperties: false
+      required: [installedVersion, addedOperations, removedOperations, changes, compatible]
+      properties:
+        installedVersion: { type: [string, 'null'], description: The version active in this workspace (null when none) }
+        addedOperations: { type: array, items: { type: string } }
+        removedOperations: { type: array, items: { type: string } }
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [operation, change, breaking]
+            properties:
+              operation: { type: string }
+              change: { type: string }
+              breaking: { type: boolean }
+        compatible: { type: boolean, description: No removed operations and no breaking change }
+    ConnectorPackageImport:
+      type: object
+      additionalProperties: false
+      required: [archive]
+      properties:
+        archive: { type: string, maxLength: 7000000, description: The .orqpkg file in base64 (at most 5 MiB) }
+        unsignedReason: { type: [string, 'null'], maxLength: 500, description: Required (and audited) for an unsigned package or one signed with an untrusted key }
+    ConnectorPackageDecision:
+      type: object
+      additionalProperties: false
+      required: [decision, sha256, note, expectedRevision]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        note: { type: string, minLength: 1, maxLength: 500 }
+        expectedRevision: { type: integer, minimum: 1 }
+    ConnectorPackageRetire:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedRevision]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedRevision: { type: integer, minimum: 1 }
+    ConnectorPackageInstall:
+      type: object
+      additionalProperties: false
+      required: [packageId, version, previousVersion, connections, hostsToAllow]
+      properties:
+        packageId: { type: string }
+        version: { type: string }
+        previousVersion: { type: [string, 'null'] }
+        connections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, version, reused]
+            properties:
+              key: { $ref: '#/components/schemas/Key' }
+              version: { type: integer, minimum: 1 }
+              reused: { type: boolean, description: 'The definition was unchanged, so the existing version is used' }
+        hostsToAllow: { type: array, items: { type: string }, description: Host patterns a binding may use; add the concrete host to the egress allow-list }
+    ConnectorCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [packageId, name, publisher, latestVersion, versions, installs, outdatedPins]
+            properties:
+              packageId: { type: string }
+              name: { type: string }
+              publisher: { type: string }
+              latestVersion: { type: [string, 'null'], description: Newest approved version }
+              versions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, version, status, signatureStatus, importedAt]
+                  properties:
+                    id: { $ref: '#/components/schemas/Uuid' }
+                    version: { type: string }
+                    status: { type: string, enum: [pending, approved, rejected, retired] }
+                    signatureStatus: { type: string, enum: [verified, unsigned] }
+                    importedAt: { $ref: '#/components/schemas/Timestamp' }
+              installs:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [workspaceId, workspaceName, version, status]
+                  properties:
+                    workspaceId: { $ref: '#/components/schemas/Uuid' }
+                    workspaceName: { type: string }
+                    version: { type: string }
+                    status: { type: string, enum: [active, retired] }
+              outdatedPins:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [workspaceId, workspaceName, workflowId, workflowName, connectionKey, pinnedVersion, latestVersion, retired, pinnedIn]
+                  properties:
+                    workspaceId: { $ref: '#/components/schemas/Uuid' }
+                    workspaceName: { type: string }
+                    workflowId: { $ref: '#/components/schemas/Uuid' }
+                    workflowName: { type: string }
+                    connectionKey: { type: string }
+                    pinnedVersion: { type: string, description: Package version the pinned connection version came from }
+                    latestVersion: { type: [string, 'null'] }
+                    retired: { type: boolean }
+                    pinnedIn: { type: string, enum: [draft, release] }
+    ConnectorPalette:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, label, description, packageId, packageName, packageVersion, packageVersionId, connectionKey, connectionVersion, operation, effectClass, templateKey, step, requestFields]
+            properties:
+              kind: { type: string, enum: [operation, stepTemplate] }
+              label: { type: string, description: 'For example "Raise an incident · ServiceNow ITSM"' }
+              description: { type: [string, 'null'] }
+              packageId: { type: string }
+              packageName: { type: string }
+              packageVersion: { type: string }
+              packageVersionId: { $ref: '#/components/schemas/Uuid' }
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              connectionVersion: { type: integer, minimum: 0 }
+              operation: { type: string }
+              effectClass: { type: string }
+              templateKey: { type: [string, 'null'] }
+              step: { type: [object, 'null'], description: The template's step (a workflow node without its id) }
+              requestFields: { type: [object, 'null'], description: Request form fields the template's mappings expect }
+    PackageTriggerConfigure:
+      type: object
+      additionalProperties: false
+      properties:
+        packageId: { type: [string, 'null'], maxLength: 120, description: Create only }
+        triggerKey: { type: [string, 'null'], maxLength: 64, description: Create only }
+        workflowId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }], description: The workflow a start trigger starts }
+        secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: Webhook triggers only; never the secret itself }
+        jwtIssuer: { type: [string, 'null'], maxLength: 200 }
+        jwtAudience: { type: [string, 'null'], maxLength: 200 }
+        enabled: { type: [boolean, 'null'] }
+        expectedVersion: { type: [integer, 'null'], minimum: 1, description: Update only }
+    PackageTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, packageId, packageVersion, triggerKey, label, kind, action, workflowId, messageName, verification, weaker, secretRef, jwtIssuer, jwtAudience, connectionKey, every, enabled, version, receivePath, status]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        packageId: { type: string }
+        packageVersion: { type: string }
+        triggerKey: { $ref: '#/components/schemas/Key' }
+        label: { type: string }
+        kind: { type: string, enum: [webhook, poll] }
+        action: { type: string, enum: [start, message] }
+        workflowId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+        messageName: { type: [string, 'null'] }
+        verification: { type: [string, 'null'], enum: [hmacSha256, jwt, basic, null] }
+        weaker: { type: boolean, description: Basic credentials (systems that cannot sign) }
+        secretRef: { type: [string, 'null'] }
+        jwtIssuer: { type: [string, 'null'] }
+        jwtAudience: { type: [string, 'null'] }
+        connectionKey: { type: [string, 'null'] }
+        every: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        receivePath: { type: [string, 'null'], description: Webhook URL path the remote system posts to }
+        status:
+          type: object
+          additionalProperties: false
+          required: [watermark, nextRunAt, lastRunAt, lastSuccessAt, lastErrorCode, lagSeconds, polls, recordsHandled, duplicates, deadRecords, leased]
+          properties:
+            watermark: { type: [string, 'null'] }
+            nextRunAt: { type: [string, 'null'], format: date-time }
+            lastRunAt: { type: [string, 'null'], format: date-time }
+            lastSuccessAt: { type: [string, 'null'], format: date-time }
+            lastErrorCode: { type: [string, 'null'] }
+            lagSeconds: { type: [integer, 'null'] }
+            polls: { type: integer, minimum: 0 }
+            recordsHandled: { type: integer, minimum: 0 }
+            duplicates: { type: integer, minimum: 0 }
+            deadRecords: { type: integer, minimum: 0 }
+            leased: { type: boolean, description: A pod is polling it right now }
+    PackageTriggerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/PackageTrigger' } }
+    PackageTriggerDeadRecordList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, errorCode, valueSha256, receivedAt]
+            properties:
+              id: { $ref: '#/components/schemas/Uuid' }
+              errorCode: { type: [string, 'null'] }
+              valueSha256: { type: string }
+              receivedAt: { $ref: '#/components/schemas/Timestamp' }
+    PackageTriggerAccepted:
+      type: object
+      additionalProperties: false
+      required: [status, runId]
+      properties:
+        status: { type: string, enum: [started, resumed, buffered, duplicate] }
+        runId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+    # ---- end ConnectorPackages schemas ----
     RoleBinding:
       type: object
       required: [id, role, principal, source, createdAt]
@@ -12732,7 +15120,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
@@ -12762,6 +15150,342 @@ components:
         label: { type: string }
         model: { type: string, description: 'OpenRouter model id' }
         variablePrice: { type: boolean, description: 'True for routers such as typesafe/jev-router whose price depends on the routed model' }
+    # ---- AiSkills schemas (docs/build/S134) ----
+    AiSkillDocumentRequest:
+      type: object
+      required: [document]
+      properties:
+        document: { type: object, additionalProperties: true, description: 'contracts/ai-skill-v1.schema.json, kind skill' }
+    AiReasonRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillVersion:
+      type: object
+      required: [skillKey, version, status, mode, modelProfile, contentHash, authorId, submittedAt, approverId, approvedAt, autonomyCeiling, driftFallback, driftReason, evaluationGate, createdAt, updatedAt]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, submitted, approved, retired] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        modelProfile: { type: string }
+        contentHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        authorId: { $ref: '#/components/schemas/Uuid' }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approverId: { type: [string, 'null'], format: uuid }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        autonomyCeiling: { type: string, enum: [suggest, autoWithReview, auto] }
+        driftFallback: { type: boolean }
+        driftReason: { type: [string, 'null'] }
+        evaluationGate:
+          type: object
+          required: [passing, runId]
+          properties:
+            passing: { type: boolean, description: 'A passing run on the version profile within 30 days exists' }
+            runId: { type: [string, 'null'], format: uuid }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        document: { type: object, additionalProperties: true }
+    AiSkill:
+      type: object
+      required: [key, name, ownerId, createdAt, approvedVersion, mode, versions]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        ownerId: { $ref: '#/components/schemas/Uuid' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        approvedVersion: { type: [integer, 'null'] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        versions: { type: array, items: { $ref: '#/components/schemas/AiSkillVersion' } }
+    AiSkillList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiSkill' } }
+    AiEvalSuite:
+      type: object
+      required: [key, skillKey, name, caseCount, revision, contentHash, updatedAt]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        caseCount: { type: integer, minimum: 1 }
+        revision: { type: integer, minimum: 1 }
+        contentHash: { type: string }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        document: { type: object, additionalProperties: true, description: 'contracts/ai-skill-v1.schema.json, kind evaluationSuite' }
+    AiEvalSuiteList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiEvalSuite' } }
+    AiEvalSuiteSaveRequest:
+      type: object
+      required: [document]
+      properties:
+        document: { type: object, additionalProperties: true }
+    AiEvaluationStartRequest:
+      type: object
+      properties:
+        suiteKey: { $ref: '#/components/schemas/Key' }
+    AiEvaluation:
+      type: object
+      required: [id, skillKey, version, suiteKey, suiteHash, modelProfile, status, caseCount, metrics, calibration, failure, startedBy, startedAt, finishedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        suiteKey: { $ref: '#/components/schemas/Key' }
+        suiteHash: { type: string }
+        modelProfile: { type: string }
+        status: { type: string, enum: [running, passed, failed, error] }
+        caseCount: { type: integer }
+        metrics:
+          description: accuracy, perLabel precision/recall, confusion, costPerCaseUsd, p95LatencyMs, thresholds trade-off, failures
+          type: [object, 'null']
+          additionalProperties: true
+        calibration:
+          description: Ten buckets of raw confidence with the observed accuracy of each
+          type: [array, 'null']
+          items:
+            type: object
+            required: [from, to, cases, correct, accuracy]
+            properties:
+              from: { type: number }
+              to: { type: number }
+              cases: { type: integer }
+              correct: { type: integer }
+              accuracy: { type: number }
+        failure: { type: [string, 'null'] }
+        startedBy: { $ref: '#/components/schemas/Uuid' }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    AiEvaluationList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiEvaluation' } }
+    AiShadowDashboard:
+      type: object
+      required: [skillKey, version, decisions, shadowDecisions, compared, agreed, agreement, statuses, confusion, perLabel, costPerCaseUsd, p95LatencyMs, minShadowCases, targetAgreement, autonomyCeiling, driftFallback]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        decisions: { type: integer }
+        shadowDecisions: { type: integer }
+        compared: { type: integer, description: 'Decisions with a recorded human outcome' }
+        agreed: { type: integer }
+        agreement: { type: number }
+        statuses: { type: object, additionalProperties: { type: integer } }
+        confusion: { type: object, description: 'AI value to human value to count', additionalProperties: { type: object, additionalProperties: { type: integer } } }
+        perLabel:
+          type: object
+          additionalProperties:
+            type: object
+            required: [precision, recall, support]
+            properties:
+              precision: { type: number }
+              recall: { type: number }
+              support: { type: integer }
+        costPerCaseUsd: { type: number }
+        p95LatencyMs: { type: integer }
+        minShadowCases: { type: integer }
+        targetAgreement: { type: number }
+        autonomyCeiling: { type: string, enum: [suggest, autoWithReview, auto] }
+        driftFallback: { type: boolean }
+    AiSkillPromotionRequest:
+      type: object
+      required: [toAutonomy, reason]
+      properties:
+        toAutonomy: { type: string, enum: [autoWithReview, auto] }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillPromotionDecision:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillPromotion:
+      type: object
+      required: [id, skillKey, version, fromAutonomy, toAutonomy, status, requestedBy, requestedAt, reason, evidence, decidedBy, decidedAt, decisionReason]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        fromAutonomy: { type: string, enum: [suggest, autoWithReview, auto] }
+        toAutonomy: { type: string, enum: [autoWithReview, auto] }
+        status: { type: string, enum: [pending, approved, rejected, withdrawn] }
+        requestedBy: { $ref: '#/components/schemas/Uuid' }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        reason: { type: string }
+        evidence: { $ref: '#/components/schemas/AiShadowDashboard' }
+        decidedBy: { type: [string, 'null'], format: uuid }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason: { type: [string, 'null'] }
+    AiSkillPromotionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiSkillPromotion' } }
+    AiDriftCheck:
+      type: object
+      required: [skillKey, version, cases, agreement, baseline, maxAgreementDrop, drifted, fellBackToSuggest]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        cases: { type: integer }
+        agreement: { type: number }
+        baseline: { type: number }
+        maxAgreementDrop: { type: number }
+        drifted: { type: boolean }
+        fellBackToSuggest: { type: boolean }
+    AiReviewQueue:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [decisionId, runId, nodeId, skillKey, skillVersion, status, aiValue, confidence, createdAt]
+            properties:
+              decisionId: { $ref: '#/components/schemas/Uuid' }
+              runId: { $ref: '#/components/schemas/Uuid' }
+              nodeId: { type: string }
+              skillKey: { $ref: '#/components/schemas/Key' }
+              skillVersion: { type: integer }
+              status: { type: string }
+              aiValue: { type: [string, 'null'] }
+              confidence: { type: [number, 'null'] }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiEvalCandidateList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, skillKey, decisionId, input, expected, createdAt]
+            properties:
+              id: { $ref: '#/components/schemas/Uuid' }
+              skillKey: { $ref: '#/components/schemas/Key' }
+              decisionId: { $ref: '#/components/schemas/Uuid' }
+              input: { type: [object, 'null'], additionalProperties: true, description: 'Only when the decision retained values' }
+              expected: { type: object, additionalProperties: true }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiEvalCandidateReview:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [accept, discard] }
+        suiteKey: { $ref: '#/components/schemas/Key' }
+        caseId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$' }
+        input: { type: object, additionalProperties: true, description: 'Redacted or synthetic case input' }
+        expected: { type: object, additionalProperties: true }
+    AiEvalCandidateReviewResult:
+      type: object
+      required: [id, status]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [accepted, discarded] }
+    AiPolicy:
+      type: object
+      required: [regulated, residency, inputRetention, retentionDays, lowRiskLabels, allowAutoWithReview, classificationActions, version, updatedAt, endpoints]
+      properties:
+        regulated: { type: boolean }
+        residency: { type: array, items: { type: string } }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        lowRiskLabels: { type: array, items: { type: string, description: 'skillKey:label' } }
+        allowAutoWithReview: { type: boolean }
+        classificationActions: { type: object, additionalProperties: { type: string, enum: [send, mask, hash, drop] } }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        endpoints:
+          type: array
+          items:
+            type: object
+            required: [id, kind, residency]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [openaiCompatible, anthropic, bedrock, azureOpenai, vertex] }
+              residency: { type: array, items: { type: string } }
+    AiPolicyUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        regulated: { type: boolean }
+        residency: { type: array, maxItems: 200, items: { type: string } }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        lowRiskLabels: { type: array, maxItems: 200, items: { type: string } }
+        allowAutoWithReview: { type: boolean }
+        classificationActions: { type: object, additionalProperties: { type: string, enum: [send, mask, hash, drop] } }
+    AiDecision:
+      type: object
+      required: [id, nodeId, occurrence, skillKey, skillVersion, skillHash, mode, autonomy, effectiveAutonomy, profile, provider, modelUsed, promptHash, inputFields, inputDigest, inputRetention, inputValues, status, output, rawConfidence, confidence, threshold, route, guardrails, unavailableReason, reviewSampled, human, cost, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        occurrence: { type: integer }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        skillVersion: { type: integer }
+        skillHash: { type: [string, 'null'] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        autonomy: { type: string, enum: [shadow, suggest, autoWithReview, auto] }
+        effectiveAutonomy: { type: string, enum: [shadow, suggest, autoWithReview, auto] }
+        profile: { type: [string, 'null'] }
+        provider: { type: [string, 'null'] }
+        modelUsed: { type: [string, 'null'] }
+        promptHash: { type: [string, 'null'] }
+        inputFields: { type: array, items: { type: string } }
+        inputDigest: { type: string }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        inputValues: { type: [object, 'null'], additionalProperties: true }
+        status: { type: string, enum: [decided, lowConfidence, needsReview, unavailable, shadow] }
+        output: { type: [object, 'null'], additionalProperties: true }
+        rawConfidence: { type: [number, 'null'] }
+        confidence: { type: [number, 'null'] }
+        threshold: { type: [number, 'null'] }
+        route: { type: string }
+        guardrails: { type: object, additionalProperties: true }
+        unavailableReason: { type: [string, 'null'] }
+        reviewSampled: { type: boolean }
+        human:
+          type: object
+          required: [outcome, value, reason, decidedBy, decidedAt]
+          properties:
+            outcome: { type: [string, 'null'], enum: [accepted, overridden, null] }
+            value: { type: [string, 'null'] }
+            reason: { type: [string, 'null'] }
+            decidedBy: { type: [string, 'null'], format: uuid }
+            decidedAt: { type: [string, 'null'], format: date-time }
+        cost:
+          type: object
+          required: [inputTokens, outputTokens, costUsd, latencyMs]
+          properties:
+            inputTokens: { type: [integer, 'null'] }
+            outputTokens: { type: [integer, 'null'] }
+            costUsd: { type: [number, 'null'] }
+            latencyMs: { type: integer }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiDecisionList:
+      type: object
+      required: [valuesVisible, items]
+      properties:
+        valuesVisible: { type: boolean }
+        items: { type: array, items: { $ref: '#/components/schemas/AiDecision' } }
+    AiDecisionOutcomeRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [accepted, overridden] }
+        value: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,39}$' }
+        reason: { type: string, maxLength: 1000 }
+    # ---- end AiSkills schemas ----
     AiStatus:
       type: object
       required: [enabled, profiles]

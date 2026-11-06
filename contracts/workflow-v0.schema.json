@@ -154,6 +154,10 @@
         ]
       }
     },
+    "exposeAsTool": {
+      "type": "boolean",
+      "description": "CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution."
+    },
     "nodes": {
       "type": "array",
       "minItems": 2,
@@ -216,6 +220,9 @@
           },
           {
             "$ref": "#/$defs/sendAdapterNode"
+          },
+          {
+            "$ref": "#/$defs/aiTaskNode"
           }
         ]
       }
@@ -547,6 +554,43 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "stepRetry": {
+      "description": "This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*).",
+      "type": "object",
+      "properties": {
+        "maxAttempts": {
+          "description": "Total attempts, the first included.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "delay": {
+          "description": "Delay before the second attempt: hours, minutes and seconds, for example PT10S.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "multiplier": {
+          "description": "Each later delay is the previous one times this (1 keeps the delay constant).",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "maxDelay": {
+          "description": "Longest delay between attempts and the cap of Retry-After; at most PT6H. Unset means PT6H.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "honorRetryAfter": {
+          "description": "Use the Retry-After of a 429 or 503 response for the next attempt (default true).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "maxAttempts",
+        "delay"
+      ],
+      "additionalProperties": false
+    },
     "key": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
@@ -1300,10 +1344,14 @@
                 "pattern": "^(/([^~/]|~[01])*)+$"
               }
             },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
+            },
             "timeoutSeconds": {
+              "description": "Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long).",
               "type": "integer",
               "minimum": 1,
-              "maximum": 30
+              "maximum": 120
             },
             "compensates": {
               "description": "This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request.",
@@ -1319,6 +1367,10 @@
             "raiseErrorOnFailure": {
               "description": "Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it.",
               "$ref": "#/$defs/errorCode"
+            },
+            "poll": {
+              "description": "Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set.",
+              "$ref": "#/$defs/pollSettings"
             }
           },
           "required": [
@@ -1368,6 +1420,189 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "pollInterval": {
+      "description": "ISO-8601 duration in days, hours, minutes and seconds (for example PT30S, PT15M, PT2H, P1D). Bounds are compiler rules (WF_POLL_INTERVAL, WF_POLL_BACKOFF, WF_POLL_DEADLINE).",
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^P(?=\\d|T\\d)(\\d{1,3}D)?(T(?=\\d)(\\d{1,4}H)?(\\d{1,5}M)?(\\d{1,6}S)?)?$"
+    },
+    "pollSettings": {
+      "type": "object",
+      "properties": {
+        "firstCheck": {
+          "description": "immediate (default): the first check runs when the step starts; afterInterval: after 'every'.",
+          "enum": [
+            "immediate",
+            "afterInterval"
+          ]
+        },
+        "every": {
+          "description": "Interval before the second check, PT10S to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "backoff": {
+          "type": "object",
+          "properties": {
+            "multiplier": {
+              "description": "Each interval is the previous one times this, 1 to 4.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "maxInterval": {
+              "description": "Cap of the interval: at least 'every', at most P1D (WF_POLL_BACKOFF).",
+              "$ref": "#/$defs/pollInterval"
+            }
+          },
+          "required": [
+            "multiplier",
+            "maxInterval"
+          ],
+          "additionalProperties": false
+        },
+        "jitterPercent": {
+          "description": "Random spread of each interval, 0 to 30 percent; default 10.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "until": {
+          "description": "True means the remote work is done (route next). Over this step's mapped result fields (/steps/<this step>/<field>) and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "failWhen": {
+          "description": "Optional: true means the remote work failed for good (route failed). Must not overlap 'until' (WF_POLL_OVERLAP).",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "giveUpAfter": {
+          "description": "Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "maxChecks": {
+          "description": "Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "onCheckError": {
+          "type": "object",
+          "properties": {
+            "maxConsecutive": {
+              "description": "Consecutive failing checks (timeouts, 5xx, 429, unreachable) tolerated, 1 to 20; default 5.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "then": {
+              "description": "needsAttention (default): the request stops for an operator. timedOut: take the timedOut route.",
+              "enum": [
+                "needsAttention",
+                "timedOut"
+              ]
+            }
+          },
+          "required": [
+            "maxConsecutive"
+          ],
+          "additionalProperties": false
+        },
+        "finalCheckAtDeadline": {
+          "description": "One last check exactly at the deadline (default true).",
+          "type": "boolean"
+        },
+        "optionalResults": {
+          "description": "Mapped result fields that may be missing in an answer, for example a ticket number that appears only when the work is done. A missing value leaves the check pending instead of making the answer unusable; the field is an optional output of the step (WF_POLL_OPTIONAL).",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        },
+        "showWhileWaiting": {
+          "description": "Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW).",
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      },
+      "required": [
+        "every",
+        "until",
+        "giveUpAfter"
+      ],
+      "additionalProperties": false
+    },
+    "fallbackCheck": {
+      "description": "Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D.",
+      "type": "object",
+      "properties": {
+        "connectionRef": {
+          "$ref": "#/$defs/key"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "inputMapping": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        },
+        "resultMapping": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "description": "JSON Pointer (RFC 6901) into the response body.",
+            "type": "string",
+            "pattern": "^(/([^~/]|~[01])*)+$"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "every": {
+          "description": "Check interval, PT1M to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "until": {
+          "description": "True means the work is done; over the mapped fields as /steps/<this step>/<field> and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "jitterPercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "maxChecks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "connectionRef",
+        "operation",
+        "inputMapping",
+        "resultMapping",
+        "timeoutSeconds",
+        "every",
+        "until"
+      ],
       "additionalProperties": false
     },
     "duration": {
@@ -1648,6 +1883,10 @@
                 "tokenValidFor"
               ],
               "additionalProperties": false
+            },
+            "fallbackCheck": {
+              "description": "Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed.",
+              "$ref": "#/$defs/fallbackCheck"
             }
           },
           "required": [
@@ -1748,8 +1987,17 @@
             "timedOut",
             "failed",
             "condition",
-            "default"
+            "default",
+            "aiLabel",
+            "lowConfidence",
+            "needsReview",
+            "aiUnavailable"
           ]
+        },
+        "aiLabel": {
+          "description": "AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
         },
         "label": {
           "description": "Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'.",
@@ -1768,6 +2016,32 @@
         "on"
       ],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "on": {
+                "const": "aiLabel"
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "then": {
+            "required": [
+              "aiLabel"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "aiLabel"
+              ]
+            }
+          }
+        }
+      ],
       "if": {
         "properties": {
           "on": {
@@ -2246,11 +2520,18 @@
                 "$ref": "#/$defs/messagePayloadField"
               }
             },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
+            },
             "leaseSeconds": {
               "description": "How long a worker holds a job before it must extend the lease or lose it.",
               "type": "integer",
               "minimum": 30,
               "maximum": 3600
+            },
+            "raiseErrorOnFailure": {
+              "description": "Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it.",
+              "$ref": "#/$defs/errorCode"
             }
           },
           "required": [
@@ -2572,6 +2853,101 @@
       },
       "additionalProperties": false
     },
+    "aiTaskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "aiTask"
+        },
+        "config": {
+          "description": "AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode.",
+          "type": "object",
+          "properties": {
+            "skillRef": {
+              "description": "Key of the shared AI skill.",
+              "$ref": "#/$defs/key"
+            },
+            "skillVersion": {
+              "description": "Approved version to pin; publishing pins the latest approved version when absent.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "mode": {
+              "description": "Must equal the skill's mode.",
+              "enum": [
+                "classify",
+                "extract",
+                "score",
+                "recommend",
+                "summarize"
+              ]
+            },
+            "inputMapping": {
+              "description": "Skill input name to request or earlier-step value. Only mapped values are sent.",
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "autonomy": {
+              "description": "shadow: runs beside the existing decision and never routes; suggest (default): a person decides; autoWithReview: AI routes and a sample is reviewed afterwards; auto: AI routes within the threshold, only for labels the workspace policy marks low-risk.",
+              "enum": [
+                "shadow",
+                "suggest",
+                "autoWithReview",
+                "auto"
+              ]
+            },
+            "minConfidence": {
+              "description": "Calibrated confidence below which the step takes lowConfidence (classify) or needsReview (extract). Default 0.8.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reviewSamplePercent": {
+              "description": "autoWithReview only: share of automatic decisions queued for after-the-fact review (default 10).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "redaction": {
+              "description": "Per input: how the value is minimized before it is sent, on top of the field classification policy.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "maskCardNumbersAndEmails",
+                  "maskDigits",
+                  "hash",
+                  "drop"
+                ]
+              }
+            }
+          },
+          "required": [
+            "skillRef",
+            "mode",
+            "inputMapping"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "generateDocumentNode": {
       "allOf": [
         {
@@ -2739,6 +3115,9 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
             },
             "inputMapping": {
               "description": "Request or earlier-step values used by this step, by name.",

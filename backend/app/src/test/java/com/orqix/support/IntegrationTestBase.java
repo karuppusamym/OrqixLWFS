@@ -40,6 +40,7 @@ public abstract class IntegrationTestBase {
         System.setProperty("orqix.ai.api-key", AgentLlmStub.KEY);
         System.setProperty("orqix.ai.base-url", AgentLlmStub.baseUrl());
         System.setProperty("orqix.ai.timeout", "5s");
+        AiTaskFixtures.configure();
     }
 
     @Autowired
@@ -59,6 +60,9 @@ public abstract class IntegrationTestBase {
                 + "127.0.0.1:443,169.254.169.254:443,10.1.2.3:443");
         registry.add("orqix.egress.allowed-private-hosts", () -> stub + "," + oauth);
         registry.add("orqix.egress.plain-http-hosts", () -> stub + "," + oauth);
+        // S133: the example publisher key signs examples/packages; the WireMock origin stands in for package hosts.
+        registry.add("orqix.connector-packages.trusted-keys." + ExamplePublisher.KEY_ID, ExamplePublisher::publicKeyBase64);
+        registry.add("orqix.connector-packages.development-hosts", () -> stub);
     }
 
     /**

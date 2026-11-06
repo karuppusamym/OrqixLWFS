@@ -283,6 +283,28 @@ export function WorkflowInspector() {
           </div>
         </div>
       </Advanced>
+      <Advanced label="AI assistants">
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="wf-settings-mcp"
+            checked={def.exposeAsTool === true}
+            disabled={readOnly}
+            onCheckedChange={(v) => store.getState().apply((d) => {
+              const next = { ...d }
+              if (v === true) next.exposeAsTool = true
+              else delete next.exposeAsTool
+              return next
+            })}
+          />
+          <div>
+            <Label htmlFor="wf-settings-mcp">Offer to AI assistants</Label>
+            <p className="text-xs text-muted-foreground">
+              People who may start this workflow can start it from an AI assistant (MCP), after confirming a summary.
+              Only where a workspace administrator has switched on the MCP server; form fields for files stay in Orqix.
+            </p>
+          </div>
+        </div>
+      </Advanced>
       <Tier1Settings />
     </div>
   )

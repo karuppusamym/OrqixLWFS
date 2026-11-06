@@ -632,7 +632,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                 + subscription.getProcessInstanceId() + "." + nodeId);
         messageWaits.started(ProcessData.workspaceId(execution), ProcessData.runId(execution), nodeId,
                 node.getName() == null ? nodeId : node.getName(), OrqixModel.attribute(message, "name"),
-                correlationKey, subscription.getExecutionId(), deadline instanceof Instant at ? at : null);
+                correlationKey, subscription.getExecutionId(), deadline instanceof Instant at ? at : null,
+                ref -> ProcessData.resolve(execution, json, ref));
     }
 
     // ---------------------------------------------------------------- timers (S12 section 3)

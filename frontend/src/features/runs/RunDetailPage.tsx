@@ -1,5 +1,7 @@
 import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { CallbackWaitsPanel } from './CallbackWaitsPanel'
+import { WaitingForPanel } from './WaitingForPanel'
+import { AiDecisionsPanel } from './AiDecisionsPanel'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
@@ -360,6 +362,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             </Card>
           ) : null}
 
+          {run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention' || run.lifecycle === 'running' ? <WaitingForPanel ws={ws} runId={run.id} /> : null}
+          <AiDecisionsPanel ws={ws} runId={run.id} canRecord={can('run.operate') || can('task.act') || can('ai.evaluate')} />
           {can('run.operate') ? <CallbackWaitsPanel ws={ws} runId={run.id} /> : null}
           {input ? <RunFiles ws={ws} runId={run.id} /> : null}
           {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
@@ -386,6 +390,12 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                             <p className="text-sm">{describeEvent(e, ctx)}</p>
                             <DecisionEvidence event={e} />
                             <IncidentCorrectionEvidence event={e} />
+                            {/* S135: an agent step links to its conversation trace (shown when the workspace keeps traces). */}
+                            {e.type === 'EFFECT_SUCCEEDED' && e.data.agent && e.nodeId && can('run.operate') ? (
+                              <Link className="text-xs" to={`/w/${ws}/agents?run=${run.id}&node=${encodeURIComponent(e.nodeId)}`}>
+                                Agent trace of this step
+                              </Link>
+                            ) : null}
                             <p className="text-xs text-muted-foreground">
                               <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
                             </p>

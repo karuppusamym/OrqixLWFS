@@ -18,10 +18,16 @@ Standard library only. Typical use::
 A handler that raises :class:`JobFailed` reports a failure (retryable by default); any other exception is reported as
 a retryable failure with the exception's class name only, never its message, so internal details are not leaked to
 the workflow's timeline.
+
+A handler that raises :class:`BusinessError` (or calls :meth:`Worker.fail_with_error`) reports a business error
+(docs/build/S132): the work was done and the answer is "no", for example ``BusinessError("ADDRESS_UNKNOWN", "No such
+street")``. It is never retried; the step takes its failed route or raises its section error when the workflow
+declares one, otherwise the request needs attention.
 """
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import uuid
@@ -29,7 +35,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from urllib import error, request
 
-__all__ = ["Worker", "Job", "CallbackTicket", "JobFailed", "ApiError"]
+__all__ = ["Worker", "Job", "CallbackTicket", "JobFailed", "BusinessError", "ApiError"]
+
+_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,39}$")
 
 
 class ApiError(Exception):
@@ -50,6 +58,23 @@ class JobFailed(Exception):
         self.message = message
         self.retryable = retryable
         self.retry_after_seconds = retry_after_seconds
+
+
+class BusinessError(Exception):
+    """Raised by a handler for a business error: ``code`` such as ``ADDRESS_UNKNOWN`` (``^[A-Z][A-Z0-9_]{1,39}$``,
+    not starting with ``ORQIX_``). Final: it is never retried."""
+
+    def __init__(self, code: str, message: str):
+        _check_code(code)
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
+def _check_code(code: str) -> None:
+    if not isinstance(code, str) or not _ERROR_CODE.match(code) or code.startswith("ORQIX_"):
+        raise ValueError("A business error code looks like ADDRESS_UNKNOWN (A-Z, 0-9, _; 2-40 characters; "
+                         "not starting with ORQIX_).")
 
 
 @dataclass
@@ -164,6 +189,15 @@ class Worker:
             body["retryAfterSeconds"] = retry_after_seconds
         self._call("POST", f"/external-jobs/{job.id}/fail", body, idempotency_key=f"{job.id}:{job.fence}:fail")
 
+    def fail_with_error(self, job: Job, error_code: str, message: str) -> None:
+        """Report a business error (S132). Final; the workflow's failed route or section error route decides what
+        happens next. Uses the same idempotency key as :meth:`fail`: a lease ends with one final report."""
+        _check_code(error_code)
+        self._call("POST", f"/external-jobs/{job.id}/fail",
+                   {"workerId": self.worker_id, "fence": job.fence, "message": message[:500], "retryable": False,
+                    "errorCode": error_code},
+                   idempotency_key=f"{job.id}:{job.fence}:fail")
+
     # ------------------------------------------------------------------ running handlers
 
     def handle(self, job: Job, handler: Handler) -> bool:
@@ -184,6 +218,10 @@ class Worker:
         try:
             try:
                 result = handler(job)
+            except BusinessError as failure:
+                done.set()
+                self.fail_with_error(job, failure.code, failure.message)
+                return False
             except JobFailed as failure:
                 done.set()
                 self.fail(job, failure.message, failure.retryable, failure.retry_after_seconds)

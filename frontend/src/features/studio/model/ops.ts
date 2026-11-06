@@ -237,7 +237,7 @@ export function removeNode(def: Definition, id: string): Definition {
 /** Which route kind a React Flow source handle stands for. */
 export function routeForHandle(node: WorkflowNode, handle: string | null | undefined): RouteKind {
   if (node.type === 'approval') return handle === 'timedOut' ? 'timedOut' : handle === 'rejected' ? 'rejected' : 'approved'
-  if (node.type === 'http') return handle === 'failed' ? 'failed' : 'next'
+  if (node.type === 'http' || node.type === 'externalTask') return handle === 'failed' ? 'failed' : 'next'
   if (node.type === 'waitForMessage') return handle === 'timedOut' ? 'timedOut' : 'next'
   if (node.type === 'branch') return 'condition'
   return 'next'
@@ -275,6 +275,12 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
     case 'http':
       if (req.on !== 'next' && req.on !== 'failed') return { ok: false, reason: 'Choose Next or Failed for a system call.' }
       if (req.on === 'failed' && typeof from.config.raiseErrorOnFailure === 'string') return { ok: false, reason: 'This call raises an error for its section when it fails, so it has no Failed route. Turn that off first.' }
+      if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
+      break
+    case 'externalTask':
+      // S132: the Failed route is taken when the worker reports a business error.
+      if (req.on !== 'next' && req.on !== 'failed') return { ok: false, reason: 'Choose Next or Failed for work by an external worker.' }
+      if (req.on === 'failed' && typeof from.config.raiseErrorOnFailure === 'string') return { ok: false, reason: 'This step raises an error for its section when the worker reports a business error, so it has no Failed route. Turn that off first.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
       break
     case 'approval':
@@ -697,7 +703,9 @@ export function renameHttpResult(def: Definition, nodeId: string, oldName: strin
 
 /** Keep dependencies.connections in step with the connections the steps use. */
 export function syncConnectionDependencies(def: Definition, latestVersions: Record<string, number | undefined>): Definition {
-  const used = [...new Set(def.nodes.filter((n) => n.type === 'http').map((n) => n.config.connectionRef as string).filter(Boolean))]
+  // S129: a message wait's safety-net check uses a connection too.
+  const used = [...new Set(def.nodes.flatMap((n) => n.type === 'http' ? [n.config.connectionRef as string]
+    : n.type === 'waitForMessage' ? [(n.config.fallbackCheck as { connectionRef?: string } | undefined)?.connectionRef ?? ''] : []).filter(Boolean))]
   const current = def.dependencies.connections
   const wanted = used.map((key) => ({ key, definitionVersion: current.find((c) => c.key === key)?.definitionVersion ?? latestVersions[key] ?? 1 }))
   if (sameJson(wanted, current)) return def

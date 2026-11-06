@@ -361,3 +361,12 @@ Shared decision tables (DMN) have their own **Decisions** page under Design, so 
 ## Regional template packs (designers) - 31 October 2026
 
 The template picker can filter by region (India, EU, Kenya, Nigeria) and industry. The regional packs include loan exceptions, KYC refresh, group loans, vendor onboarding, permits and grant applications, with local working calendars and second-language labels. They are starting points, not compliance-approved processes. See [regional template packs](regional-template-packs.md).
+
+## Retries per step and paused connections (designers and operators) - 5 November 2026
+
+A call to a system, an external worker step or a send step can have its own retry policy (`config.retry`): up to 10
+attempts, a first delay from 5 seconds to 1 hour that grows by a multiplier, and a longest delay of up to 6 hours.
+When the system answers "too many requests" (429) or "unavailable" (503) with a `Retry-After`, the next attempt waits
+that long, at most the longest delay. A call whose outcome is unknown is never retried automatically. When a
+connection is paused after repeated failures, or its request limit is reached, the timeline says the step is waiting
+and that no attempt was used. Details: [S131](build/S131-retry-and-circuit-breaker.md).

@@ -1,0 +1,24 @@
+{
+  "kind": "webhook",
+  "key": "incident-updated",
+  "label": "Incident resolved, closed or cancelled",
+  "description": "Posted by the after-update business rule of docs/README.md when an incident Orqix raised reaches Resolved (6), Closed (7) or Canceled (8). Resumes the request waiting for that incident by its correlation_id.",
+  "verification": {
+    "scheme": "hmacSha256",
+    "signatureHeader": "X-ServiceNow-Signature",
+    "timestampHeader": "X-ServiceNow-Timestamp",
+    "encoding": "base64",
+    "toleranceSeconds": 300
+  },
+  "dedupeKey": ["/sys_id", "/sys_mod_count"],
+  "action": {
+    "type": "message",
+    "message": "servicenow-incident-updated",
+    "correlationFrom": "/correlation_id"
+  },
+  "mapping": {
+    "state": "/state",
+    "closeCode": "/close_code",
+    "incidentNumber": "/number"
+  }
+}

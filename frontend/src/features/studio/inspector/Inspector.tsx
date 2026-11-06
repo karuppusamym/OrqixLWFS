@@ -14,6 +14,7 @@ import { GenerateDocumentInspector } from './GenerateDocumentInspector'
 import { HttpInspector } from './HttpInspector'
 import { ExternalTaskInspector } from './ExternalTaskInspector'
 import { SendAdapterInspector } from './SendAdapterInspector'
+import { AiTaskInspector } from './AiTaskInspector'
 import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
@@ -114,6 +115,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'waitForMessage' ? <MessageInspector node={node} /> : null}
       {node.type === 'externalTask' ? <ExternalTaskInspector node={node} /> : null}
       {node.type === 'sendAdapter' ? <SendAdapterInspector node={node} /> : null}
+      {node.type === 'aiTask' ? <AiTaskInspector node={node} /> : null}
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}

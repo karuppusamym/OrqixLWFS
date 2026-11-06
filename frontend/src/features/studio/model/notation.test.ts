@@ -10,7 +10,7 @@ const ALL_KINDS = Object.keys(KINDS) as NodeKind[]
 
 describe('BPMN notation mapping (STU01)', () => {
   it('maps every step kind to a shape, and nothing else', () => {
-    expect(ALL_KINDS).toHaveLength(19)
+    expect(ALL_KINDS).toHaveLength(20)
     expect(Object.keys(BPMN_NOTATION).sort()).toEqual([...ALL_KINDS].sort())
     for (const kind of [...ALL_KINDS, ...PALETTE_KINDS]) {
       const n = BPMN_NOTATION[kind]
@@ -32,6 +32,7 @@ describe('BPMN notation mapping (STU01)', () => {
       http: ['serviceTask', 'service task'],
       notification: ['sendTask', 'send task'],
       sendAdapter: ['sendTask', 'send task'],
+      aiTask: ['serviceTask', 'service task with a route gateway'],
       generateDocument: ['documentTask', 'service task'],
       externalTask: ['externalServiceTask', 'external service task'],
       wait: ['timerCatchEvent', 'intermediate timer catch event'],

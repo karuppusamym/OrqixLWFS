@@ -182,8 +182,24 @@ final class Conditions {
                     + " can also be reached when it is not. Use it only on the path after the approval.");
             return;
         }
+        if (producer instanceof Node.AiTask ai && AiTaskRules.answerOutput(r.key())
+                && AiTaskRules.reachableThroughUnavailable(rc, ai, usedAt)) {
+            // S134: the AI answer exists only when AI answered; the aiUnavailable path has the status only.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when AI answers, and " + q(usedAt) + " can also be"
+                    + " reached when AI is unavailable. Use it only on the paths after an answer, or use its status.");
+            return;
+        }
+        if (producer instanceof Node.Http polled && polled.polls() && !FailureRules.isFailureOutput(r.key())
+                && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.NEXT, usedAt)) {
+            // S129: the mapped results are outputs only when the checks found the work done.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when the checks find the work done, and " + q(usedAt)
+                    + " can also be reached when they do not. Use it only on the path after the work is done.");
+            return;
+        }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,
                     usedAt)) {
                 rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
@@ -216,6 +232,13 @@ final class Conditions {
         }
         if (producer instanceof Node.WaitForMessage) {
             return "is not required, so a message may arrive without it";
+        }
+        if (producer instanceof Node.AiTask ai) {
+            return ai.shadow() ? "comes from a shadow-mode AI task, which must not change the request"
+                    : "is an optional field of the AI extraction";
+        }
+        if (producer instanceof Node.Http) {
+            return "is marked as possibly missing in the answer of the checks";
         }
         return "is only recorded when the approver enters one";
     }

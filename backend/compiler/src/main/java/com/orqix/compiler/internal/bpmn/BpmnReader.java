@@ -62,6 +62,10 @@ public final class BpmnReader {
     private static final JsonNodeFactory F = JsonNodeFactory.instance;
     private static final Pattern APPROVAL_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.(approved|rejected)\\(execution, '([^']*)'\\)\\}$");
+    private static final Pattern POLL_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.polled\\(execution, '([^']*)', '(met|failed|timedOut)'\\)\\}$");
+    private static final Pattern AI_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.ai\\(execution, '([^']*)', '(next|lowConfidence|needsReview|aiUnavailable|label:[a-z][A-Za-z0-9]{0,39})'\\)\\}$");
     private static final Pattern CONDITION_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.condition\\(execution, '([^']*)'\\)\\}$");
     private static final Set<String> FLOW_ELEMENTS = Set.of("startEvent", "userTask", "serviceTask",
@@ -603,13 +607,14 @@ public final class BpmnReader {
         String delegate = el.attr(FLOWABLE_NS, "delegateExpression");
         String kind = delegate == null ? null : switch (delegate) {
             case "${orqixDecisionTask}" -> "decision";
-            case "${orqixHttpTask}" -> "http";
+            case "${orqixHttpTask}", "${orqixPollTask}" -> "http";
             case "${orqixGenerateDocumentTask}" -> "generateDocument";
             case "${orqixExternalTask}" -> "externalTask";
             case "${orqixNotificationTask}" -> "notification";
             case "${orqixChildTask}" -> "startWorkflow";
             case "${orqixCompensationTask}" -> "compensate";
             case "${orqixAdapterTask}" -> "sendAdapter";
+            case "${orqixAiTask}" -> "aiTask";
             default -> null;
         };
         if (kind == null) {
@@ -627,6 +632,7 @@ public final class BpmnReader {
             case "notification" -> "notification";
             case "compensate" -> "compensation";
             case "sendAdapter" -> "adapter";
+            case "aiTask" -> "aiTask";
             default -> "child";
         };
         El x = ext == null ? null : ext.child(ORQIX_NS, extension);
@@ -652,6 +658,43 @@ public final class BpmnReader {
                 }
                 // Opt-in (S71): a known failure raises this business error for the section's error route.
                 putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
+                // S129: "Keep checking until..." travels as canonical JSON.
+                El poll = ext.child(ORQIX_NS, "poll");
+                if (poll != null) {
+                    JsonNode settings = base64Json(id, poll.attr("configBase64"));
+                    if (settings == null) {
+                        return null;
+                    }
+                    config.set("poll", settings);
+                }
+            }
+            case "aiTask" -> {
+                // S134: the pinned version is kept only when the designer pinned it; otherwise publishing pins again.
+                putText(config, "skillRef", x.attr("skill"));
+                if ("true".equals(x.attr("pinnedByDesigner"))) {
+                    Integer version = integer(id, "skillVersion", x.attr("skillVersion"));
+                    if (version != null) {
+                        config.put("skillVersion", version);
+                    }
+                }
+                putText(config, "mode", x.attr("mode"));
+                config.set("inputMapping", pairs(id, x, "input", "fieldRef"));
+                if (x.attr("autonomy") != null && !"suggest".equals(x.attr("autonomy"))) {
+                    config.put("autonomy", x.attr("autonomy"));
+                }
+                if (x.attr("minConfidence") != null
+                        && new java.math.BigDecimal(x.attr("minConfidence")).compareTo(new java.math.BigDecimal("0.8")) != 0) {
+                    config.put("minConfidence", new java.math.BigDecimal(x.attr("minConfidence")));
+                }
+                Integer sample = x.attr("reviewSamplePercent") == null ? null
+                        : integer(id, "reviewSamplePercent", x.attr("reviewSamplePercent"));
+                if (sample != null && sample != 10) {
+                    config.put("reviewSamplePercent", sample);
+                }
+                ObjectNode redaction = pairs(id, x, "redaction", "rule");
+                if (redaction != null && !redaction.isEmpty()) {
+                    config.set("redaction", redaction);
+                }
             }
             case "compensate" -> {
                 // Nothing to read: the undo entries are recomputed from the calls marked as automatic undo calls.
@@ -698,6 +741,8 @@ public final class BpmnReader {
                 if (lease != null && lease != 120) {
                     config.put("leaseSeconds", lease);
                 }
+                // S132 (CG-E10): a worker business error raises this error for the section's error route.
+                putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
             }
             case "notification" -> {
                 putText(config, "channel", x.attr("channel"));
@@ -710,7 +755,43 @@ public final class BpmnReader {
                 config.set("resultMapping", pairs(id, x, "result", "output"));
             }
         }
+        if (List.of("http", "externalTask", "sendAdapter").contains(kind)) {
+            stepRetry(id, ext.child(ORQIX_NS, "retry"), config);
+        }
         return kind;
+    }
+
+    /** {@code <orqix:retry>} back to {@code config.retry} (CG-W04, S131); the compiler checks the bounds. */
+    private void stepRetry(String id, El retry, ObjectNode config) {
+        if (retry == null) {
+            return;
+        }
+        ObjectNode policy = config.putObject("retry");
+        Integer attempts = integer(id, "maxAttempts", retry.attr("maxAttempts"));
+        if (attempts != null) {
+            policy.put("maxAttempts", attempts);
+        }
+        putText(policy, "delay", retry.attr("delay"));
+        // Defaults (multiplier 1, honorRetryAfter true) are read as omitted; BpmnDefaults keeps the draft's spelling.
+        String multiplier = retry.attr("multiplier");
+        if (multiplier != null) {
+            try {
+                BigDecimal value = new BigDecimal(multiplier);
+                if (value.compareTo(BigDecimal.ONE) != 0) {
+                    if (value.stripTrailingZeros().scale() <= 0) {
+                        policy.put("multiplier", value.intValueExact());
+                    } else {
+                        policy.put("multiplier", value);
+                    }
+                }
+            } catch (NumberFormatException | ArithmeticException e) {
+                unsupported(id, "The retry multiplier of '" + id + "' is not a number.");
+            }
+        }
+        putText(policy, "maxDelay", retry.attr("maxDelay"));
+        if ("false".equals(retry.attr("honorRetryAfter"))) {
+            policy.put("honorRetryAfter", false);
+        }
     }
 
     private String catchEvent(El el, El ext, ObjectNode config) {
@@ -792,6 +873,24 @@ public final class BpmnReader {
         if (callback != null) {
             config.putObject("externalCallback").put("tokenValidFor", callback);
         }
+        String fallback = message.attr("fallbackCheckBase64");
+        if (fallback != null) {
+            JsonNode settings = base64Json(id, fallback);
+            if (settings != null) {
+                config.set("fallbackCheck", settings);
+            }
+        }
+    }
+
+    /** S129: settings written as Base64 canonical JSON; null (and reported) when they cannot be read. */
+    private JsonNode base64Json(String id, String text) {
+        try {
+            return com.orqix.compiler.internal.json.StrictJson.parse(new String(java.util.Base64.getDecoder()
+                    .decode(text == null ? "" : text), java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            unsupported(id, "The checking settings of '" + id + "' are not readable Base64 JSON.");
+            return null;
+        }
     }
 
     private static El ext(El el, String name) {
@@ -830,6 +929,8 @@ public final class BpmnReader {
             case BpmnGenerator.APPROVAL_OUT, BpmnGenerator.APPROVAL_ROUTE -> type.equals("approval");
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
             case BpmnGenerator.FAILED_BOUNDARY -> type.equals("http") || type.equals("startWorkflow");
+            case BpmnGenerator.POLL_ROUTE, "__toPollRoute" -> type.equals("http");
+            case BpmnGenerator.AI_ROUTE, "__toAiRoute" -> type.equals("aiTask");
             case BpmnGenerator.MESSAGE_CATCH, "__toMessage", "__toTimeout" -> type.equals("waitForMessage");
             default -> false;
         };
@@ -877,6 +978,7 @@ public final class BpmnReader {
         String expression = expressionEl == null ? null : expressionEl.text();
         String from;
         String on;
+        String aiLabel = null;
         if (source.contains("__")) {
             int at = source.indexOf("__");
             from = source.substring(0, at);
@@ -898,6 +1000,28 @@ public final class BpmnReader {
                 }
                 case "__timeout" -> on = "timedOut";
                 case BpmnGenerator.FAILED_BOUNDARY -> on = "failed";
+                case BpmnGenerator.POLL_ROUTE -> {
+                    Matcher m = expression == null ? null : POLL_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the checks of '" + from + "' must carry the generated "
+                                + "met/failed/timedOut condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = switch (m.group(2)) {
+                        case "met" -> "next";
+                        default -> m.group(2);
+                    };
+                }
+                case BpmnGenerator.AI_ROUTE -> {
+                    Matcher m = expression == null ? null : AI_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the AI task '" + from + "' must carry the generated AI route "
+                                + "condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = m.group(2).startsWith("label:") ? "aiLabel" : m.group(2);
+                    aiLabel = m.group(2).startsWith("label:") ? m.group(2).substring("label:".length()) : null;
+                }
                 case BpmnGenerator.MESSAGE_CATCH -> on = "next";
                 default -> {
                     unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which no connection can "
@@ -931,6 +1055,9 @@ public final class BpmnReader {
         t.put("from", from);
         t.put("to", target);
         t.put("on", on);
+        if (aiLabel != null) {
+            t.put("aiLabel", aiLabel);
+        }
         if (flow.attr("name") != null) {
             t.put("label", flow.attr("name"));
         }

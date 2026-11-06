@@ -4,11 +4,11 @@
  */
 import type { ViewDefinition } from '@/features/views/model'
 
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'waitForFirst' | 'end'
 /** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
 export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable' | 'branch'
 export type Literal = string | number | boolean
 
 /** Bounds of `between`; each bound is included unless it says false. */
@@ -53,6 +53,8 @@ export interface Transition {
   condition?: Condition
   /** AI task routes only (docs/build/S134): the skill label this path is for, when `on` is aiLabel. */
   aiLabel?: string
+  /** Wait for the first only (docs/build/S139): the branch this path is for, when `on` is branch. */
+  branch?: string
 }
 
 /** Inclusive UTC date window (YYYY-MM-DD) in which a row applies, judged by the request's submission date (S41). */
@@ -73,7 +75,7 @@ export interface DecisionRow {
  * against the pinned version at validation and publish; a newer version is never used silently.
  */
 export interface AssetRef {
-  kind: 'decision' | 'documentTemplate' | 'form'
+  kind: 'decision' | 'documentTemplate' | 'form' | 'calendar'
   key: string
   version: number
   target: string
@@ -188,7 +190,7 @@ export interface SubprocessDef {
   timeoutAfter?: string
   onTimeout?: string
   onError?: { to: string; errorCode?: string }
-  trigger?: { type: 'error' | 'signal' | 'timer'; errorCode?: string; signal?: string; after?: string }
+  trigger?: { type: 'error' | 'signal' | 'timer' | 'message'; errorCode?: string; signal?: string; after?: string; message?: string; correlationField?: string; payload?: Array<{ name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'date'; title?: string; required?: boolean }> }
   interrupting?: boolean
 }
 

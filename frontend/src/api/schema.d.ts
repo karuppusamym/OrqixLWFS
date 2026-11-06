@@ -3047,6 +3047,200 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/calendars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Shared working calendars of the workspace (docs/build/S139) */
+        get: operations["listWorkingCalendars"];
+        put?: never;
+        /**
+         * Create a shared working calendar with its first version
+         * @description A calendar has numbered, unchangeable versions. A workflow pins one version in dependencies.assets (kind calendar);
+         *     waits, message time limits and check deadlines then count working time in it. One working day is the calendar's
+         *     working hours of one day.
+         */
+        post: operations["createWorkingCalendar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/calendars/{calendarKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        /** A working calendar with all its versions, newest first */
+        get: operations["getWorkingCalendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/calendars/{calendarKey}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a version (pinned workflows keep theirs; publishing warns that a newer one exists) */
+        post: operations["addWorkingCalendarVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/calendars/{calendarKey}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive (or restore) a calendar; archived calendars cannot be pinned, pinned versions keep working */
+        post: operations["archiveWorkingCalendar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/calendars/{calendarKey}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** When a working time ends, for example "3 working days from now" (changes nothing) */
+        post: operations["previewWorkingCalendar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Reminders while waiting of a request (CG-W06), sent and planned; never message text or recipients */
+        get: operations["listRunReminders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Scheduled starts of the workspace, or of one workflow (CG-E02)
+         * @description The fixed input is shown only to callers with run.read-data or workflow.publish.
+         */
+        get: operations["listSchedules"];
+        put?: never;
+        /**
+         * Start a workflow on a cron or RRULE in a time zone, as the caller
+         * @description The schedule starts the workflow's active release with the fixed input, as the caller, who must be allowed to
+         *     start the workflow (checked again at every start). Optional working calendar: times outside its working hours are
+         *     skipped. Missed runs (catchUpOnce or skip) and overlap (allow or skip) policies. At most one start every 5 minutes.
+         */
+        post: operations["createSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/schedules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The next ten start times of an expression (changes nothing) */
+        post: operations["previewSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/schedules/{scheduleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scheduleId: string;
+            };
+            cookie?: never;
+        };
+        /** A schedule with its next five start times and its ten most recent starts */
+        get: operations["getSchedule"];
+        put?: never;
+        post?: never;
+        /** Delete a schedule; requests it started are not affected */
+        delete: operations["deleteSchedule"];
+        options?: never;
+        head?: never;
+        /** Change, pause or resume a schedule (the caller becomes the person it runs as) */
+        patch: operations["updateSchedule"];
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/kafka-triggers": {
         parameters: {
             query?: never;
@@ -8203,6 +8397,204 @@ export interface components {
             items: components["schemas"]["InsightsOutsideWait"][];
             totalOpenSeconds: number;
         };
+        /** @description A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays. */
+        WorkingCalendarContent: {
+            /** @description IANA time zone */
+            zone?: string;
+            weekdays?: number[];
+            start?: string;
+            end?: string;
+            intervals?: {
+                start: string;
+                end: string;
+            }[];
+            holidays?: string[];
+        };
+        WorkingCalendarSummary: {
+            key: string;
+            name: string;
+            description: string | null;
+            latestVersion: number;
+            archived: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkingCalendarVersion: {
+            version: number;
+            content: components["schemas"]["WorkingCalendarContent"];
+            changeNote: string | null;
+            /** Format: uuid */
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        WorkingCalendarList: {
+            items: components["schemas"]["WorkingCalendarSummary"][];
+        };
+        WorkingCalendarDetail: {
+            calendar: components["schemas"]["WorkingCalendarSummary"];
+            versions: components["schemas"]["WorkingCalendarVersion"][];
+        };
+        CreateWorkingCalendar: {
+            key: string;
+            name: string;
+            description?: string | null;
+            content: components["schemas"]["WorkingCalendarContent"];
+        };
+        AddWorkingCalendarVersion: {
+            expectedVersion: number;
+            content: components["schemas"]["WorkingCalendarContent"];
+            changeNote?: string | null;
+        };
+        ArchiveWorkingCalendar: {
+            /** @description Default true; false restores the calendar */
+            archived?: boolean;
+        };
+        WorkingCalendarPreview: {
+            /** @description Defaults to the latest version */
+            version?: number | null;
+            /**
+             * Format: date-time
+             * @description Defaults to now
+             */
+            from?: string | null;
+            /** @description ISO-8601, for example P3D (three working days) or PT4H */
+            workingDuration: string;
+        };
+        WorkingCalendarDue: {
+            /** Format: date-time */
+            dueAt: string;
+        };
+        RunReminder: {
+            /** Format: uuid */
+            id: string;
+            nodeId: string;
+            /**
+             * Format: date-time
+             * @description When the wait this reminder belongs to started
+             */
+            waitSince: string;
+            adapterKey: string;
+            /** @enum {string} */
+            status: "waiting" | "sending" | "done" | "stopped" | "refused" | "failed";
+            sent: number;
+            maxTimes: number;
+            /** Format: date-time */
+            nextAt: string | null;
+            /** Format: date-time */
+            lastSentAt: string | null;
+            /** @description sent, or why the reminder failed or was refused */
+            lastOutcome: string | null;
+            /** Format: date-time */
+            endedAt: string | null;
+        };
+        RunReminderList: {
+            items: components["schemas"]["RunReminder"][];
+        };
+        /** @description For an update, members left out keep their value (an empty calendarKey removes the calendar); expectedVersion is required. */
+        ScheduleRequest: {
+            /** Format: uuid */
+            workflowId?: string;
+            name?: string;
+            /** @enum {string} */
+            kind?: "cron" | "rrule";
+            /** @description cron: five fields, for example "0 7 * * MON-FRI"; rrule: for example FREQ=WEEKLY;BYDAY=MO;BYHOUR=8 */
+            expression?: string;
+            /** @description IANA time zone */
+            zone?: string;
+            /** Format: date-time */
+            startsAt?: string | null;
+            /** Format: date-time */
+            endsAt?: string | null;
+            /** @description Start only inside this working calendar's hours; the latest version is pinned when saved */
+            calendarKey?: string | null;
+            /** @description The fixed request values */
+            input?: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Default catchUpOnce
+             * @enum {string}
+             */
+            missedRunPolicy?: "catchUpOnce" | "skip";
+            /**
+             * @description Default skip
+             * @enum {string}
+             */
+            overlapPolicy?: "allow" | "skip";
+            /** @description Default true */
+            enabled?: boolean;
+            expectedVersion?: number | null;
+        };
+        ScheduleFire: {
+            /**
+             * Format: date-time
+             * @description The planned time
+             */
+            fireAt: string;
+            /** Format: date-time */
+            firedAt: string;
+            /** @enum {string} */
+            outcome: "started" | "skipped" | "failed";
+            reason: string | null;
+            /** @description Further planned times covered by this one (catch up once) */
+            missed: number;
+            /** Format: uuid */
+            runId: string | null;
+        };
+        Schedule: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workflowId: string;
+            workflowName: string;
+            name: string;
+            /** @enum {string} */
+            kind: "cron" | "rrule";
+            expression: string;
+            zone: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string | null;
+            calendarKey: string | null;
+            calendarVersion: number | null;
+            /** @description Null without run.read-data or workflow.publish */
+            input: {
+                [key: string]: unknown;
+            } | null;
+            /** @enum {string} */
+            missedRunPolicy: "catchUpOnce" | "skip";
+            /** @enum {string} */
+            overlapPolicy: "allow" | "skip";
+            enabled: boolean;
+            /** Format: uuid */
+            runAs: string;
+            runAsName: string;
+            /** Format: date-time */
+            nextFireAt: string | null;
+            /** Format: date-time */
+            lastFireAt: string | null;
+            /** @enum {string|null} */
+            lastOutcome: "started" | "skipped" | "failed" | null;
+            /** Format: uuid */
+            lastRunId: string | null;
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            upcoming: string[];
+            recent: components["schemas"]["ScheduleFire"][];
+        };
+        ScheduleList: {
+            items: components["schemas"]["Schedule"][];
+        };
+        SchedulePreview: {
+            next: string[];
+        };
         KafkaCluster: {
             name: string;
             allowedTopics: string[];
@@ -10287,10 +10679,10 @@ export interface components {
             from: string;
             to: string;
             /**
-             * @description error only on a section error route (S59); the ai routes leave AI tasks (S134).
+             * @description error only on a section error route (S59); the ai routes leave AI tasks (S134); branch leaves a wait for the first (S139).
              * @enum {string}
              */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "branch";
             /** @description The designer's route label. Conditions are never included. */
             label?: string | null;
         };
@@ -12755,6 +13147,8 @@ export interface components {
             failWhen?: components["schemas"]["decisionCondition"];
             /** @description Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE). */
             giveUpAfter: components["schemas"]["pollInterval"];
+            /** @description S139 (CG-W05): count giveUpAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). One working day is the calendar's working hours of one day. */
+            timeoutCalendarRef?: components["schemas"]["key"];
             /** @description Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case. */
             maxChecks?: number;
             onCheckError?: {
@@ -12773,6 +13167,26 @@ export interface components {
             /** @description Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW). */
             showWhileWaiting?: components["schemas"]["fieldKey"][];
         };
+        /** @description Reminders while waiting: every 'every' (wall-clock, PT1H to P30D, from the start of the wait) at most maxTimes (1 to 10, default 3) a message through the adapter (email or Teams). Each reminder is one journaled send with a stable id, so a retry never sends two copies. Email recipients are the literals in 'to' (on the adapter's allowlist) or one request field toField whose address is checked against the adapter's approved domains when each reminder is sent (D-CG7). Texts may use {{reference}}, {{workflow}}, {{step}}, {{since}}, {{count}}, {{maxTimes}} and the names of inputMapping. */
+        waitReminder: {
+            every: components["schemas"]["duration"];
+            maxTimes?: number;
+            adapter: components["schemas"]["key"];
+            to?: string[];
+            toField?: components["schemas"]["fieldRef"];
+            template: {
+                subject?: string;
+                body?: string;
+                text?: string;
+            };
+            inputMapping?: {
+                [key: string]: components["schemas"]["fieldRef"];
+            };
+        };
+        /** @description While the step waits (docs/build/S139, CG-W06). */
+        whileWaiting: {
+            remind: components["schemas"]["waitReminder"];
+        };
         messagePayloadField: {
             name: string;
             /** @enum {unknown} */
@@ -12780,6 +13194,8 @@ export interface components {
             title?: string;
             required?: boolean;
         };
+        /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
+        signalName: string;
         /** @description Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D. */
         fallbackCheck: {
             connectionRef: components["schemas"]["key"];
@@ -12798,11 +13214,35 @@ export interface components {
             jitterPercent?: number;
             maxChecks?: number;
         };
+        firstBranch: {
+            id: string;
+            label: string;
+            /** @enum {unknown} */
+            kind: "message" | "signal" | "callback" | "timer" | "check";
+            /** @description message: the message name. */
+            message?: string;
+            /** @description message: the field whose value identifies the request. */
+            correlationField?: components["schemas"]["fieldRef"];
+            /** @description message, callback and check: values the branch delivers. */
+            payload?: components["schemas"]["messagePayloadField"][];
+            /** @description signal: a signal of this request. */
+            signal?: components["schemas"]["signalName"];
+            /** @description callback: how long an issued callback token is valid (PT1M to P30D). */
+            tokenValidFor?: components["schemas"]["duration"];
+            /** @description timer: a fixed time. */
+            after?: components["schemas"]["duration"];
+            /** @description timer: a date field to wait until. */
+            untilField?: components["schemas"]["fieldRef"];
+            atTime?: string;
+            /** @description timer: working time of calendarRef. */
+            workingDuration?: components["schemas"]["duration"];
+            calendarRef?: components["schemas"]["key"];
+            /** @description check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload. */
+            check?: components["schemas"]["fallbackCheck"];
+        };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
-        /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
-        signalName: string;
         startNode: {
             id?: unknown;
             label?: unknown;
@@ -12951,6 +13391,8 @@ export interface components {
                 raiseErrorOnFailure?: components["schemas"]["errorCode"];
                 /** @description Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set. */
                 poll?: components["schemas"]["pollSettings"];
+                /** @description S139 (CG-W06): reminders while a check-until call waits. Only with poll. */
+                whileWaiting?: components["schemas"]["whileWaiting"];
             };
         } & components["schemas"]["nodeBase"];
         notificationNode: {
@@ -13000,6 +13442,10 @@ export interface components {
                 untilField?: components["schemas"]["fieldRef"];
                 /** @description Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField. */
                 atTime?: string;
+                /** @description S139 (CG-W05): wait this much working time of calendarRef, for example P3D for three working days. One working day is the calendar's working hours of one day; hours and minutes are working hours and minutes. Instead of duration or untilField (WF_WAIT_CHOICE). */
+                workingDuration?: components["schemas"]["duration"];
+                /** @description S139: key of the shared working calendar of workingDuration, pinned in dependencies.assets (kind calendar). */
+                calendarRef?: components["schemas"]["key"];
             };
         } & components["schemas"]["nodeBase"];
         startWorkflowNode: {
@@ -13064,6 +13510,10 @@ export interface components {
                 };
                 /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
                 fallbackCheck?: components["schemas"]["fallbackCheck"];
+                /** @description S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). */
+                timeoutCalendarRef?: components["schemas"]["key"];
+                /** @description S139 (CG-W06): reminders while the step waits for the message or the callback. */
+                whileWaiting?: components["schemas"]["whileWaiting"];
             };
         } & components["schemas"]["nodeBase"];
         endNode: {
@@ -13116,6 +13566,8 @@ export interface components {
                 leaseSeconds?: number;
                 /** @description Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it. */
                 raiseErrorOnFailure?: components["schemas"]["errorCode"];
+                /** @description S139 (CG-W06): reminders while the job is open. */
+                whileWaiting?: components["schemas"]["whileWaiting"];
             };
         } & components["schemas"]["nodeBase"];
         raiseErrorNode: {
@@ -13226,18 +13678,30 @@ export interface components {
                 };
             };
         } & components["schemas"]["nodeBase"];
+        waitForFirstNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "waitForFirst";
+            /** @description Wait for the first of several events (docs/build/S139, CG-W07). 2 to 5 branches, each with exactly one path (on: branch, branch: <id>). The first branch to fire wins, the others are cancelled. Outputs: branch (the winning branch id) and the declared values of the message, callback and check branches (a required value only on its own branch's path). */
+            config?: {
+                branches: components["schemas"]["firstBranch"][];
+            };
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
             to: components["schemas"]["id"];
             /** @enum {unknown} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "branch";
+            /** @description Wait for the first only (docs/build/S139): the id of the branch this path is for; required when on is branch. */
+            branch?: string;
             /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
             aiLabel?: string;
             /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
             label?: string;
             condition?: components["schemas"]["condition"];
-        } & unknown;
+        } & (unknown & unknown);
         /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
         decisionTable: {
             key: components["schemas"]["key"];
@@ -13289,7 +13753,13 @@ export interface components {
             /** @description event only: what starts the handler. */
             trigger?: {
                 /** @enum {unknown} */
-                type: "error" | "signal" | "timer";
+                type: "error" | "signal" | "timer" | "message";
+                /** @description message (docs/build/S139, CG-E08): the message name that starts the handler, for example customer-cancelled. */
+                message?: string;
+                /** @description message: the required request field whose value identifies the request (/input/<key>). */
+                correlationField?: components["schemas"]["fieldRef"];
+                /** @description message: values the message may carry; the handler's steps use them as /steps/<handler id>/<name>. */
+                payload?: components["schemas"]["messagePayloadField"][];
                 errorCode?: components["schemas"]["errorCode"];
                 signal?: components["schemas"]["signalName"];
                 /** @description timer: time from the start of the request. */
@@ -13362,7 +13832,7 @@ export interface components {
             triggers: ("manual" | "api")[];
             /** @description CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution. */
             exposeAsTool?: boolean;
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"] | components["schemas"]["aiTaskNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"] | components["schemas"]["aiTaskNode"] | components["schemas"]["waitForFirstNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -13387,7 +13857,7 @@ export interface components {
                 /** @description Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision), the id of a generateDocument step (kind documentTemplate) or request, the request form (kind form, docs/build/S128). A form reference also lists the questions it copied in fields (shared question key to this workflow's question key, which differs when a clashing key was renamed on insert). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset. */
                 assets?: {
                     /** @enum {unknown} */
-                    kind: "decision" | "documentTemplate" | "form";
+                    kind: "decision" | "documentTemplate" | "form" | "calendar";
                     key: components["schemas"]["key"];
                     version: number;
                     target: components["schemas"]["id"];
@@ -13677,6 +14147,8 @@ export interface components {
                         raiseErrorOnFailure?: components["schemas"]["errorCode"];
                         /** @description Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set. */
                         poll?: components["schemas"]["pollSettings"];
+                        /** @description S139 (CG-W06): reminders while a check-until call waits. Only with poll. */
+                        whileWaiting?: components["schemas"]["whileWaiting"];
                     };
                 } & components["schemas"]["nodeBase"];
                 notificationNode: {
@@ -13716,6 +14188,8 @@ export interface components {
                     failWhen?: components["schemas"]["decisionCondition"];
                     /** @description Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE). */
                     giveUpAfter: components["schemas"]["pollInterval"];
+                    /** @description S139 (CG-W05): count giveUpAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). One working day is the calendar's working hours of one day. */
+                    timeoutCalendarRef?: components["schemas"]["key"];
                     /** @description Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case. */
                     maxChecks?: number;
                     onCheckError?: {
@@ -13751,6 +14225,62 @@ export interface components {
                     until: components["schemas"]["decisionCondition"];
                     jitterPercent?: number;
                     maxChecks?: number;
+                };
+                /** @description While the step waits (docs/build/S139, CG-W06). */
+                whileWaiting: {
+                    remind: components["schemas"]["waitReminder"];
+                };
+                /** @description Reminders while waiting: every 'every' (wall-clock, PT1H to P30D, from the start of the wait) at most maxTimes (1 to 10, default 3) a message through the adapter (email or Teams). Each reminder is one journaled send with a stable id, so a retry never sends two copies. Email recipients are the literals in 'to' (on the adapter's allowlist) or one request field toField whose address is checked against the adapter's approved domains when each reminder is sent (D-CG7). Texts may use {{reference}}, {{workflow}}, {{step}}, {{since}}, {{count}}, {{maxTimes}} and the names of inputMapping. */
+                waitReminder: {
+                    every: components["schemas"]["duration"];
+                    maxTimes?: number;
+                    adapter: components["schemas"]["key"];
+                    to?: string[];
+                    toField?: components["schemas"]["fieldRef"];
+                    template: {
+                        subject?: string;
+                        body?: string;
+                        text?: string;
+                    };
+                    inputMapping?: {
+                        [key: string]: components["schemas"]["fieldRef"];
+                    };
+                };
+                waitForFirstNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "waitForFirst";
+                    /** @description Wait for the first of several events (docs/build/S139, CG-W07). 2 to 5 branches, each with exactly one path (on: branch, branch: <id>). The first branch to fire wins, the others are cancelled. Outputs: branch (the winning branch id) and the declared values of the message, callback and check branches (a required value only on its own branch's path). */
+                    config?: {
+                        branches: components["schemas"]["firstBranch"][];
+                    };
+                } & components["schemas"]["nodeBase"];
+                firstBranch: {
+                    id: string;
+                    label: string;
+                    /** @enum {unknown} */
+                    kind: "message" | "signal" | "callback" | "timer" | "check";
+                    /** @description message: the message name. */
+                    message?: string;
+                    /** @description message: the field whose value identifies the request. */
+                    correlationField?: components["schemas"]["fieldRef"];
+                    /** @description message, callback and check: values the branch delivers. */
+                    payload?: components["schemas"]["messagePayloadField"][];
+                    /** @description signal: a signal of this request. */
+                    signal?: components["schemas"]["signalName"];
+                    /** @description callback: how long an issued callback token is valid (PT1M to P30D). */
+                    tokenValidFor?: components["schemas"]["duration"];
+                    /** @description timer: a fixed time. */
+                    after?: components["schemas"]["duration"];
+                    /** @description timer: a date field to wait until. */
+                    untilField?: components["schemas"]["fieldRef"];
+                    atTime?: string;
+                    /** @description timer: working time of calendarRef. */
+                    workingDuration?: components["schemas"]["duration"];
+                    calendarRef?: components["schemas"]["key"];
+                    /** @description check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload. */
+                    check?: components["schemas"]["fallbackCheck"];
                 };
                 /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
                 duration: string;
@@ -13788,6 +14318,10 @@ export interface components {
                         untilField?: components["schemas"]["fieldRef"];
                         /** @description Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField. */
                         atTime?: string;
+                        /** @description S139 (CG-W05): wait this much working time of calendarRef, for example P3D for three working days. One working day is the calendar's working hours of one day; hours and minutes are working hours and minutes. Instead of duration or untilField (WF_WAIT_CHOICE). */
+                        workingDuration?: components["schemas"]["duration"];
+                        /** @description S139: key of the shared working calendar of workingDuration, pinned in dependencies.assets (kind calendar). */
+                        calendarRef?: components["schemas"]["key"];
                     };
                 } & components["schemas"]["nodeBase"];
                 startWorkflowNode: {
@@ -13852,6 +14386,10 @@ export interface components {
                         };
                         /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
                         fallbackCheck?: components["schemas"]["fallbackCheck"];
+                        /** @description S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). */
+                        timeoutCalendarRef?: components["schemas"]["key"];
+                        /** @description S139 (CG-W06): reminders while the step waits for the message or the callback. */
+                        whileWaiting?: components["schemas"]["whileWaiting"];
                     };
                 } & components["schemas"]["nodeBase"];
                 messagePayloadField: {
@@ -13881,13 +14419,15 @@ export interface components {
                     from: components["schemas"]["id"];
                     to: components["schemas"]["id"];
                     /** @enum {unknown} */
-                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable" | "branch";
+                    /** @description Wait for the first only (docs/build/S139): the id of the branch this path is for; required when on is branch. */
+                    branch?: string;
                     /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
                     aiLabel?: string;
                     /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
                     label?: string;
                     condition?: components["schemas"]["condition"];
-                } & unknown;
+                } & (unknown & unknown);
                 decisionCondition: components["schemas"]["decisionTerm"] | {
                     all: components["schemas"]["decisionTerm"][];
                 } | {
@@ -14004,6 +14544,8 @@ export interface components {
                         leaseSeconds?: number;
                         /** @description Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it. */
                         raiseErrorOnFailure?: components["schemas"]["errorCode"];
+                        /** @description S139 (CG-W06): reminders while the job is open. */
+                        whileWaiting?: components["schemas"]["whileWaiting"];
                     };
                 } & components["schemas"]["nodeBase"];
                 arrayFormField: {
@@ -14056,7 +14598,13 @@ export interface components {
                     /** @description event only: what starts the handler. */
                     trigger?: {
                         /** @enum {unknown} */
-                        type: "error" | "signal" | "timer";
+                        type: "error" | "signal" | "timer" | "message";
+                        /** @description message (docs/build/S139, CG-E08): the message name that starts the handler, for example customer-cancelled. */
+                        message?: string;
+                        /** @description message: the required request field whose value identifies the request (/input/<key>). */
+                        correlationField?: components["schemas"]["fieldRef"];
+                        /** @description message: values the message may carry; the handler's steps use them as /steps/<handler id>/<name>. */
+                        payload?: components["schemas"]["messagePayloadField"][];
                         errorCode?: components["schemas"]["errorCode"];
                         signal?: components["schemas"]["signalName"];
                         /** @description timer: time from the start of the request. */
@@ -20182,6 +20730,382 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listWorkingCalendars: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Calendars */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createWorkingCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkingCalendar"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getWorkingCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The calendar */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addWorkingCalendarVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddWorkingCalendarVersion"];
+            };
+        };
+        responses: {
+            /** @description The calendar with the new version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    archiveWorkingCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ArchiveWorkingCalendar"];
+            };
+        };
+        responses: {
+            /** @description The calendar */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    previewWorkingCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                calendarKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkingCalendarPreview"];
+            };
+        };
+        responses: {
+            /** @description The end of the working time */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkingCalendarDue"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRunReminders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reminders */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunReminderList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSchedules: {
+        parameters: {
+            query?: {
+                workflowId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    previewSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Next start times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulePreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scheduleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scheduleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scheduleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description The schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listKafkaTriggers: {

@@ -240,6 +240,7 @@ export function routeForHandle(node: WorkflowNode, handle: string | null | undef
   if (node.type === 'http' || node.type === 'externalTask') return handle === 'failed' ? 'failed' : 'next'
   if (node.type === 'waitForMessage') return handle === 'timedOut' ? 'timedOut' : 'next'
   if (node.type === 'branch') return 'condition'
+  if (node.type === 'waitForFirst') return 'branch'
   return 'next'
 }
 
@@ -300,6 +301,10 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       }
       if (req.on !== 'next') return { ok: false, reason: 'Parallel branches use Next routes.' }
       if (others.some((t) => t.to === to.id)) return { ok: false, reason: 'There is already a branch to that step.' }
+      break
+    case 'waitForFirst':
+      // S139: each branch has exactly one path, chosen in the step's settings ("Goes to").
+      if (!req.transitionId) return { ok: false, reason: 'Choose where each branch goes in the settings of this step.' }
       break
     case 'branch':
       if (req.on !== 'condition' && req.on !== 'default') return { ok: false, reason: 'Paths of a choice are conditions or Otherwise.' }

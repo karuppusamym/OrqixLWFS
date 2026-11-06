@@ -11471,7 +11471,7 @@ components:
     ArchiveWorkingCalendar:
       type: object
       properties:
-        archived: { type: boolean, default: true, description: false restores the calendar }
+        archived: { type: boolean, description: 'Default true; false restores the calendar' }
     WorkingCalendarPreview:
       type: object
       required: [workingDuration]
@@ -11519,10 +11519,10 @@ components:
         startsAt: { type: [string, 'null'], format: date-time }
         endsAt: { type: [string, 'null'], format: date-time }
         calendarKey: { type: [string, 'null'], maxLength: 64, description: Start only inside this working calendar's hours; the latest version is pinned when saved }
-        input: { type: object, description: The fixed request values, checked against the active release's request form }
-        missedRunPolicy: { type: string, enum: [catchUpOnce, skip], default: catchUpOnce }
-        overlapPolicy: { type: string, enum: [allow, skip], default: skip }
-        enabled: { type: boolean, default: true }
+        input: { type: object, additionalProperties: true, description: The fixed request values, checked against the active release's request form }
+        missedRunPolicy: { type: string, enum: [catchUpOnce, skip], description: Default catchUpOnce }
+        overlapPolicy: { type: string, enum: [allow, skip], description: Default skip }
+        enabled: { type: boolean, description: Default true }
         expectedVersion: { type: [integer, 'null'], minimum: 1 }
     ScheduleFire:
       type: object
@@ -11553,7 +11553,7 @@ components:
         endsAt: { type: [string, 'null'], format: date-time }
         calendarKey: { type: [string, 'null'] }
         calendarVersion: { type: [integer, 'null'] }
-        input: { type: [object, 'null'], description: Null without run.read-data or workflow.publish }
+        input: { type: [object, 'null'], additionalProperties: true, description: Null without run.read-data or workflow.publish }
         missedRunPolicy: { type: string, enum: [catchUpOnce, skip] }
         overlapPolicy: { type: string, enum: [allow, skip] }
         enabled: { type: boolean }
@@ -14298,7 +14298,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134).' }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable, branch], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134); branch leaves a wait for the first (S139).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object

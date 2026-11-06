@@ -1,4 +1,4 @@
-import { AlertOctagon, Sparkles, Send, Radio, RadioReceiver, Undo2, Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, Cpu, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
+import { Split, AlertOctagon, Sparkles, Send, Radio, RadioReceiver, Undo2, Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, Cpu, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from './model/types'
 
 export const KIND_ICON: Record<NodeKind, LucideIcon> = {
@@ -22,6 +22,7 @@ export const KIND_ICON: Record<NodeKind, LucideIcon> = {
   compensate: Undo2,
   sendAdapter: Send,
   aiTask: Sparkles,
+  waitForFirst: Split,
 }
 
 /**
@@ -50,6 +51,7 @@ export const KIND_ACCENT: Record<NodeKind, string> = {
   compensate: 'bg-kind-http',
   sendAdapter: 'bg-kind-http',
   aiTask: 'bg-kind-decision',
+  waitForFirst: 'bg-kind-notification',
 }
 
 export const KIND_BADGE: Record<NodeKind, string> = {
@@ -73,6 +75,7 @@ export const KIND_BADGE: Record<NodeKind, string> = {
   compensate: 'bg-kind-http-soft text-kind-http',
   sendAdapter: 'bg-kind-http-soft text-kind-http',
   aiTask: 'bg-kind-decision-soft text-kind-decision',
+  waitForFirst: 'bg-kind-notification-soft text-kind-notification',
 }
 
 /** CSS variable per kind, for SVG (the minimap) where utility classes do not reach. */
@@ -97,4 +100,5 @@ export const KIND_VAR: Record<NodeKind, string> = {
   compensate: 'var(--kind-http)',
   sendAdapter: 'var(--kind-http)',
   aiTask: 'var(--kind-decision)',
+  waitForFirst: 'var(--kind-notification)',
 }

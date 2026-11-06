@@ -114,6 +114,7 @@ const TEXT_CLASS: Record<RouteKind, string> = {
   default: 'text-foreground',
   next: 'text-foreground',
   aiLabel: 'text-edge-condition',
+  branch: 'text-edge-condition',
   lowConfidence: 'text-edge-condition',
   needsReview: 'text-edge-condition',
   aiUnavailable: 'text-edge-rejected',

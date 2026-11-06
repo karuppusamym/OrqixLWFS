@@ -14,6 +14,7 @@ import { ApprovalViewPicker } from './ApprovalViewPicker'
 import { ListApprovalFields } from './ListApprovalFields'
 import { StagesInspector } from './StagesInspector'
 import { SubprocessesInspector } from './ScopeInspectors'
+import { SchedulesPanel } from '@/features/settings/SchedulesPanel'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -306,6 +307,15 @@ export function WorkflowInspector() {
         </div>
       </Advanced>
       <Tier1Settings />
+      <WorkflowSchedules />
     </div>
   )
+}
+
+/** S139 (CG-E02): this workflow's scheduled starts, below the workflow settings. */
+function WorkflowSchedules() {
+  const { workflowId } = useStudioContext()
+  const { can } = useWorkspace()
+  if (!can('workflow.read')) return null
+  return <InspectorSection title="Scheduled starts"><SchedulesPanel workflowId={workflowId} /></InspectorSection>
 }

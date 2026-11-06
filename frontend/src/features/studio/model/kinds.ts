@@ -83,11 +83,12 @@ export const KINDS: Record<NodeKind, KindInfo> = {
   compensate: { kind: 'compensate', paletteLabel: 'Undo completed calls', caption: 'Undo completed calls', description: 'Run the automatic undo call of every call that completed in this request, most recent first.', defaultLabel: 'Undo completed calls', routes: ['next'] },
   sendAdapter: { kind: 'sendAdapter', paletteLabel: 'Send through an adapter', caption: 'Adapter', description: 'Send an email, Teams message or Kafka message, or read a database, through an adapter your administrator set up. This build delivers only to a local test stub.', defaultLabel: 'Send through an adapter', routes: ['next'] },
   aiTask: { kind: 'aiTask', paletteLabel: 'AI task', caption: 'AI task', description: 'Classify, extract, score, recommend or summarize with an approved AI skill. AI proposes; a person or a decision table decides where it matters, and a person takes over when AI is unavailable.', defaultLabel: 'AI task', routes: ['aiLabel', 'lowConfidence', 'needsReview', 'aiUnavailable', 'next'] },
+  waitForFirst: { kind: 'waitForFirst', paletteLabel: 'Wait for the first', caption: 'Wait for the first', description: 'Wait for whichever happens first: a message, a signal, an answer from another system, a time, or a check. Each has its own path; the others stop.', defaultLabel: 'Wait for the first', routes: ['branch'] },
   startWorkflow: { kind: 'startWorkflow', paletteLabel: 'Start another workflow', caption: 'Child workflow', description: 'Start a published workflow and wait for its result.', defaultLabel: 'Start another workflow', routes: ['next'] },
 }
 
 /** Palette order. The start step always exists and cannot be added or deleted. */
-export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'externalTask', 'sendAdapter', 'aiTask', 'startWorkflow', 'compensate', 'raiseError', 'end']
+export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'waitForMessage', 'waitForFirst', 'waitForSignal', 'sendSignal', 'externalTask', 'sendAdapter', 'aiTask', 'startWorkflow', 'compensate', 'raiseError', 'end']
 
 export const ROUTE_LABEL: Record<RouteKind, string> = {
   next: 'Next',
@@ -101,6 +102,7 @@ export const ROUTE_LABEL: Record<RouteKind, string> = {
   lowConfidence: 'Low confidence',
   needsReview: 'Needs review',
   aiUnavailable: 'AI unavailable',
+  branch: 'Branch',
 }
 
 /** Default config for a new node of each kind. */
@@ -143,5 +145,12 @@ export function defaultConfig(kind: NodeKind): Record<string, unknown> {
       return { adapter: '', kind: 'email', to: [], subject: '', body: '', inputMapping: {} }
     case 'aiTask':
       return { skillRef: '', mode: 'classify', autonomy: 'suggest', minConfidence: 0.8, inputMapping: {} }
+    case 'waitForFirst':
+      return {
+        branches: [
+          { id: 'answered', label: 'The answer arrives', kind: 'message', message: 'answer-received', correlationField: '', payload: [] },
+          { id: 'tooLate', label: 'No answer in time', kind: 'timer', after: 'P7D' },
+        ],
+      }
   }
 }

@@ -120,6 +120,8 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
         </>
       ) : data.kind === 'branch' ? (
         <Handle type="source" position={Position.Right} id="route" aria-hidden="true" />
+      ) : data.kind === 'waitForFirst' ? (
+        <Handle type="source" position={Position.Right} id="branch" aria-hidden="true" />
       ) : data.kind !== 'end' && data.kind !== 'raiseError' ? (
         <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
       ) : null}

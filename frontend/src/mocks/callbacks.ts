@@ -2,6 +2,7 @@ import { http, HttpResponse, type HttpHandler } from 'msw'
 import type { components } from '@/api/schema'
 import { newId } from './state'
 import { createWaitHandlers } from './waits'
+import { createWaitsAndStartsHandlers } from './waitsAndStarts'
 import { createAiSkillHandlers } from './aiSkills'
 
 type S = components['schemas']
@@ -75,6 +76,7 @@ export function createCallbackHandlers(): HttpHandler[] {
   return [
     // S129: the "Waiting for" API lives beside the callback waits.
     ...createWaitHandlers(),
+    ...createWaitsAndStartsHandlers(),
     // S134: AI skills and run AI decisions.
     ...createAiSkillHandlers(),
     http.get(`${B}/callback-waits`, ({ request }) => {

@@ -21,6 +21,7 @@ import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspect
 import { StartInspector } from './StartInspector'
 import { CompensateInspector, RaiseErrorInspector, SignalInspector } from './ScopeInspectors'
 import { CommitInput, CommitTextarea } from './controls'
+import { ReminderFields, TimeoutCalendarField, WaitForFirstInspector, WorkingTimeFields } from './WaitsAndStartsFields'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
 export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => void }) {
@@ -111,7 +112,11 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'generateDocument' ? <GenerateDocumentInspector node={node} /> : null}
       {node.type === 'http' ? <HttpInspector node={node} /> : null}
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}
-      {node.type === 'wait' ? <WaitInspector node={node} /> : null}
+      {node.type === 'wait' && node.config.workingDuration === undefined ? <WaitInspector node={node} /> : null}
+      {node.type === 'wait' ? <WorkingTimeFields node={node} /> : null}
+      {node.type === 'waitForFirst' ? <WaitForFirstInspector node={node} /> : null}
+      {node.type === 'waitForMessage' || node.type === 'http' ? <TimeoutCalendarField node={node} /> : null}
+      {node.type === 'waitForMessage' || node.type === 'http' || node.type === 'externalTask' ? <ReminderFields node={node} /> : null}
       {node.type === 'waitForMessage' ? <MessageInspector node={node} /> : null}
       {node.type === 'externalTask' ? <ExternalTaskInspector node={node} /> : null}
       {node.type === 'sendAdapter' ? <SendAdapterInspector node={node} /> : null}

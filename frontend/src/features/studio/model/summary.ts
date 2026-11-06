@@ -38,7 +38,16 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return t.label || 'Needs review'
     case 'aiUnavailable':
       return t.label || 'AI unavailable'
+    case 'branch':
+      return t.label || branchLabel(def, t) || 'Branch (not set)'
   }
+}
+
+/** S139: the label of the branch of a "Wait for the first" step that a path is for. */
+function branchLabel(def: Definition, t: Transition): string | undefined {
+  const from = def.nodes.find((n) => n.id === t.from)
+  const branches = Array.isArray(from?.config.branches) ? (from?.config.branches as Array<{ id?: string; label?: string }>) : []
+  return branches.find((b) => b.id === t.branch)?.label
 }
 
 /** Label used in a route select: "When approved", "Otherwise", "Next". */
@@ -52,6 +61,7 @@ export function routeSlotLabel(def: Definition, t: Transition | undefined, on: T
   if (on === 'lowConfidence') return 'When AI is not confident enough'
   if (on === 'needsReview') return 'When a person must review'
   if (on === 'aiUnavailable') return 'When AI is unavailable'
+  if (on === 'branch') return t ? `When ${branchLabel(def, t) ?? t.branch ?? 'a branch'} happens first` : 'When a branch happens first'
   return ROUTE_LABEL[on]
 }
 
@@ -88,6 +98,10 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return waitSummary(def, c)
     case 'waitForMessage':
       return messageSummary(def, c)
+    case 'waitForFirst': {
+      const branches = Array.isArray(c.branches) ? (c.branches as Array<{ label?: string }>) : []
+      return branches.length ? `First of: ${branches.map((b) => b.label || 'a branch').join(', ')}` : 'Add the events to wait for'
+    }
     case 'raiseError':
       return `Raises ${String(c.errorCode ?? 'an error')}`
     case 'sendSignal':

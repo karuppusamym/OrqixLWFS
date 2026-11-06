@@ -103,7 +103,13 @@ export interface FieldSchemaDoc {
   description?: string
   enum?: string[]
   /** `date` on a string field: a calendar date YYYY-MM-DD. `attachment`: a file chosen on the request form (docs/build/S17). */
-  format?: 'date' | 'attachment'
+  format?: 'date' | 'time' | 'date-time' | 'attachment'
+  /** Only with format date-time: the IANA time zone used to enter and show the value (docs/build/S140). */
+  timeZone?: string
+  /** Lists of single values: each value once (checklists and tag lists, S140). */
+  uniqueItems?: true
+  /** Options from a pinned read-only connection operation (CG-F02, S140). */
+  lookup?: { connection: string; operation: string; searchInput: string; valueInput?: string; rows: string; valueColumn: string; labelColumn: string; detailColumn?: string; minSearchLength?: number }
   /** Only with format attachment: the accepted file types (default: all allowed types) and the largest file in bytes. */
   acceptTypes?: string[]
   maxFileBytes?: number

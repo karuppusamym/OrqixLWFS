@@ -1,6 +1,6 @@
 import { isCalendarDate } from '../dates'
 import { patternMatches } from './pattern'
-import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
+import { buildFields, isClockTime, isZonedDateTime, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
 import { fieldsForInput } from './visibility'
 
 /**
@@ -28,6 +28,7 @@ export type IssueKeyword =
   | 'multipleOf'
   | 'minItems'
   | 'maxItems'
+  | 'uniqueItems'
   | 'hidden'
 
 export interface JsonIssue {
@@ -100,6 +101,15 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
         const nested = row ? validateJsonInput({ type: 'object', additionalProperties: false, required: field.items!.required ?? [], properties: field.items!.properties ?? {} }, entry) : validateJsonInput({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: field.items! } }, { item: entry })
         nested.forEach(issue => issues.push({ ...issue, pointer: `${pointer}/${index}${row ? issue.pointer : ''}` }))
       })
+      if (field.uniqueItems) {
+        // Scalar items only (S140): the same value twice is reported at its second position, like the server.
+        const seen = new Set<string>()
+        value.forEach((entry, index) => {
+          const key = JSON.stringify(entry)
+          if (seen.has(key)) issues.push({ pointer: `${pointer}/${index}`, keyword: 'uniqueItems' })
+          seen.add(key)
+        })
+      }
       continue
     }
     // ajv evaluates enum for any value; the keywords below only apply to strings and numbers respectively.
@@ -116,6 +126,26 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
         // YYYY-MM-DD strings order the same way as the dates they name.
         if (field.formatMinimum !== undefined && value < field.formatMinimum) issues.push({ pointer, keyword: 'formatMinimum' })
         if (field.formatMaximum !== undefined && value > field.formatMaximum) issues.push({ pointer, keyword: 'formatMaximum' })
+      }
+      continue
+    }
+    if (typeof value === 'string' && field.format === 'time') {
+      if (!isClockTime(value)) issues.push({ pointer, keyword: 'format' })
+      else {
+        // HH:MM and HH:MM:SS order like the times they name once seconds are filled in.
+        const at = (t: string) => (t.length === 5 ? `${t}:00` : t)
+        if (field.formatMinimum !== undefined && at(value) < at(field.formatMinimum)) issues.push({ pointer, keyword: 'formatMinimum' })
+        if (field.formatMaximum !== undefined && at(value) > at(field.formatMaximum)) issues.push({ pointer, keyword: 'formatMaximum' })
+      }
+      continue
+    }
+    if (typeof value === 'string' && field.format === 'date-time') {
+      if (!isZonedDateTime(value)) issues.push({ pointer, keyword: 'format' })
+      else {
+        // Bounds compare instants: 10:00+01:00 is the same moment as 09:00Z.
+        const at = Date.parse(value)
+        if (field.formatMinimum !== undefined && at < Date.parse(field.formatMinimum)) issues.push({ pointer, keyword: 'formatMinimum' })
+        if (field.formatMaximum !== undefined && at > Date.parse(field.formatMaximum)) issues.push({ pointer, keyword: 'formatMaximum' })
       }
       continue
     }

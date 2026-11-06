@@ -86,6 +86,8 @@ const TABLE = {
   SIGNAL_NOT_AWAITED: { behavior: 'operator-message', message: 'Nothing in this request is waiting for that signal now.' },
   CALLBACK_ALREADY_RESUMED: { behavior: 'operator-message', message: 'The external system already answered this wait.' },
   CALLBACK_NOT_WAITING: { behavior: 'operator-message', message: 'This wait is no longer open, so no callback token can be used or issued.' },
+  GUEST_RESPONSE_CLOSED: { behavior: 'message', message: 'This response link is no longer open. Ask the person who sent it for a new one.' },
+  GUEST_RESPONSE_SUBMITTED: { behavior: 'message', message: 'This response was already sent.' },
   RUN_NOT_MIGRATABLE: { behavior: 'operator-message', message: 'This request cannot move to that release. The reasons are listed in the dialog.' },
   RUN_NOT_SUSPENDED: { behavior: 'operator-message', message: 'This request is not suspended.' },
   RUN_NOT_REPAIRABLE: { behavior: 'operator-message', message: 'There is nothing here that can be repaired safely. Cancel the request if it cannot continue.' },

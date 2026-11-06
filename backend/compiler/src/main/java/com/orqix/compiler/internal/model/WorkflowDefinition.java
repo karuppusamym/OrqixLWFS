@@ -224,7 +224,17 @@ public record WorkflowDefinition(
                             Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
                             Field items, Integer minItems, Integer maxItems, String formatMinimum,
                             String formatMaximum, boolean incidentEditable, List<String> rowRequired,
-                            Map<String, Field> rowFields) {
+                            Map<String, Field> rowFields, tools.jackson.databind.JsonNode json) {
+            /** Without the field's JSON (rules that need format details such as lookup or timeZone see none). */
+            public Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
+                         Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
+                         Field items, Integer minItems, Integer maxItems, String formatMinimum,
+                         String formatMaximum, boolean incidentEditable, List<String> rowRequired,
+                         Map<String, Field> rowFields) {
+                this(key, type, title, enumValues, minLength, maxLength, minimum, maximum, multipleOf, items, minItems,
+                        maxItems, formatMinimum, formatMaximum, incidentEditable, rowRequired, rowFields, null);
+            }
+
             public Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
                          Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
                          Field items, Integer minItems, Integer maxItems, String formatMinimum,

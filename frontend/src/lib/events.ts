@@ -185,6 +185,16 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     }
     case 'MESSAGE_DISCARDED':
       return `${label}: a message ${str(event.data.message)} that arrived earlier did not fit and was ignored`
+    case 'GUEST_LINK_SENT':
+      return `${label}: a one-time response link was emailed${str(event.data.domain) ? ` to an address at ${str(event.data.domain)}` : ''}`
+    case 'GUEST_LINK_REFUSED':
+      return event.data.reason === 'domainNotApproved'
+        ? `${label}: the response link was not emailed because ${str(event.data.domain) ?? 'the address domain'} is not an approved guest domain`
+        : `${label}: the response link was not emailed (no usable address)`
+    case 'GUEST_RESPONSE_SUBMITTED': {
+      const files = typeof event.data.fileCount === 'number' ? event.data.fileCount : 0
+      return `${label}: the guest sent their response${files ? ` with ${files} file${files === 1 ? '' : 's'}` : ''}`
+    }
     case 'CHILD_STARTED': {
       const name = str(event.data.workflowName)
       const reference = str(event.data.childReference)

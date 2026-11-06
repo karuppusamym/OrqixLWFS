@@ -462,7 +462,9 @@ final class TypeRules {
                 invalid(rc, base + "/multipleOf", title + " is a whole number, so it cannot allow cents"
                         + " (multipleOf " + f.multipleOf().toPlainString() + ").");
             }
-            dateBounds(rc, f, base);
+            if (f.type() != FieldKind.TIME && f.type() != FieldKind.DATETIME) {
+                dateBounds(rc, f, base); // S140: time bounds are checked by FormFieldRules
+            }
             if (f.minLength() != null && f.maxLength() != null && f.minLength() > f.maxLength()) {
                 invalid(rc, base + "/minLength", title + " has a minimum length greater than its maximum length.");
             }

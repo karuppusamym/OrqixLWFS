@@ -4,7 +4,7 @@ import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
 import { renameCopiedQuestion } from './sharedForms'
-import type { AssetRef, Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
+import type { AssetRef, Condition, Definition, DecisionTable, FieldSchemaDoc, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
  * Pure document operations used by the studio store, the Steps tab and the tests.
@@ -491,7 +491,7 @@ export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 
 
 // Request form fields -----------------------------------------------------------------------------------------
 
-export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'yesNo' | 'choice' | 'collection' | 'file'
+export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'time' | 'dateTime' | 'yesNo' | 'choice' | 'checklist' | 'tags' | 'lookup' | 'collection' | 'file'
 
 export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
@@ -500,6 +500,11 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   money: 'Money (USD)',
   integer: 'Whole number',
   date: 'Date',
+  time: 'Time of day',
+  dateTime: 'Date and time',
+  checklist: 'Checklist (several choices)',
+  tags: 'Tag list',
+  lookup: 'Lookup (options from a system)',
   yesNo: 'Yes/No',
   choice: 'Choice',
   collection: 'Collection',
@@ -530,6 +535,10 @@ export interface FormFieldModel {
   /** File upload: accepted file types (empty = all allowed types) and the largest file in MB (empty = the platform limit). */
   fileTypes?: string[] | undefined
   maxFileMb?: number | undefined
+  /** Date and time: the IANA zone the form uses (empty = the person's browser). */
+  timeZone?: string | undefined
+  /** Lookup: the pinned read-only operation that gives the options (docs/build/S140). */
+  lookup?: FieldSchemaDoc['lookup'] | undefined
 }
 
 export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
@@ -540,9 +549,12 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
     const f = def.inputSchema.properties[key]!
     const widget = def.inputUi?.widgets?.[key]
     let kind: FieldKind = 'text'
-    if (f.type === 'array') kind = 'collection'
+    if (f.type === 'array') kind = widget === 'checklist' && f.items?.enum?.length ? 'checklist' : widget === 'tags' && f.items?.type === 'string' && !f.items.enum ? 'tags' : 'collection'
     else if (f.type === 'boolean') kind = 'yesNo'
     else if (f.type === 'string' && f.format === 'date') kind = 'date'
+    else if (f.type === 'string' && f.format === 'time') kind = 'time'
+    else if (f.type === 'string' && f.format === 'date-time') kind = 'dateTime'
+    else if (f.type === 'string' && f.lookup) kind = 'lookup'
     else if (f.type === 'string' && f.format === 'attachment') kind = 'file'
     else if (f.enum && f.enum.length > 0) kind = 'choice'
     else if (f.type === 'integer') kind = 'integer'
@@ -555,7 +567,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       required: (def.inputSchema.required ?? []).includes(key),
       help: f.description ?? '',
       incidentEditable: f.incidentEditable === true,
-      choices: f.enum ?? [],
+      choices: f.enum ?? (kind === 'checklist' ? f.items?.enum ?? [] : []),
       minimum: f.minimum,
       maximum: f.maximum,
       minLength: f.minLength,
@@ -564,6 +576,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       minDate: f.formatMinimum, maxDate: f.formatMaximum,
       itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
       fileTypes: f.acceptTypes, maxFileMb: f.maxFileBytes === undefined ? undefined : Math.round((f.maxFileBytes / 1048576) * 10) / 10,
+      timeZone: f.timeZone, lookup: f.lookup,
     }
   })
 }
@@ -618,6 +631,37 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
         schema.format = 'date'
         if (f.minDate) schema.formatMinimum = f.minDate
         if (f.maxDate) schema.formatMaximum = f.maxDate
+        break
+      case 'time':
+        schema.format = 'time'
+        if (f.minDate && /^\d{2}:\d{2}(:\d{2})?$/.test(f.minDate)) schema.formatMinimum = f.minDate
+        if (f.maxDate && /^\d{2}:\d{2}(:\d{2})?$/.test(f.maxDate)) schema.formatMaximum = f.maxDate
+        break
+      case 'dateTime':
+        schema.format = 'date-time'
+        if (f.timeZone?.trim()) schema.timeZone = f.timeZone.trim()
+        break
+      case 'checklist': {
+        const choices = f.choices.filter((c) => c.trim() !== '')
+        schema.type = 'array'
+        schema.items = { type: 'string', title: 'Choice', enum: choices.length ? choices : ['Option 1'] }
+        schema.minItems = 1
+        schema.maxItems = Math.max(1, Math.min(25, choices.length || 1))
+        schema.uniqueItems = true
+        widgets[f.key] = 'checklist'
+        break
+      }
+      case 'tags':
+        schema.type = 'array'
+        schema.items = { type: 'string', title: 'Tag', minLength: 1, maxLength: 50 }
+        schema.minItems = 1
+        schema.maxItems = f.maxItems ?? 10
+        schema.uniqueItems = true
+        widgets[f.key] = 'tags'
+        break
+      case 'lookup':
+        schema.maxLength = f.maxLength ?? 254
+        schema.lookup = f.lookup ?? { connection: '', operation: '', searchInput: '', rows: '/result/[*]', valueColumn: '', labelColumn: '' }
         break
       case 'file':
         schema.format = 'attachment'

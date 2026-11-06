@@ -31,6 +31,7 @@ public final class Rules {
         MultiInstanceRules.check(rc);
         PerItemRules.check(rc);
         TypeRules.check(rc);
+        FormFieldRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);
         FailureRules.check(rc);

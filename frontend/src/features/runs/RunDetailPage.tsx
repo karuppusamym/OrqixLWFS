@@ -1,5 +1,6 @@
 import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { CallbackWaitsPanel } from './CallbackWaitsPanel'
+import { GuestLinksPanel } from './GuestLinksPanel'
 import { WaitingForPanel } from './WaitingForPanel'
 import { AiDecisionsPanel } from './AiDecisionsPanel'
 import { useMemo, useState } from 'react'
@@ -365,6 +366,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           {run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention' || run.lifecycle === 'running' ? <WaitingForPanel ws={ws} runId={run.id} /> : null}
           <AiDecisionsPanel ws={ws} runId={run.id} canRecord={can('run.operate') || can('task.act') || can('ai.evaluate')} />
           {can('run.operate') ? <CallbackWaitsPanel ws={ws} runId={run.id} /> : null}
+          {can('run.operate') ? <GuestLinksPanel ws={ws} runId={run.id} /> : null}
           {input ? <RunFiles ws={ws} runId={run.id} /> : null}
           {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
 

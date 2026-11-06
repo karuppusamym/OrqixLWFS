@@ -134,7 +134,7 @@ final class BindingRules {
                 continue;
             }
             boolean scalar = switch (field.type()) {
-                case STRING, NUMBER, INTEGER, BOOLEAN, DATE -> true;
+                case STRING, NUMBER, INTEGER, BOOLEAN, DATE, TIME, DATETIME -> true;
                 case ARRAY, OBJECT, ATTACHMENT -> false;
             };
             if (!scalar) {
@@ -203,6 +203,12 @@ final class BindingRules {
                 usedKeys.add(http.connectionRef());
             } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
                 usedKeys.add(m.fallbackCheck().connectionRef()); // S129 safety-net check
+            }
+        }
+        // S140: lookup fields of the request form use their connection too.
+        for (var field : rc.definition().inputSchema().properties().values()) {
+            if (field.json() != null && field.json().path("lookup").path("connection").isString()) {
+                usedKeys.add(field.json().get("lookup").get("connection").asString());
             }
         }
         for (Dependency dup : rc.connections().duplicates()) {

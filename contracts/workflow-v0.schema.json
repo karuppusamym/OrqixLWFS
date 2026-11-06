@@ -87,7 +87,9 @@
               "money",
               "select",
               "radio",
-              "checkbox"
+              "checkbox",
+              "checklist",
+              "tags"
             ]
           }
         },
@@ -1884,6 +1886,74 @@
               ],
               "additionalProperties": false
             },
+            "guestResponse": {
+              "description": "Answered by a person outside the organization through a guest response form (docs/build/S140, CG-F05). When the request reaches this step a one-time link that expires after linkValidFor (PT1H to P30D) can be issued by an operator with run.operate, or is emailed to the address in recipientFrom when that address is in the workspace's approved guest domains (checked when it is sent). The form asks for the declared payload fields and, with attachments, files; submitting it resumes the wait like a message. One answer per link.",
+              "type": "object",
+              "properties": {
+                "linkValidFor": {
+                  "$ref": "#/$defs/duration"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "instructions": {
+                  "description": "Plain text shown above the form (no HTML or links).",
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "recipientFrom": {
+                  "description": "A request text field or guaranteed earlier text output holding the guest's email address.",
+                  "$ref": "#/$defs/fieldRef"
+                },
+                "attachments": {
+                  "type": "object",
+                  "properties": {
+                    "maxFiles": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 5
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "acceptTypes": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 8,
+                      "uniqueItems": true,
+                      "items": {
+                        "enum": [
+                          "pdf",
+                          "png",
+                          "jpeg",
+                          "txt",
+                          "csv",
+                          "docx",
+                          "xlsx",
+                          "pptx"
+                        ]
+                      }
+                    },
+                    "maxFileBytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10485760
+                    }
+                  },
+                  "required": [
+                    "maxFiles"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "linkValidFor",
+                "title"
+              ],
+              "additionalProperties": false
+            },
             "fallbackCheck": {
               "description": "Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed.",
               "$ref": "#/$defs/fallbackCheck"
@@ -2327,11 +2397,82 @@
           "maxLength": 500
         },
         "format": {
-          "description": "date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.",
+          "description": "date: a calendar date written YYYY-MM-DD, without time or time zone. time: a time of day written HH:MM or HH:MM:SS (24-hour, no zone). date-time: an instant written as RFC 3339 with its offset, for example 2026-11-06T14:30:00+01:00 (docs/build/S140). attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.",
           "enum": [
             "date",
+            "time",
+            "date-time",
             "attachment"
           ]
+        },
+        "timeZone": {
+          "description": "Only with format date-time: the IANA time zone the form uses to enter and show the value, for example Europe/Berlin (docs/build/S140). The stored value always carries its offset.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$"
+        },
+        "lookup": {
+          "description": "Options from a pinned read-only connection operation (docs/build/S140, CG-F02). Request form text fields only. The form searches as the person types; the server runs the operation with the requester's access, keeps no answers at rest and checks the chosen value again when the request is submitted.",
+          "type": "object",
+          "properties": {
+            "connection": {
+              "description": "Key of a connection declared in dependencies.connections (its pinned version is used).",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "searchInput": {
+              "description": "The operation input that receives the typed search text.",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+            },
+            "valueInput": {
+              "description": "The operation input that receives the chosen value when the server checks it at submit (default: searchInput).",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+            },
+            "rows": {
+              "description": "Result pointer of the operation's rows, for example /result/[*].",
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 200
+            },
+            "valueColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "labelColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "detailColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "minSearchLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            }
+          },
+          "required": [
+            "connection",
+            "operation",
+            "searchInput",
+            "rows",
+            "valueColumn",
+            "labelColumn"
+          ],
+          "additionalProperties": false
         },
         "acceptTypes": {
           "description": "Only with format attachment: the file types this field accepts (default: all allowed types).",
@@ -2359,12 +2500,12 @@
           "maximum": 10485760
         },
         "formatMinimum": {
-          "description": "Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
-          "$ref": "#/$defs/calendarDate"
+          "description": "Earliest allowed value (inclusive), written like the field: a date YYYY-MM-DD, a time HH:MM[:SS] or a date-time with offset. Only with format date, time or date-time.",
+          "$ref": "#/$defs/formatBound"
         },
         "formatMaximum": {
-          "description": "Latest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
-          "$ref": "#/$defs/calendarDate"
+          "description": "Latest allowed value (inclusive), written like the field. Only with format date, time or date-time.",
+          "$ref": "#/$defs/formatBound"
         },
         "enum": {
           "type": "array",
@@ -2428,7 +2569,11 @@
           "if": {
             "properties": {
               "format": {
-                "const": "date"
+                "enum": [
+                  "date",
+                  "time",
+                  "date-time"
+                ]
               }
             },
             "required": [
@@ -2468,6 +2613,9 @@
         ],
         "patternMessage": [
           "pattern"
+        ],
+        "timeZone": [
+          "format"
         ]
       },
       "required": [
@@ -2475,6 +2623,11 @@
         "title"
       ],
       "additionalProperties": false
+    },
+    "formatBound": {
+      "description": "A bound of a date, time or date-time field (docs/build/S140); the compiler checks that it is written like the field (WF_FORM_INVALID).",
+      "type": "string",
+      "pattern": "^([0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9]))?|([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?)$"
     },
     "calendarDate": {
       "description": "A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID).",
@@ -2572,6 +2725,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 25
+        },
+        "uniqueItems": {
+          "description": "Each value at most once (checklists and tag lists, docs/build/S140). Scalar items only.",
+          "const": true
         }
       },
       "required": [

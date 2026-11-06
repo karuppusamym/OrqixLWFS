@@ -11,6 +11,7 @@ import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
 import { createConnectionHealthHandlers } from './connectionHealth'
 import { createCallbackHandlers } from './callbacks'
+import { createGuestFormHandlers } from './guestForms'
 import { createPackageHandlers } from './connectorPackages'
 import { createFeatureHandlers } from './features'
 import { createMcpServerHandlers } from './mcpServer'
@@ -82,7 +83,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
+  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)

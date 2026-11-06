@@ -132,6 +132,56 @@ public class MessageWaits {
         events.append(workspaceId, runId, "WAIT_ENDED", nodeId, null, data);
     }
 
+    /**
+     * S139 (CG-E08): the request's message handler is armed (the engine subscribed its start event). A message for it
+     * starts the handler; it never takes a message that arrived before (buffered messages are for waiting steps).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void handlerArmed(UUID workspaceId, UUID runId, String handlerId, String message, String correlationKey,
+            String engineExecutionId) {
+        store.insertHandler(Ids.newId(), workspaceId, runId, handlerId, message, correlationKey, engineExecutionId,
+                clock.instant());
+    }
+
+    /**
+     * S139 (CG-W07): a branch of "Wait for the first" happened. Every branch's wait (subscription, safety-net check,
+     * callback, shown step) closes; the timeline records which branch won.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void firstWon(UUID workspaceId, UUID runId, String stepId, String label, String branch, String branchLabel,
+            java.util.List<String> branches) {
+        Instant now = clock.instant();
+        for (String b : branches) {
+            String node = stepId + "__" + b;
+            store.closeForStep(workspaceId, runId, node, now);
+            polls.fallbackClosed(workspaceId, runId, node, b.equals(branch) ? "branchWon" : "otherBranchWon");
+        }
+        runs.mutate(workspaceId, runId, m -> {
+            for (String b : branches) {
+                m.removeStep(stepId + "__" + b);
+            }
+            m.settle();
+        });
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", label);
+        data.put("branch", branch);
+        data.put("branchLabel", branchLabel);
+        events.append(workspaceId, runId, "WAIT_FIRST_WON", stepId, null, data);
+    }
+
+    /** S139: a waiting step stopped by a handler or a section (its engine event was cancelled). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void interrupted(UUID workspaceId, UUID runId, String nodeId, boolean message) {
+        if (message) {
+            store.closeForStep(workspaceId, runId, nodeId, clock.instant());
+            polls.fallbackClosed(workspaceId, runId, nodeId, "interrupted");
+        }
+        runs.mutate(workspaceId, runId, m -> {
+            m.removeStep(nodeId);
+            m.settle();
+        });
+    }
+
     /** The request ended: no message can reach it any more. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void ended(UUID workspaceId, UUID runId) {

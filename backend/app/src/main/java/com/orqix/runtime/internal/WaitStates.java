@@ -37,10 +37,13 @@ public class WaitStates {
 
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<WaitReminders> reminders;
 
-    public WaitStates(JdbcClient jdbc, Clock clock) {
+    public WaitStates(JdbcClient jdbc, Clock clock,
+            org.springframework.beans.factory.ObjectProvider<WaitReminders> reminders) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.reminders = reminders;
     }
 
     /** Re-derives the waits of a request from its current steps. Called by {@link RunStore#mutate} only. */
@@ -61,6 +64,11 @@ public class WaitStates {
             if (row != null) {
                 waits.putIfAbsent(row.nodeId(), row);
             }
+        }
+        // S139 (CG-W06): reminders start and stop with the waits, in the same transaction.
+        WaitReminders reminding = reminders.getIfAvailable();
+        if (reminding != null) {
+            reminding.sync(workspaceId, runId, waits);
         }
         if (waits.isEmpty()) {
             jdbc.sql("DELETE FROM wait_state WHERE workspace_id = :ws AND run_id = :run").param("ws", workspaceId)

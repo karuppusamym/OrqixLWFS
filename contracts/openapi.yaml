@@ -36,6 +36,7 @@ tags:
   - name: Releases
   - name: Runs
   - name: Waits
+  - name: WaitsAndStarts
   - name: Tasks
   - name: Notifications
   - name: Connections
@@ -3957,6 +3958,215 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   # ------------------------------------------------------------------ end of Waits
+  # ------------------------------------------------------------------ WaitsAndStarts (docs/build/S139, CG-W05, CG-W06, CG-E02)
+  /workspaces/{workspaceId}/calendars:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [WaitsAndStarts]
+      operationId: listWorkingCalendars
+      summary: Shared working calendars of the workspace (docs/build/S139)
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Calendars, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [WaitsAndStarts]
+      operationId: createWorkingCalendar
+      summary: Create a shared working calendar with its first version
+      description: |
+        A calendar has numbered, unchangeable versions. A workflow pins one version in dependencies.assets (kind calendar);
+        waits, message time limits and check deadlines then count working time in it. One working day is the calendar's
+        working hours of one day.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: calendar.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkingCalendar' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/calendars/{calendarKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: calendarKey, in: path, required: true, schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' } }
+    get:
+      tags: [WaitsAndStarts]
+      operationId: getWorkingCalendar
+      summary: A working calendar with all its versions, newest first
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: The calendar, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/calendars/{calendarKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: calendarKey, in: path, required: true, schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' } }
+    post:
+      tags: [WaitsAndStarts]
+      operationId: addWorkingCalendarVersion
+      summary: Add a version (pinned workflows keep theirs; publishing warns that a newer one exists)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: calendar.versioned
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddWorkingCalendarVersion' } } } }
+      responses:
+        '200': { description: The calendar with the new version, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/calendars/{calendarKey}/archive:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: calendarKey, in: path, required: true, schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' } }
+    post:
+      tags: [WaitsAndStarts]
+      operationId: archiveWorkingCalendar
+      summary: Archive (or restore) a calendar; archived calendars cannot be pinned, pinned versions keep working
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: calendar.archived
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/ArchiveWorkingCalendar' } } } }
+      responses:
+        '200': { description: The calendar, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/calendars/{calendarKey}/preview:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: calendarKey, in: path, required: true, schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' } }
+    post:
+      tags: [WaitsAndStarts]
+      operationId: previewWorkingCalendar
+      summary: When a working time ends, for example "3 working days from now" (changes nothing)
+      x-orqix-permission: workflow.read
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarPreview' } } } }
+      responses:
+        '200': { description: The end of the working time, content: { application/json: { schema: { $ref: '#/components/schemas/WorkingCalendarDue' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/reminders:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [WaitsAndStarts]
+      operationId: listRunReminders
+      summary: Reminders while waiting of a request (CG-W06), sent and planned; never message text or recipients
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200': { description: Reminders, content: { application/json: { schema: { $ref: '#/components/schemas/RunReminderList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/schedules:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [WaitsAndStarts]
+      operationId: listSchedules
+      summary: Scheduled starts of the workspace, or of one workflow (CG-E02)
+      description: The fixed input is shown only to callers with run.read-data or workflow.publish.
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: workflowId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Schedules, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [WaitsAndStarts]
+      operationId: createSchedule
+      summary: Start a workflow on a cron or RRULE in a time zone, as the caller
+      description: |
+        The schedule starts the workflow's active release with the fixed input, as the caller, who must be allowed to
+        start the workflow (checked again at every start). Optional working calendar: times outside its working hours are
+        skipped. Missed runs (catchUpOnce or skip) and overlap (allow or skip) policies. At most one start every 5 minutes.
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: schedule.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/schedules/preview:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [WaitsAndStarts]
+      operationId: previewSchedule
+      summary: The next ten start times of an expression (changes nothing)
+      x-orqix-permission: workflow.read
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleRequest' } } } }
+      responses:
+        '200': { description: Next start times, content: { application/json: { schema: { $ref: '#/components/schemas/SchedulePreview' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/schedules/{scheduleId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [WaitsAndStarts]
+      operationId: getSchedule
+      summary: A schedule with its next five start times and its ten most recent starts
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: The schedule, content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [WaitsAndStarts]
+      operationId: updateSchedule
+      summary: Change, pause or resume a schedule (the caller becomes the person it runs as)
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: schedule.updated
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleRequest' } } } }
+      responses:
+        '200': { description: The schedule, content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [WaitsAndStarts]
+      operationId: deleteSchedule
+      summary: Delete a schedule; requests it started are not affected
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: schedule.deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ------------------------------------------------------------------ end of WaitsAndStarts
 
   /workspaces/{workspaceId}/kafka-triggers:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -11189,6 +11399,188 @@ components:
         items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InsightsOutsideWait' } }
         totalOpenSeconds: { type: integer, minimum: 0 }
     # ---------------------------------------------------------------- end of Waits
+    # ---------------------------------------------------------------- WaitsAndStarts (docs/build/S139)
+    WorkingCalendarContent:
+      type: object
+      description: 'A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays.'
+      properties:
+        zone: { type: string, maxLength: 64, description: IANA time zone, for example Europe/London }
+        weekdays: { type: array, minItems: 1, maxItems: 7, items: { type: integer, minimum: 1, maximum: 7 } }
+        start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        intervals:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [start, end]
+            properties:
+              start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+              end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        holidays: { type: array, maxItems: 366, items: { type: string, format: date } }
+    WorkingCalendarSummary:
+      type: object
+      additionalProperties: false
+      required: [key, name, description, latestVersion, archived, createdAt, updatedAt]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        latestVersion: { type: integer, minimum: 1 }
+        archived: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkingCalendarVersion:
+      type: object
+      additionalProperties: false
+      required: [version, content, changeNote, createdBy, createdAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        content: { $ref: '#/components/schemas/WorkingCalendarContent' }
+        changeNote: { type: [string, 'null'] }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+    WorkingCalendarList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WorkingCalendarSummary' } }
+    WorkingCalendarDetail:
+      type: object
+      additionalProperties: false
+      required: [calendar, versions]
+      properties:
+        calendar: { $ref: '#/components/schemas/WorkingCalendarSummary' }
+        versions: { type: array, items: { $ref: '#/components/schemas/WorkingCalendarVersion' } }
+    CreateWorkingCalendar:
+      type: object
+      required: [key, name, content]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: [string, 'null'], maxLength: 300 }
+        content: { $ref: '#/components/schemas/WorkingCalendarContent' }
+    AddWorkingCalendarVersion:
+      type: object
+      required: [expectedVersion, content]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        content: { $ref: '#/components/schemas/WorkingCalendarContent' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    ArchiveWorkingCalendar:
+      type: object
+      properties:
+        archived: { type: boolean, default: true, description: false restores the calendar }
+    WorkingCalendarPreview:
+      type: object
+      required: [workingDuration]
+      properties:
+        version: { type: [integer, 'null'], minimum: 1, description: Defaults to the latest version }
+        from: { type: [string, 'null'], format: date-time, description: Defaults to now }
+        workingDuration: { type: string, maxLength: 24, description: 'ISO-8601, for example P3D (three working days) or PT4H' }
+    WorkingCalendarDue:
+      type: object
+      additionalProperties: false
+      required: [dueAt]
+      properties:
+        dueAt: { type: string, format: date-time }
+    RunReminder:
+      type: object
+      additionalProperties: false
+      required: [id, nodeId, waitSince, adapterKey, status, sent, maxTimes, nextAt, lastSentAt, lastOutcome, endedAt]
+      properties:
+        id: { type: string, format: uuid }
+        nodeId: { type: string }
+        waitSince: { type: string, format: date-time, description: When the wait this reminder belongs to started }
+        adapterKey: { type: string }
+        status: { type: string, enum: [waiting, sending, done, stopped, refused, failed] }
+        sent: { type: integer, minimum: 0 }
+        maxTimes: { type: integer, minimum: 1, maximum: 10 }
+        nextAt: { type: [string, 'null'], format: date-time }
+        lastSentAt: { type: [string, 'null'], format: date-time }
+        lastOutcome: { type: [string, 'null'], description: 'sent, or why the reminder failed or was refused' }
+        endedAt: { type: [string, 'null'], format: date-time }
+    RunReminderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RunReminder' } }
+    ScheduleRequest:
+      type: object
+      description: For an update, members left out keep their value (an empty calendarKey removes the calendar); expectedVersion is required.
+      properties:
+        workflowId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        kind: { type: string, enum: [cron, rrule] }
+        expression: { type: string, minLength: 1, maxLength: 300, description: 'cron: five fields, for example "0 7 * * MON-FRI"; rrule: for example FREQ=WEEKLY;BYDAY=MO;BYHOUR=8' }
+        zone: { type: string, maxLength: 64, description: IANA time zone }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        calendarKey: { type: [string, 'null'], maxLength: 64, description: Start only inside this working calendar's hours; the latest version is pinned when saved }
+        input: { type: object, description: The fixed request values, checked against the active release's request form }
+        missedRunPolicy: { type: string, enum: [catchUpOnce, skip], default: catchUpOnce }
+        overlapPolicy: { type: string, enum: [allow, skip], default: skip }
+        enabled: { type: boolean, default: true }
+        expectedVersion: { type: [integer, 'null'], minimum: 1 }
+    ScheduleFire:
+      type: object
+      additionalProperties: false
+      required: [fireAt, firedAt, outcome, reason, missed, runId]
+      properties:
+        fireAt: { type: string, format: date-time, description: The planned time }
+        firedAt: { type: string, format: date-time }
+        outcome: { type: string, enum: [started, skipped, failed] }
+        reason: { type: [string, 'null'] }
+        missed: { type: integer, minimum: 0, description: Further planned times covered by this one (catch up once) }
+        runId: { type: [string, 'null'], format: uuid }
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [id, workflowId, workflowName, name, kind, expression, zone, startsAt, endsAt, calendarKey, calendarVersion,
+                 input, missedRunPolicy, overlapPolicy, enabled, runAs, runAsName, nextFireAt, lastFireAt, lastOutcome,
+                 lastRunId, version, createdAt, updatedAt, upcoming, recent]
+      properties:
+        id: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [cron, rrule] }
+        expression: { type: string }
+        zone: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        calendarKey: { type: [string, 'null'] }
+        calendarVersion: { type: [integer, 'null'] }
+        input: { type: [object, 'null'], description: Null without run.read-data or workflow.publish }
+        missedRunPolicy: { type: string, enum: [catchUpOnce, skip] }
+        overlapPolicy: { type: string, enum: [allow, skip] }
+        enabled: { type: boolean }
+        runAs: { type: string, format: uuid }
+        runAsName: { type: string }
+        nextFireAt: { type: [string, 'null'], format: date-time }
+        lastFireAt: { type: [string, 'null'], format: date-time }
+        lastOutcome: { type: [string, 'null'], enum: [started, skipped, failed, null] }
+        lastRunId: { type: [string, 'null'], format: uuid }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        upcoming: { type: array, items: { type: string, format: date-time } }
+        recent: { type: array, items: { $ref: '#/components/schemas/ScheduleFire' } }
+    ScheduleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
+    SchedulePreview:
+      type: object
+      additionalProperties: false
+      required: [next]
+      properties:
+        next: { type: array, items: { type: string, format: date-time } }
+    # ---------------------------------------------------------------- end of WaitsAndStarts
     KafkaCluster:
       type: object
       additionalProperties: false

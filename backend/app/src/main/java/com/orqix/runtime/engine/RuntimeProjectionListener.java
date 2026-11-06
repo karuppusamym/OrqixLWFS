@@ -416,6 +416,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         if (element == null) {
             return;
         }
+        OrqixModel.extension(element, "first").ifPresent(first -> firstWon(event, first));
         ExtensionElement handler = OrqixModel.extension(element, "scopeEvent").orElse(null);
         ExtensionElement signal = OrqixModel.extension(element, "signal").orElse(null);
         ExtensionElement scope = OrqixModel.extension(element, "scope").orElse(null);
@@ -454,6 +455,34 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             }
             events.append(workspaceId, runId, "SECTION_LEFT", element.getId(), null, data);
         }
+    }
+
+    /**
+     * S139 (CG-W07): one branch of "Wait for the first" happened. Its values (written by the message delivery to the
+     * branch) become the step's outputs with {@code branch}; the other branches' waits close in this transaction (the
+     * engine cancels their events).
+     */
+    private void firstWon(FlowableActivityEvent event, ExtensionElement first) {
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
+        if (execution == null || execution.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        String stepId = OrqixModel.attribute(first, "step");
+        String branch = OrqixModel.attribute(first, "branch");
+        ObjectNode output = json.object();
+        Object delivered = execution.getVariable(ProcessData.stepVariable(event.getActivityId()));
+        if (delivered instanceof String text && !text.isBlank()) {
+            json.parse(text).properties().forEach(e -> output.set(e.getKey(), e.getValue()));
+        }
+        output.put("branch", branch);
+        execution.setVariable(ProcessData.stepVariable(stepId), json.write(output));
+        java.util.List<String> branches = java.util.Arrays.asList(OrqixModel.attribute(
+                OrqixModel.requireExtension(OrqixModel.flowElement(event.getProcessDefinitionId(), stepId), "waitForFirst"),
+                "branches").split(","));
+        FlowElement step = OrqixModel.flowElement(event.getProcessDefinitionId(), stepId);
+        messageWaits.firstWon(ProcessData.workspaceId(execution), ProcessData.runId(execution), stepId,
+                label(step), branch, label(OrqixModel.flowElement(event.getProcessDefinitionId(), event.getActivityId())),
+                branches);
     }
 
     /** An error was caught: remember an error handler, whose interruption carries no cause of its own. */
@@ -545,6 +574,25 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             }
             return;
         }
+        // S139: a message wait (also the message of a wait with a time limit, or a branch of "Wait for the first")
+        // stopped by a handler: its subscription, safety net and callback close with it.
+        ExtensionElement waitingMessage = OrqixModel.extension(element, "message").orElse(null);
+        ExtensionElement firstBranch = OrqixModel.extension(element, "first").orElse(null);
+        if (element instanceof IntermediateCatchEvent && (waitingMessage != null || firstBranch != null)) {
+            String waitNode = waitingMessage != null ? OrqixModel.attribute(waitingMessage, "node") : element.getId();
+            if (context.getAttribute(INTERRUPTED_ATTRIBUTE + event.getProcessInstanceId() + "." + waitNode) == null) {
+                context.addAttribute(INTERRUPTED_ATTRIBUTE + event.getProcessInstanceId() + "." + waitNode, true);
+                messageWaits.interrupted(workspaceId, runId, waitNode, waitingMessage != null);
+            }
+            String stepNode = firstBranch != null ? OrqixModel.attribute(firstBranch, "step") : waitNode;
+            String eventKey = INTERRUPTED_ATTRIBUTE + "event." + event.getProcessInstanceId() + "." + stepNode;
+            if (context.getAttribute(eventKey) == null) {
+                context.addAttribute(eventKey, true);
+                data.put("label", label(OrqixModel.flowElement(event.getProcessDefinitionId(), stepNode)));
+                events.append(workspaceId, runId, "STEP_INTERRUPTED", stepNode, null, data);
+            }
+            return;
+        }
         // Only steps of the workflow (generated helpers carry a double underscore) that can be open work.
         if (element.getId().contains("__") || !(element instanceof UserTask || element instanceof ServiceTask
                 || element instanceof IntermediateCatchEvent)) {
@@ -620,12 +668,24 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         String nodeId = OrqixModel.attribute(message, "node");
         String field = OrqixModel.attribute(message, "correlationField");
-        JsonNode value = ProcessData.resolve(execution, json, field);
-        String correlationKey = value.isString() ? value.stringValue()
-                : value.isNumber() && value.decimalValue().stripTrailingZeros().scale() <= 0
-                    ? value.decimalValue().stripTrailingZeros().toPlainString() : null;
+        String correlationKey;
+        if ("run".equals(OrqixModel.attribute(message, "correlation"))) {
+            // S139: a callback or check branch of "Wait for the first" is delivered by Orqix to this request only.
+            correlationKey = ProcessData.runId(execution).toString();
+        } else {
+            JsonNode value = ProcessData.resolve(execution, json, field);
+            correlationKey = value.isString() ? value.stringValue()
+                    : value.isNumber() && value.decimalValue().stripTrailingZeros().scale() <= 0
+                        ? value.decimalValue().stripTrailingZeros().toPlainString() : null;
+        }
         if (correlationKey == null || correlationKey.isEmpty() || correlationKey.length() > 200) {
             throw new IllegalStateException("WF_MESSAGE_CORRELATION_INVALID: " + field + " does not hold a usable key");
+        }
+        if ("true".equals(OrqixModel.attribute(message, "handler"))) {
+            // S139 (CG-E08): a message handler is armed with the request; it is not a waiting step.
+            messageWaits.handlerArmed(ProcessData.workspaceId(execution), ProcessData.runId(execution), nodeId,
+                    OrqixModel.attribute(message, "name"), correlationKey, subscription.getExecutionId());
+            return;
         }
         FlowElement node = OrqixModel.flowElement(subscription.getProcessDefinitionId(), nodeId);
         Object deadline = Context.getCommandContext().getAttribute(MESSAGE_TIMEOUT_ATTRIBUTE

@@ -80,4 +80,41 @@ public record BusinessCalendar(ZoneId zone, Set<Integer> weekdays, Set<LocalDate
         }
         throw new IllegalArgumentException("Calendar cannot schedule this deadline within ten years.");
     }
+
+    /** Days of working-day arithmetic searched at most (twenty years); expressions return null beyond it (S137). */
+    public static final int WORKING_DAY_HORIZON = 7305;
+
+    /** @return true when the date is a working weekday and not a holiday (S137 expressions; hours are not used) */
+    public boolean isWorkingDay(LocalDate day) {
+        return weekdays.contains(day.getDayOfWeek().getValue()) && !holidays.contains(day);
+    }
+
+    /**
+     * The {@code n}-th working day after {@code day} (before it when negative; {@code day} itself when zero), or null
+     * when it is not found within {@link #WORKING_DAY_HORIZON} days (S137).
+     */
+    public LocalDate plusWorkingDays(LocalDate day, int n) {
+        int step = n < 0 ? -1 : 1;
+        int remaining = Math.abs(n);
+        LocalDate cursor = day;
+        for (int i = 0; remaining > 0; i++) {
+            if (i >= WORKING_DAY_HORIZON) return null;
+            cursor = cursor.plusDays(step);
+            if (isWorkingDay(cursor)) remaining--;
+        }
+        return cursor;
+    }
+
+    /**
+     * Working days after {@code from} up to and including {@code to}; negative when {@code to} is earlier, null when the
+     * span exceeds {@link #WORKING_DAY_HORIZON} days (S137).
+     */
+    public Integer workingDaysBetween(LocalDate from, LocalDate to) {
+        long span = to.toEpochDay() - from.toEpochDay();
+        if (Math.abs(span) > WORKING_DAY_HORIZON) return null;
+        LocalDate lo = span < 0 ? to : from;
+        int count = 0;
+        for (long i = 1; i <= Math.abs(span); i++) if (isWorkingDay(lo.plusDays(i))) count++;
+        return span < 0 ? -count : count;
+    }
 }

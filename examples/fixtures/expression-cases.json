@@ -1,0 +1,1190 @@
+{
+ "description": "Shared cases of the Orqix expression language (docs/build/S137). The Java engine (com.orqix.compiler.expr) and the TypeScript engine (frontend/src/lib/expr) must give exactly these results. A case has expr (or repeat: text repeated times, then a suffix) and either type+value (numbers and dates as canonical text), error+at (compile-time code and zero-based offset) or evalError (+ optional at). values overrides the shared values per case (input keys merge; calendar null means the default Monday-Friday UTC calendar).",
+ "types": {
+  "input": {
+   "amount": "number",
+   "rate": "number",
+   "name": "string",
+   "region": "string",
+   "vip": "boolean",
+   "start": "date",
+   "end": "date",
+   "lines": {
+    "list": {
+     "row": {
+      "sku": "string",
+      "qty": "number",
+      "price": "number",
+      "due": "date"
+     }
+    }
+   },
+   "tags": {
+    "list": "string"
+   },
+   "scores": {
+    "list": "number"
+   },
+   "extras": {
+    "list": "number"
+   },
+   "missing": "number",
+   "missingText": "string",
+   "note": "string",
+   "emoji": "string"
+  },
+  "steps": {
+   "check-credit": {
+    "score": "integer",
+    "band": "string"
+   },
+   "quote": {
+    "total": "number"
+   }
+  },
+  "locals": {
+   "subtotal": "number"
+  }
+ },
+ "values": {
+  "input": {
+   "amount": 1250.5,
+   "rate": 0.075,
+   "name": "Ada Lovelace",
+   "region": "EU",
+   "vip": true,
+   "start": "2026-03-27",
+   "end": "2026-04-10",
+   "lines": [
+    {
+     "sku": "A1",
+     "qty": 2,
+     "price": 19.99,
+     "due": "2026-04-01"
+    },
+    {
+     "sku": "B2",
+     "qty": 1,
+     "price": 250,
+     "due": "2026-03-30"
+    },
+    {
+     "sku": "C3",
+     "qty": 5,
+     "price": 0.1,
+     "due": null
+    }
+   ],
+   "tags": [
+    "urgent",
+    "eu"
+   ],
+   "scores": [
+    3,
+    9,
+    4.5
+   ],
+   "note": "  hello  ",
+   "emoji": "a😀b"
+  },
+  "steps": {
+   "check-credit": {
+    "score": 712,
+    "band": "B"
+   },
+   "quote": {
+    "total": 300.5
+   }
+  },
+  "locals": {
+   "subtotal": 100
+  },
+  "now": "2026-03-14T23:30:00Z",
+  "calendar": {
+   "zone": "Europe/London",
+   "weekdays": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "holidays": [
+    "2026-04-03",
+    "2026-04-06"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "expr": "1 + 2 * 3",
+   "type": "number",
+   "value": "7"
+  },
+  {
+   "expr": "(1 + 2) * 3",
+   "type": "number",
+   "value": "9"
+  },
+  {
+   "expr": "10 - 2 - 3",
+   "type": "number",
+   "value": "5"
+  },
+  {
+   "expr": "2 * 3 / 4",
+   "type": "number",
+   "value": "1.5"
+  },
+  {
+   "expr": "10 / 4",
+   "type": "number",
+   "value": "2.5"
+  },
+  {
+   "expr": "1 / 3",
+   "type": "number",
+   "value": "0.3333333333333333333333333333333333"
+  },
+  {
+   "expr": "2 / 3",
+   "type": "number",
+   "value": "0.6666666666666666666666666666666667"
+  },
+  {
+   "expr": "1 / 3 * 3",
+   "type": "number",
+   "value": "0.9999999999999999999999999999999999"
+  },
+  {
+   "expr": "0.1 + 0.2",
+   "type": "number",
+   "value": "0.3"
+  },
+  {
+   "expr": "0.1 + 0.2 = 0.3",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "12.50 + 0",
+   "type": "number",
+   "value": "12.5"
+  },
+  {
+   "expr": "0.000001 * 0.000001",
+   "type": "number",
+   "value": "0.000000000001"
+  },
+  {
+   "expr": "input.amount * input.rate",
+   "type": "number",
+   "value": "93.7875"
+  },
+  {
+   "expr": "round(input.amount * input.rate, 2)",
+   "type": "number",
+   "value": "93.79"
+  },
+  {
+   "expr": "round(1.005, 2)",
+   "type": "number",
+   "value": "1.01"
+  },
+  {
+   "expr": "round(2.5, 0)",
+   "type": "number",
+   "value": "3"
+  },
+  {
+   "expr": "round(-2.5, 0)",
+   "type": "number",
+   "value": "-3"
+  },
+  {
+   "expr": "round(2.5, 0, \"halfEven\")",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "round(3.5, 0, \"halfEven\")",
+   "type": "number",
+   "value": "4"
+  },
+  {
+   "expr": "round(2.567, 2, \"down\")",
+   "type": "number",
+   "value": "2.56"
+  },
+  {
+   "expr": "round(-2.561, 2, \"up\")",
+   "type": "number",
+   "value": "-2.57"
+  },
+  {
+   "expr": "round(-2.561, 2, \"floor\")",
+   "type": "number",
+   "value": "-2.57"
+  },
+  {
+   "expr": "round(-2.569, 2, \"ceiling\")",
+   "type": "number",
+   "value": "-2.56"
+  },
+  {
+   "expr": "round(1, 2.5)",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "round(1234.5, 21)",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "floor(-1.5)",
+   "type": "number",
+   "value": "-2"
+  },
+  {
+   "expr": "ceiling(1.2)",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "abs(-3.25)",
+   "type": "number",
+   "value": "3.25"
+  },
+  {
+   "expr": "-input.amount",
+   "type": "number",
+   "value": "-1250.5"
+  },
+  {
+   "expr": "- -2",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "1 / 0",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "input.missing + 1",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "999999999999 * 1000000000000",
+   "type": "number",
+   "value": "999999999999000000000000"
+  },
+  {
+   "expr": "1000000000000 * 1000000000000",
+   "evalError": "EXPR_NUMBER_RANGE",
+   "at": 14
+  },
+  {
+   "expr": "number(\"12.50\") + 1",
+   "type": "number",
+   "value": "13.5"
+  },
+  {
+   "expr": "number(\"1e3\")",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "number(\" 12\")",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "number(\"-0.5\")",
+   "type": "number",
+   "value": "-0.5"
+  },
+  {
+   "expr": "sum(input.scores)",
+   "type": "number",
+   "value": "16.5"
+  },
+  {
+   "expr": "average(input.scores)",
+   "type": "number",
+   "value": "5.5"
+  },
+  {
+   "expr": "average([1, 2])",
+   "type": "number",
+   "value": "1.5"
+  },
+  {
+   "expr": "min(input.scores)",
+   "type": "number",
+   "value": "3"
+  },
+  {
+   "expr": "max(input.scores)",
+   "type": "number",
+   "value": "9"
+  },
+  {
+   "expr": "min(3, 1, 2)",
+   "type": "number",
+   "value": "1"
+  },
+  {
+   "expr": "max(date(\"2026-01-01\"), input.start)",
+   "type": "date",
+   "value": "2026-03-27"
+  },
+  {
+   "expr": "max(\"pear\", \"apple\")",
+   "type": "string",
+   "value": "pear"
+  },
+  {
+   "expr": "sum(input.lines, item.qty * item.price)",
+   "type": "number",
+   "value": "290.48"
+  },
+  {
+   "expr": "count(input.lines)",
+   "type": "number",
+   "value": "3"
+  },
+  {
+   "expr": "count(input.lines, item.qty > 1)",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "filter(input.lines, item.price >= 100)",
+   "type": "list",
+   "value": [
+    {
+     "sku": "B2",
+     "qty": "1",
+     "price": "250",
+     "due": "2026-03-30"
+    }
+   ]
+  },
+  {
+   "expr": "count(filter(input.lines, item.due != null))",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "any(input.lines, item.sku = \"B2\")",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "all(input.lines, item.qty > 0)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "all(input.lines, item.due > date(\"2026-03-01\"))",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "max(input.lines, item.due)",
+   "type": "date",
+   "value": "2026-04-01"
+  },
+  {
+   "expr": "min(input.lines, item.price)",
+   "type": "number",
+   "value": "0.1"
+  },
+  {
+   "expr": "any([], item > 1)",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "all([], item > 1)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "sum([])",
+   "type": "number",
+   "value": "0"
+  },
+  {
+   "expr": "sum(input.extras)",
+   "type": "number",
+   "value": "0"
+  },
+  {
+   "expr": "count(input.extras)",
+   "type": "number",
+   "value": "0"
+  },
+  {
+   "expr": "average(input.extras)",
+   "type": "number",
+   "value": null
+  },
+  {
+   "expr": "filter(input.extras, item > 0)",
+   "type": "list",
+   "value": []
+  },
+  {
+   "expr": "filter([1, 5, 10], item > 2)",
+   "type": "list",
+   "value": [
+    "5",
+    "10"
+   ]
+  },
+  {
+   "expr": "sum(filter(input.scores, item > 3))",
+   "type": "number",
+   "value": "13.5"
+  },
+  {
+   "expr": "input.region in [\"EU\", \"UK\"]",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.region in input.tags",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "\"eu\" in input.tags",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.missing in [1, 2]",
+   "type": "boolean",
+   "value": null
+  },
+  {
+   "expr": "[1, 2] = [1, 2.0]",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "[1, 2] = [2, 1]",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "any(input.lines, any(input.tags, item = \"eu\"))",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "upper(input.name)",
+   "type": "string",
+   "value": "ADA LOVELACE"
+  },
+  {
+   "expr": "lower(\"ÀB\")",
+   "type": "string",
+   "value": "àb"
+  },
+  {
+   "expr": "length(input.emoji)",
+   "type": "number",
+   "value": "3"
+  },
+  {
+   "expr": "substring(input.name, 5)",
+   "type": "string",
+   "value": "Lovelace"
+  },
+  {
+   "expr": "substring(input.name, 1, 3)",
+   "type": "string",
+   "value": "Ada"
+  },
+  {
+   "expr": "substring(input.emoji, 2, 1)",
+   "type": "string",
+   "value": "😀"
+  },
+  {
+   "expr": "substring(\"abc\", 0)",
+   "type": "string",
+   "value": null
+  },
+  {
+   "expr": "substring(\"abc\", 10)",
+   "type": "string",
+   "value": ""
+  },
+  {
+   "expr": "substring(\"abc\", 2, -1)",
+   "type": "string",
+   "value": null
+  },
+  {
+   "expr": "trim(input.note)",
+   "type": "string",
+   "value": "hello"
+  },
+  {
+   "expr": "length(trim(input.note))",
+   "type": "number",
+   "value": "5"
+  },
+  {
+   "expr": "contains(input.name, \"Love\")",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "startsWith(input.name, \"Ada\")",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "endsWith(input.name, \"x\")",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "replace(\"a-b-c\", \"-\", \"+\")",
+   "type": "string",
+   "value": "a+b+c"
+  },
+  {
+   "expr": "replace(\"abc\", \"\", \"x\")",
+   "type": "string",
+   "value": "abc"
+  },
+  {
+   "expr": "\"Hello, \" + input.name",
+   "type": "string",
+   "value": "Hello, Ada Lovelace"
+  },
+  {
+   "expr": "input.missingText + \"x\"",
+   "type": "string",
+   "value": null
+  },
+  {
+   "expr": "string(input.amount)",
+   "type": "string",
+   "value": "1250.5"
+  },
+  {
+   "expr": "string(input.start)",
+   "type": "string",
+   "value": "2026-03-27"
+  },
+  {
+   "expr": "string(true)",
+   "type": "string",
+   "value": "true"
+  },
+  {
+   "expr": "string(1000000)",
+   "type": "string",
+   "value": "1000000"
+  },
+  {
+   "expr": "string(0.50)",
+   "type": "string",
+   "value": "0.5"
+  },
+  {
+   "expr": "\"a\" < \"b\"",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "\"B\" < \"a\"",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "\"say \\\"hi\\\"\\n\"",
+   "type": "string",
+   "value": "say \"hi\"\n"
+  },
+  {
+   "expr": "input.end > input.start",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.start = date(\"2026-03-27\")",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "daysBetween(input.start, input.end)",
+   "type": "number",
+   "value": "14"
+  },
+  {
+   "expr": "addDays(input.start, 3)",
+   "type": "date",
+   "value": "2026-03-30"
+  },
+  {
+   "expr": "addMonths(date(\"2026-01-31\"), 1)",
+   "type": "date",
+   "value": "2026-02-28"
+  },
+  {
+   "expr": "addMonths(date(\"2024-01-31\"), 1)",
+   "type": "date",
+   "value": "2024-02-29"
+  },
+  {
+   "expr": "addYears(date(\"2024-02-29\"), 1)",
+   "type": "date",
+   "value": "2025-02-28"
+  },
+  {
+   "expr": "addMonths(date(\"2026-03-31\"), -1)",
+   "type": "date",
+   "value": "2026-02-28"
+  },
+  {
+   "expr": "addMonths(date(\"2026-03-31\"), 1.5)",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "date(2026, 2, 30)",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "date(\"2026-02-30\")",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "date(\"2026-2-3\")",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "date(2026, 12, 31)",
+   "type": "date",
+   "value": "2026-12-31"
+  },
+  {
+   "expr": "date(\"0000-01-01\")",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "addDays(date(\"9999-12-31\"), 1)",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "year(input.start)",
+   "type": "number",
+   "value": "2026"
+  },
+  {
+   "expr": "month(input.start)",
+   "type": "number",
+   "value": "3"
+  },
+  {
+   "expr": "day(input.start)",
+   "type": "number",
+   "value": "27"
+  },
+  {
+   "expr": "weekday(input.start)",
+   "type": "number",
+   "value": "5"
+  },
+  {
+   "expr": "isWorkingDay(input.start)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "isWorkingDay(date(\"2026-04-03\"))",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "isWorkingDay(date(\"2026-03-28\"))",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "addWorkingDays(input.start, 1)",
+   "type": "date",
+   "value": "2026-03-30"
+  },
+  {
+   "expr": "addWorkingDays(input.start, 5)",
+   "type": "date",
+   "value": "2026-04-07"
+  },
+  {
+   "expr": "addWorkingDays(date(\"2026-04-07\"), -5)",
+   "type": "date",
+   "value": "2026-03-27"
+  },
+  {
+   "expr": "addWorkingDays(input.start, 0)",
+   "type": "date",
+   "value": "2026-03-27"
+  },
+  {
+   "expr": "addWorkingDays(input.start, 1001)",
+   "type": "date",
+   "value": null
+  },
+  {
+   "expr": "workingDaysBetween(input.start, input.end)",
+   "type": "number",
+   "value": "8"
+  },
+  {
+   "expr": "workingDaysBetween(input.end, input.start)",
+   "type": "number",
+   "value": "-8"
+  },
+  {
+   "expr": "today()",
+   "type": "date",
+   "value": "2026-03-14"
+  },
+  {
+   "expr": "today()",
+   "type": "date",
+   "value": "2026-03-15",
+   "values": {
+    "calendar": {
+     "zone": "Asia/Tokyo",
+     "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ]
+    }
+   }
+  },
+  {
+   "expr": "daysBetween(input.start, today())",
+   "type": "number",
+   "value": "-13"
+  },
+  {
+   "expr": "addWorkingDays(date(\"2026-03-27\"), 1)",
+   "type": "date",
+   "value": "2026-03-28",
+   "values": {
+    "calendar": {
+     "zone": "UTC",
+     "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ]
+    }
+   }
+  },
+  {
+   "expr": "isWorkingDay(date(\"2026-04-03\"))",
+   "type": "boolean",
+   "value": true,
+   "values": {
+    "calendar": null
+   }
+  },
+  {
+   "expr": "input.end >= addWorkingDays(input.start, 8)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.end > addWorkingDays(input.start, 8)",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "if input.amount > 1000 then \"large\" else \"small\"",
+   "type": "string",
+   "value": "large"
+  },
+  {
+   "expr": "if input.missing > 5 then 1 else 2",
+   "type": "number",
+   "value": "2"
+  },
+  {
+   "expr": "if input.vip then steps.quote.total else null",
+   "type": "number",
+   "value": "300.5"
+  },
+  {
+   "expr": "input.vip and input.amount > 1000",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "false and input.missing > 1",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "true and input.missing > 1",
+   "type": "boolean",
+   "value": null
+  },
+  {
+   "expr": "true or input.missing > 1",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "false or input.missing > 1",
+   "type": "boolean",
+   "value": null
+  },
+  {
+   "expr": "input.missing > 1 or true",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.missing > 1 and false",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "not(input.vip)",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "not(input.missing > 1)",
+   "type": "boolean",
+   "value": null
+  },
+  {
+   "expr": "input.missing = null",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.amount = null",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "null = null",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "input.missing != null",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "coalesce(input.missing, 0) + 1",
+   "type": "number",
+   "value": "1"
+  },
+  {
+   "expr": "coalesce(input.missing, input.amount, 0)",
+   "type": "number",
+   "value": "1250.5"
+  },
+  {
+   "expr": "isEmpty(input.missing)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "isEmpty(\"  \")",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "isEmpty(input.tags)",
+   "type": "boolean",
+   "value": false
+  },
+  {
+   "expr": "isEmpty(input.extras)",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "steps.check-credit.score >= 700",
+   "type": "boolean",
+   "value": true
+  },
+  {
+   "expr": "steps.check-credit.band",
+   "type": "string",
+   "value": "B"
+  },
+  {
+   "expr": "steps.check-credit.score - 12",
+   "type": "number",
+   "value": "700"
+  },
+  {
+   "expr": "steps.quote.total - subtotal",
+   "type": "number",
+   "value": "200.5"
+  },
+  {
+   "expr": "steps.quote.total-1",
+   "type": "number",
+   "value": "299.5"
+  },
+  {
+   "expr": "input.amount",
+   "type": "number",
+   "value": "99",
+   "values": {
+    "input": {
+     "amount": 99
+    }
+   }
+  },
+  {
+   "expr": "input.start < input.end",
+   "type": "boolean",
+   "value": null,
+   "values": {
+    "input": {
+     "start": "not a date"
+    }
+   }
+  },
+  {
+   "expr": "1 +",
+   "error": "EXPR_SYNTAX",
+   "at": 3
+  },
+  {
+   "expr": "",
+   "error": "EXPR_SYNTAX",
+   "at": 0
+  },
+  {
+   "expr": "input.amount + \"x\"",
+   "error": "EXPR_TYPE",
+   "at": 13
+  },
+  {
+   "expr": "input.nope",
+   "error": "EXPR_UNKNOWN_FIELD",
+   "at": 0
+  },
+  {
+   "expr": "steps.quote.nope",
+   "error": "EXPR_UNKNOWN_FIELD",
+   "at": 0
+  },
+  {
+   "expr": "foo(1)",
+   "error": "EXPR_UNKNOWN_FUNCTION",
+   "at": 0
+  },
+  {
+   "expr": "round(1)",
+   "error": "EXPR_ARGUMENTS",
+   "at": 0
+  },
+  {
+   "expr": "round(1, 2, \"sideways\")",
+   "error": "EXPR_ARGUMENTS",
+   "at": 12
+  },
+  {
+   "expr": "if 1 then 2 else 3",
+   "error": "EXPR_TYPE",
+   "at": 3
+  },
+  {
+   "expr": "if true then 1 else \"a\"",
+   "error": "EXPR_TYPE",
+   "at": 20
+  },
+  {
+   "expr": "item.qty",
+   "error": "EXPR_UNKNOWN_FIELD",
+   "at": 0
+  },
+  {
+   "expr": "input.lines.qty",
+   "error": "EXPR_TYPE",
+   "at": 11
+  },
+  {
+   "expr": "1 < 2 < 3",
+   "error": "EXPR_SYNTAX",
+   "at": 6
+  },
+  {
+   "expr": "a == b",
+   "error": "EXPR_SYNTAX",
+   "at": 2
+  },
+  {
+   "expr": "input.start + 1",
+   "error": "EXPR_TYPE",
+   "at": 12
+  },
+  {
+   "expr": "input.start < 5",
+   "error": "EXPR_TYPE",
+   "at": 12
+  },
+  {
+   "expr": "[1, \"a\"]",
+   "error": "EXPR_TYPE",
+   "at": 4
+  },
+  {
+   "expr": "\"abc",
+   "error": "EXPR_SYNTAX",
+   "at": 0
+  },
+  {
+   "expr": "3x",
+   "error": "EXPR_SYNTAX",
+   "at": 1
+  },
+  {
+   "expr": "unknownName + 1",
+   "error": "EXPR_UNKNOWN_FIELD",
+   "at": 0
+  },
+  {
+   "expr": "sum(input.tags)",
+   "error": "EXPR_TYPE",
+   "at": 4
+  },
+  {
+   "expr": "filter(input.lines, item.qty)",
+   "error": "EXPR_TYPE",
+   "at": 24
+  },
+  {
+   "expr": "upper(1)",
+   "error": "EXPR_TYPE",
+   "at": 6
+  },
+  {
+   "expr": "a # b",
+   "error": "EXPR_SYNTAX",
+   "at": 2
+  },
+  {
+   "expr": "1 + 2)",
+   "error": "EXPR_SYNTAX",
+   "at": 5
+  },
+  {
+   "expr": "if true then 1",
+   "error": "EXPR_SYNTAX",
+   "at": 14
+  },
+  {
+   "expr": "input.",
+   "error": "EXPR_SYNTAX",
+   "at": 6
+  },
+  {
+   "expr": "today(1)",
+   "error": "EXPR_ARGUMENTS",
+   "at": 0
+  },
+  {
+   "expr": "min(input.lines)",
+   "error": "EXPR_TYPE",
+   "at": 4
+  },
+  {
+   "expr": "\"a\\q\"",
+   "error": "EXPR_SYNTAX",
+   "at": 2
+  },
+  {
+   "expr": "input.amount and true",
+   "error": "EXPR_TYPE",
+   "at": 13
+  },
+  {
+   "expr": "not(1)",
+   "error": "EXPR_TYPE",
+   "at": 4
+  },
+  {
+   "expr": "input.lines = input.lines",
+   "error": "EXPR_TYPE",
+   "at": 12
+  },
+  {
+   "expr": "1234567890123456789012345678901",
+   "error": "EXPR_SYNTAX",
+   "at": 0
+  },
+  {
+   "expr": "then",
+   "error": "EXPR_SYNTAX",
+   "at": 0
+  },
+  {
+   "expr": "((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))",
+   "error": "EXPR_TOO_COMPLEX",
+   "at": 30
+  },
+  {
+   "repeat": {
+    "text": "1+",
+    "times": 150,
+    "then": "1"
+   },
+   "error": "EXPR_TOO_COMPLEX",
+   "at": 299
+  },
+  {
+   "repeat": {
+    "text": "1",
+    "times": 2001,
+    "then": ""
+   },
+   "error": "EXPR_TOO_COMPLEX",
+   "at": 0
+  },
+  {
+   "expr": "sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], item)))))",
+   "evalError": "EXPR_COST_LIMIT"
+  },
+  {
+   "expr": "replace(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"a\", \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")",
+   "evalError": "EXPR_TEXT_LIMIT",
+   "at": 0
+  }
+ ]
+}

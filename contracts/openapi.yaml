@@ -43,6 +43,7 @@ tags:
   - name: ConnectorPackages
   - name: Adapters
   - name: Agent write tools
+  - name: AgentTools
   - name: Access
   - name: AI
   - name: AiSkills
@@ -6375,6 +6376,300 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  # ------------------------------------------------------------------ AgentTools (docs/build/S135, doc 29 §8)
+  /workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    get:
+      tags: [AgentTools]
+      operationId: getMcpToolSnapshot
+      summary: The tool pins of a registered MCP server (CG-M01) and the drift the runtime observed
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Pins of the latest definition version (status pinned or unpinned per allow-listed tool) and open drift
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpToolSnapshot' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AgentTools]
+      operationId: takeMcpToolSnapshot
+      summary: Pin the tools of a registered MCP server as the bound server lists them now
+      description: |
+        Connects to the server in the workspace binding, lists its tools and, for every tool in the definition's
+        catalog, stores the inputSchema and the SHA-256 of its canonical JSON. At runtime a tool whose live schema
+        differs, that is missing or that has no pin is refused (TOOL_SCHEMA_CHANGED / TOOL_NOT_PINNED) and the
+        administrator who pinned it is notified. Taking a new snapshot resolves the drift. The server's own tool
+        descriptions are never stored or offered. Fresh connection.manage.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: mcp.tool-snapshot.taken
+      responses:
+        '200':
+          description: The new pins (status pinned or missing per catalog tool)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpToolSnapshot' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/agent-kill-switches:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AgentTools]
+      operationId: listAgentKillSwitches
+      summary: Kill switches of agents and MCP servers (CG-M03)
+      x-orqix-permission: connection.read
+      description: Also readable with run.operate.
+      responses:
+        '200':
+          description: Every switch that was ever set, active first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AgentKillSwitch' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/agent-kill-switches/{scope}/{connectionKey}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: scope, in: path, required: true, schema: { type: string, enum: [agent, server] } }
+      - { $ref: '#/components/parameters/ConnectionKey' }
+    put:
+      tags: [AgentTools]
+      operationId: setAgentKillSwitch
+      summary: Switch an agent (scope agent) or an MCP server (scope server) off or on again
+      description: |
+        Off stops new calls at once: an agent makes no further execution or durable turn (AGENT_STOPPED), a server's
+        tools are refused before every call. A call already in flight finishes. Fresh connection.manage, reason
+        required, expectedVersion once the switch exists.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.kill-switch.changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAgentKillSwitch' }
+      responses:
+        '200':
+          description: The switch now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentKillSwitch' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-trace-settings:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTraceSettings
+      summary: The workspace's opt-in conversation trace setting (CG-M05)
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The setting (version 0 and enabled false until one is saved)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTraceSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AgentTools]
+      operationId: setAgentTraceSettings
+      summary: Enable or disable the conversation trace, with redaction rules and retention (1-30 days, default 7)
+      description: |
+        Off (the default) keeps agent records metadata only. On keeps turns and tool calls with arguments, results and
+        model text after redaction: built-in rules (e-mail addresses, runs of 12-19 digits, bearer and API tokens),
+        the named JSON fields and the workspace patterns (regular expressions without nested repetition). Rows are
+        deleted when the retention passes.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: agent.trace.settings-changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAgentTraceSettings' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTraceSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/agent-trace:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/RunId' }
+      - { name: nodeId, in: query, required: false, schema: { type: string, maxLength: 200 } }
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTrace
+      summary: The redacted conversation trace of a run's agent steps (one step with nodeId), linked to the diagram
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Events in order per step (empty when the trace is off or has expired)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTrace' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/agent-tests:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    get:
+      tags: [AgentTools]
+      operationId: getAgentTestSuite
+      summary: The agent test suite of an agent connection (CG-M07) and its last result
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: The suite (an empty one with version 0 until saved)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AgentTools]
+      operationId: saveAgentTestSuite
+      summary: Save the test suite (cases with input, tool fixtures and expectations; a pinned judge model)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.test-suite.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveAgentTestSuite' }
+      responses:
+        '200':
+          description: Saved (the last result is cleared)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/agent-tests/run:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/ConnectionKey' }]
+    post:
+      tags: [AgentTools]
+      operationId: runAgentTestSuite
+      summary: Run every case of the saved suite against the latest connection version
+      description: |
+        Every tool is replaced by its fixtures (no MCP server, connection, workflow or person is involved); the model
+        runs for real and is metered like any AI use. Judge assertions use the suite's judge profile and fail with
+        JUDGE_MODEL_CHANGED when it resolves to another model than the pinned one.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: agent.test-suite.ran
+      responses:
+        '200':
+          description: The suite with lastResult (verdicts, tool sequences, judge scores)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentTestSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-requests:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: status, in: query, required: false, schema: { type: string, enum: [open, answered, approved, rejected, cancelled, expired] } }
+    get:
+      tags: [AgentTools]
+      operationId: listAgentRequests
+      summary: Questions, approvals and elicitations that durable agents raised for people (CG-M03)
+      description: |
+        Members of the request's group (with task.act) see the question, the proposed arguments or the server's
+        message; operators (run.operate) see the requests without those details. Default status open.
+      x-orqix-permission: task.act
+      responses:
+        '200':
+          description: Requests, newest first (at most 200)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AgentHumanRequest' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/agent-requests/{requestId}/answer:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [AgentTools]
+      operationId: answerAgentRequest
+      summary: Answer an agent's question or elicitation, or approve or reject a proposed tool call
+      description: |
+        Fresh task.act and membership of the request's group. An approval is never decided by the person whose request
+        the agent works on (403 SEPARATION_OF_DUTIES). An answer must fit the answer form. The answer wakes the agent.
+      x-orqix-permission: task.act
+      x-orqix-audit: agent.request.answered
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerAgentRequest' }
+      responses:
+        '200':
+          description: The request after the answer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentHumanRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-dashboard:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90 } }
+    get:
+      tags: [AgentTools]
+      operationId: getAgentDashboard
+      summary: Agent control plane (CG-M05) - calls, cost, refusals, schema changes, failure codes, p95 duration
+      description: Also readable with connection.read. Facts only, never prompts, arguments or results.
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: The figures for the window (default 7 days)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentDashboard' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/agent-writes/{writeId}/reconcile:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -11517,6 +11812,194 @@ components:
       properties:
         retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
         expectedVersion: { type: integer, minimum: 0 }
+    # ---------------------------------------------------------------- AgentTools (docs/build/S135)
+    McpToolDrift:
+      type: object
+      additionalProperties: false
+      required: [id, connectionKey, toolName, kind, occurrences, firstSeenAt, lastSeenAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        toolName: { type: string, maxLength: 64 }
+        kind: { type: string, enum: [changed, missing, unpinned] }
+        pinnedSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        observedSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        occurrences: { type: integer, minimum: 1 }
+        firstSeenAt: { $ref: '#/components/schemas/Timestamp' }
+        lastSeenAt: { $ref: '#/components/schemas/Timestamp' }
+    McpToolSnapshot:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, definitionVersion, tools, drift]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        definitionVersion: { type: integer, minimum: 1 }
+        takenAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        tools:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, label, status]
+            properties:
+              name: { type: string, maxLength: 64 }
+              label: { type: string, maxLength: 80 }
+              status: { type: string, enum: [pinned, unpinned, missing] }
+              schemaSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        drift: { type: array, items: { $ref: '#/components/schemas/McpToolDrift' } }
+    AgentKillSwitch:
+      type: object
+      additionalProperties: false
+      required: [scope, connectionKey, active, reason, changedBy, changedAt, version]
+      properties:
+        scope: { type: string, enum: [agent, server] }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        active: { type: boolean, description: 'true: switched off (no new calls)' }
+        reason: { type: string, maxLength: 500 }
+        changedBy: { $ref: '#/components/schemas/Uuid' }
+        changedAt: { $ref: '#/components/schemas/Timestamp' }
+        version: { type: integer, minimum: 1 }
+    SetAgentKillSwitch:
+      type: object
+      additionalProperties: false
+      required: [active, reason]
+      properties:
+        active: { type: boolean }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: [integer, 'null'], minimum: 1, description: Required once the switch exists }
+    AgentTraceSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, retentionDays, redactFields, redactPatterns, version]
+      properties:
+        enabled: { type: boolean }
+        retentionDays: { type: integer, minimum: 1, maximum: 30 }
+        redactFields: { type: array, maxItems: 50, items: { type: string, maxLength: 64 } }
+        redactPatterns: { type: array, maxItems: 20, items: { type: string, maxLength: 200 } }
+        changedBy: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        changedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0 }
+    SetAgentTraceSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 30 }
+        redactFields: { type: [array, 'null'], maxItems: 50, items: { type: string, minLength: 1, maxLength: 64 } }
+        redactPatterns: { type: [array, 'null'], maxItems: 20, items: { type: string, minLength: 1, maxLength: 200 } }
+        expectedVersion: { type: [integer, 'null'], minimum: 0 }
+    AgentTrace:
+      type: object
+      additionalProperties: false
+      required: [runId, enabled, events]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [seq, kind, content, createdAt]
+            properties:
+              seq: { type: integer, minimum: 1 }
+              kind: { type: string, enum: [input, turn, toolCall, wait, answer, end] }
+              toolName: { type: [string, 'null'] }
+              model: { type: [string, 'null'] }
+              outcome: { type: [string, 'null'] }
+              durationMs: { type: [integer, 'null'], minimum: 0 }
+              costUsd: { type: [number, 'null'], minimum: 0 }
+              content: { type: object, additionalProperties: true, description: Redacted arguments, results and model text }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AgentTestSuite:
+      type: object
+      additionalProperties: false
+      required: [connectionKey, suite, version]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        suite: { $ref: '#/components/schemas/AgentTestSuiteDocument' }
+        lastResult: { type: [object, 'null'], additionalProperties: true, description: 'connectionVersion, passed, failed, ranAt and per case: name, passed, outcome, errorCode, toolSequence, output, assertions (kind, passed, message; judge: score and judgeModel)' }
+        lastRunAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0 }
+    AgentTestSuiteDocument:
+      type: object
+      description: |
+        operation: the agent operation; judge: {profile, model} pins the judge (the profile must resolve to model);
+        cases (1-20): {name, input, fixtures: {<tool name>: [{args?, result, isError?}]}, expect: {calledOnce, called,
+        never: [tool names], neverWriteTools, order: [tool names], output: {field: value}, failure: errorCode,
+        judge: {criteria, minScore 1-5}}}. Fixture args are matched as a subset of the call's arguments.
+      properties:
+        operation: { type: string }
+        judge:
+          type: object
+          properties:
+            profile: { type: string }
+            model: { type: string }
+        cases: { type: array, maxItems: 20, items: { type: object } }
+    SaveAgentTestSuite:
+      type: object
+      additionalProperties: false
+      required: [suite]
+      properties:
+        suite: { $ref: '#/components/schemas/AgentTestSuiteDocument' }
+        expectedVersion: { type: [integer, 'null'], minimum: 0 }
+    AgentHumanRequest:
+      type: object
+      additionalProperties: false
+      required: [id, runId, runReference, nodeId, kind, toolName, toolLabel, groupKey, status, createdAt, canAnswer, version]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        runReference: { type: string }
+        nodeId: { type: string }
+        kind: { type: string, enum: [ask, approval, elicitation] }
+        toolName: { type: string }
+        toolLabel: { type: string, maxLength: 80 }
+        groupKey: { $ref: '#/components/schemas/Key' }
+        status: { type: string, enum: [open, answered, approved, rejected, cancelled, expired] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        answerSchema: { type: [object, 'null'], additionalProperties: true, description: 'ask and elicitation: the flat answer form (JSON Schema)' }
+        detail: { type: [object, 'null'], additionalProperties: true, description: 'Only for members of the group: question (ask), arguments (approval) or message (elicitation); cleared when the agent moves on' }
+        canAnswer: { type: boolean }
+        version: { type: integer, minimum: 1 }
+    AnswerAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        decision: { type: [string, 'null'], enum: [approve, reject, null], description: Approvals only }
+        answer: { type: [object, 'null'], additionalProperties: true, description: 'Ask and elicitation: values for the answer form' }
+        reason: { type: [string, 'null'], maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    AgentDashboard:
+      type: object
+      additionalProperties: false
+      required: [days, from, agents, refusedToolCalls, schemaRefusals, killSwitches, loops, openRequests]
+      properties:
+        days: { type: integer, minimum: 1, maximum: 90 }
+        from: { $ref: '#/components/schemas/Timestamp' }
+        agents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [connectionKey, calls, succeeded, failed, costUsd, failureCodes]
+            properties:
+              connectionKey: { $ref: '#/components/schemas/Key' }
+              calls: { type: integer, minimum: 0 }
+              succeeded: { type: integer, minimum: 0 }
+              failed: { type: integer, minimum: 0 }
+              costUsd: { type: number, minimum: 0 }
+              p95DurationMs: { type: [integer, 'null'], minimum: 0 }
+              failureCodes: { type: object, additionalProperties: { type: integer } }
+        refusedToolCalls: { type: object, additionalProperties: { type: integer }, description: Refused tool calls by outcome (refusedNotAllowed, refusedSchemaChanged, refusedDataClass, refusedKillSwitch, invalidArguments, declined, ...) }
+        schemaRefusals: { type: array, items: { $ref: '#/components/schemas/McpToolDrift' } }
+        killSwitches: { type: array, items: { $ref: '#/components/schemas/AgentKillSwitch' } }
+        loops: { type: object, additionalProperties: { type: integer }, description: Durable loops by status }
+        openRequests: { type: integer, minimum: 0 }
+        aiTaskAgreement: { type: [number, 'null'], description: 'Agreement of AI tasks with people; null until AI task decisions (CG-A03) record it' }
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -14093,7 +14576,7 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision], description: 'promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision, agentToolChanged], description: 'agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
         message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }

@@ -198,6 +198,21 @@ public class EngineCommands {
                 .map(x -> OrqixModel.attribute(x, "maxAttempts")).filter(v -> v != null).map(Integer::parseInt);
     }
 
+    /**
+     * CG-M03 (S135): makes the deferred job of a durable agent step due now (its wait was answered or its child request
+     * ended). Joins the caller's transaction; the job runs after the commit. Returns false when no timer job waits.
+     */
+    public boolean wakeTimer(String processInstanceId, String elementId) {
+        boolean moved = false;
+        for (Job timer : managementService.createTimerJobQuery().processInstanceId(processInstanceId).list()) {
+            if (elementId.equals(timer.getElementId())) {
+                managementService.moveTimerToExecutableJob(timer.getId());
+                moved = true;
+            }
+        }
+        return moved;
+    }
+
     public boolean hasExecutableOrTimerJob(String processInstanceId) {
         return managementService.createJobQuery().processInstanceId(processInstanceId).count() > 0
                 || managementService.createTimerJobQuery().processInstanceId(processInstanceId).count() > 0;

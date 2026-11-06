@@ -28,7 +28,9 @@ public class NotificationService {
         /** PL02a (docs/build/S106): a promotion into this workspace waits for the recipient's approval. */
         PROMOTION_REQUEST("promotionRequest"),
         /** PL02a: the recipient's promotion request was approved or rejected (points at the source workflow). */
-        PROMOTION_DECISION("promotionDecision");
+        PROMOTION_DECISION("promotionDecision"),
+        /** CG-M01 (docs/build/S135): a pinned MCP tool changed or disappeared and is refused. */
+        AGENT_TOOL_CHANGED("agentToolChanged");
 
         private final String value;
 

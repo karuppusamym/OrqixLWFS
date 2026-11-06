@@ -79,6 +79,10 @@ export const routes: RouteObject[] = [
             lazy: async () => ({ Component: (await import('@/features/promotion/PromotePage')).PromotePage }),
           },
           {
+            path: 'agents',
+            lazy: async () => ({ Component: (await import('@/features/agenttools/AgentToolsPage')).AgentToolsPage }),
+          },
+          {
             path: 'agent-writes',
             lazy: async () => ({ Component: (await import('@/features/agentwrites/AgentWriteToolsPage')).AgentWriteToolsPage }),
           },

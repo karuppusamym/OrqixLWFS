@@ -72,10 +72,15 @@ public final class DefaultFormValidator implements FormValidator {
         for (Map.Entry<String, JsonNode> e : properties.properties()) {
             JsonNode value = input.get(e.getKey());
             if (value != null) {
-                if (!com.orqix.compiler.FormVisibility.visible(ui,input,e.getKey()))
+                if (!com.orqix.compiler.FormVisibility.visible(schema,ui,input,e.getKey()))
                     errors.add(new FieldError(JsonPointers.of(e.getKey()),"hidden","This field is not visible for this request; omit it."));
                 else field(JsonPointers.of(e.getKey()), e.getValue(), value, errors);
             }
+        }
+        // CG-F04 (S137): cross-field rules, evaluated with the same engine as the browser.
+        for (var broken : com.orqix.compiler.FormComputation.broken(schema, ui, input, java.time.Instant.now())) {
+            if (broken.fields().isEmpty()) errors.add(new FieldError("", "rule", broken.message()));
+            for (String f : broken.fields()) errors.add(new FieldError(JsonPointers.of(f), "rule", broken.message()));
         }
         errors.sort(Comparator.comparing(FieldError::pointer, JsonPointers::compare)
                 .thenComparing(FieldError::code));

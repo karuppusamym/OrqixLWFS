@@ -86,6 +86,9 @@ public final class FieldTypes {
     }
 
     public Resolution resolve(String fieldRef) {
+        if (fieldRef.startsWith("=")) {
+            return new Indeterminate(); // an Orqix expression (S137), checked by ExpressionRules
+        }
         if (fieldRef.startsWith("/input/")) {
             String key = fieldRef.substring("/input/".length());
             int slash = key.indexOf('/');
@@ -119,6 +122,7 @@ public final class FieldTypes {
             case Node.ExternalTask e -> externalOutput(e, key);
             case Node.SendAdapter a -> adapterOutput(a, key);
             case Node.AiTask ai -> aiOutput(ai, key);
+            case Node.Calculate c -> calculateOutput(c, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -404,6 +408,16 @@ public final class FieldTypes {
                         field.items() == null ? null : formType(field.items(), false)), w, key);
             }
         }
+    }
+
+    /** Calculate (S137): the declared type; an optional output may be missing. */
+    private Resolution calculateOutput(Node.Calculate c, String key) {
+        Node.Calculate.Output o = c.output(key);
+        if (o == null) {
+            return new Unknown("\"" + c.label() + "\" does not produce \"" + key + "\". It produces: "
+                    + String.join(", ", c.outputs().stream().map(Node.Calculate.Output::key).toList()) + ".");
+        }
+        return new Resolved(new FieldType(FieldKind.fromJson(o.type()), null, o.optional(), null, null), c, key);
     }
 
     private Resolution decisionOutput(Node.Decision d, String key) {

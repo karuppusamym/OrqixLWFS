@@ -122,7 +122,7 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
             }
         }
         BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts,
-                aiPins);
+                aiPins, com.orqix.compiler.internal.rules.ExpressionRules.pinnedTypes(analysis));
 
         Set<String> usedConnections = new LinkedHashSet<>();
         Set<String> groups = new LinkedHashSet<>();

@@ -48,7 +48,7 @@ public class IncidentCorrectionService {
         boolean captured=jdbc.sql("SELECT EXISTS(SELECT 1 FROM effect_journal WHERE workspace_id=:ws AND run_id=:run)")
                 .param("ws",workspace).param("run",runId).query(Boolean.class).single();
         if (captured) throw blocked("An external effect already captured this request. Correcting it could invalidate that effect.");
-        boolean observed=jdbc.sql("SELECT EXISTS(SELECT 1 FROM run_event WHERE workspace_id=:ws AND run_id=:run AND type IN ('TASK_CREATED','DECISION_EVALUATED','DOCUMENT_GENERATED','WAIT_STARTED','MESSAGE_WAIT_STARTED','CHILD_STARTED','CHILD_COMPLETED','EFFECT_SUCCEEDED'))")
+        boolean observed=jdbc.sql("SELECT EXISTS(SELECT 1 FROM run_event WHERE workspace_id=:ws AND run_id=:run AND type IN ('TASK_CREATED','DECISION_EVALUATED','STEP_CALCULATED','DOCUMENT_GENERATED','WAIT_STARTED','MESSAGE_WAIT_STARTED','CHILD_STARTED','CHILD_COMPLETED','EFFECT_SUCCEEDED'))")
                 .param("ws",workspace).param("run",runId).query(Boolean.class).single();
         if (observed) throw blocked("A previous task or data-consuming step already observed this input.");
         var release=releases.require(workspace,run.releaseId());

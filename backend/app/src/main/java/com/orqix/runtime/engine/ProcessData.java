@@ -70,6 +70,37 @@ public final class ProcessData {
         throw new IllegalArgumentException("Unsupported fieldRef " + fieldRef);
     }
 
+    /**
+     * Evaluates an Orqix expression (S137) over the request and the step results, with the types the compiler pinned
+     * in the BPMN ({@code typesBase64}); {@code today()} uses the engine clock.
+     *
+     * @return the value as JSON (null when the expression gives none)
+     * @throws IllegalStateException when the expression exceeds its bounds (the job fails, the request needs attention)
+     */
+    public static JsonNode expression(VariableScope scope, Json json, String source, String typesBase64) {
+        JsonNode types = CalculateTaskDelegate.base64(json, typesBase64);
+        try {
+            Object value = com.orqix.compiler.expr.Expression.compile(source,
+                    com.orqix.compiler.expr.PinnedTypes.scope(types, java.util.Map.of()))
+                    .evaluate(com.orqix.compiler.expr.Values.of(input(scope, json),
+                            id -> step(scope, json, id).orElse(null), java.util.Map.of(),
+                            org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getClock()
+                                    .getCurrentTime().toInstant(), null));
+            return com.orqix.compiler.expr.Expression.toJson(value);
+        } catch (com.orqix.compiler.expr.ExpressionException e) {
+            throw new IllegalStateException("EXPR_EVALUATION: " + e.code() + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * The value of one mapping of a call: a field reference, or an {@code =} expression (S137) whose types are on the
+     * same {@code orqix:input} element.
+     */
+    public static JsonNode mapping(VariableScope scope, Json json, String source, String typesBase64) {
+        return source.startsWith("=") ? expression(scope, json, source.substring(1), typesBase64)
+                : resolve(scope, json, source);
+    }
+
     /** Resolves a field to BigDecimal/String/Boolean; absence is a compiler-guaranteed defect (S5 section 5). */
     public static Object requireScalar(VariableScope scope, Json json, String fieldRef) {
         Object value = Json.scalar(resolve(scope, json, fieldRef));

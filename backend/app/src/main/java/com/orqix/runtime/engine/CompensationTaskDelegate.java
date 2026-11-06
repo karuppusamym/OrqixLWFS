@@ -105,8 +105,12 @@ public class CompensationTaskDelegate implements JavaDelegate {
             ExtensionElement http = OrqixModel.requireExtension(handler, "http");
             String connection = OrqixModel.attribute(http, "connection");
             Map<String, JsonNode> values = new LinkedHashMap<>();
+            Map<String, String> expressionTypes = OrqixModel.childMap(http, "input", "typesBase64");
             OrqixModel.childMap(http, "input", "fieldRef").forEach((name, fieldRef) -> {
-                JsonNode value = ProcessData.resolve(execution, json, fieldRef);
+                JsonNode value = ProcessData.mapping(execution, json, fieldRef, expressionTypes.get(name));
+                if (fieldRef.startsWith("=") && value.isNull()) {
+                    return; // an = mapping without a value leaves the request field out (S137)
+                }
                 if (value.isMissingNode() || value.isNull()) {
                     throw new IllegalStateException("Input " + fieldRef + " of the undo call " + entry.handlerNode()
                             + " is not available; the compiler guarantees it");

@@ -41,10 +41,10 @@ final class ScopeRules {
 
     private static final Set<NodeKind> SECTION_KINDS = Set.of(NodeKind.APPROVAL, NodeKind.DECISION, NodeKind.BRANCH,
             NodeKind.HTTP, NodeKind.GENERATE_DOCUMENT, NodeKind.NOTIFICATION, NodeKind.WAIT, NodeKind.WAIT_FOR_SIGNAL,
-            NodeKind.SEND_SIGNAL, NodeKind.RAISE_ERROR, NodeKind.COMPENSATE, NodeKind.EXTERNAL_TASK);
+            NodeKind.SEND_SIGNAL, NodeKind.RAISE_ERROR, NodeKind.COMPENSATE, NodeKind.EXTERNAL_TASK, NodeKind.CALCULATE);
     private static final Set<NodeKind> HANDLER_KINDS = Set.of(NodeKind.APPROVAL, NodeKind.DECISION, NodeKind.BRANCH,
             NodeKind.HTTP, NodeKind.GENERATE_DOCUMENT, NodeKind.NOTIFICATION, NodeKind.WAIT, NodeKind.SEND_SIGNAL,
-            NodeKind.COMPENSATE, NodeKind.END);
+            NodeKind.COMPENSATE, NodeKind.END, NodeKind.CALCULATE);
     /** Work an interrupting handler could not cancel cleanly (child requests, worker jobs, message waits). */
     private static final Set<NodeKind> NOT_INTERRUPTIBLE = Set.of(NodeKind.START_WORKFLOW, NodeKind.EXTERNAL_TASK,
             NodeKind.WAIT_FOR_MESSAGE, NodeKind.SEND_ADAPTER);

@@ -360,6 +360,12 @@ public class RunService {
             redacted.put("detailsRedacted", true);
             return redacted;
         }
+        // Calculated outputs (S137) are request data: a reader without it sees only that the step calculated.
+        if (!dataVisible && "STEP_CALCULATED".equals(row.type())) {
+            ObjectNode redacted = json.object();
+            redacted.put("detailsRedacted", true);
+            return redacted;
+        }
         if (dataVisible || !"DECISION_EVALUATED".equals(row.type())) return row.data();
         ObjectNode metadata = json.object();
         JsonNode data = row.data();

@@ -32,8 +32,12 @@ public class PollTaskDelegate implements JavaDelegate {
         var http = OrqixModel.requireExtension(execution.getCurrentFlowElement(), "http");
         String nodeId = execution.getCurrentActivityId();
         ObjectNode request = json.object();
+        Map<String, String> expressionTypes = OrqixModel.childMap(http, "input", "typesBase64");
         OrqixModel.childMap(http, "input", "fieldRef").forEach((name, ref) -> {
-            JsonNode value = ProcessData.resolve(execution, json, ref);
+            JsonNode value = ProcessData.mapping(execution, json, ref, expressionTypes.get(name));
+            if (ref.startsWith("=") && value.isNull()) {
+                return; // an = mapping without a value leaves the request field out (S137)
+            }
             if (value.isMissingNode() || value.isNull()) {
                 throw new IllegalStateException("Input " + ref + " is not available; the compiler guarantees it");
             }

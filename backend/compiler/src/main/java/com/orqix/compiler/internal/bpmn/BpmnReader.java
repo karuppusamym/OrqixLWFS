@@ -615,6 +615,7 @@ public final class BpmnReader {
             case "${orqixCompensationTask}" -> "compensate";
             case "${orqixAdapterTask}" -> "sendAdapter";
             case "${orqixAiTask}" -> "aiTask";
+            case "${orqixCalculate}" -> "calculate";
             default -> null;
         };
         if (kind == null) {
@@ -633,6 +634,7 @@ public final class BpmnReader {
             case "compensate" -> "compensation";
             case "sendAdapter" -> "adapter";
             case "aiTask" -> "aiTask";
+            case "calculate" -> "calculate";
             default -> "child";
         };
         El x = ext == null ? null : ext.child(ORQIX_NS, extension);
@@ -695,6 +697,15 @@ public final class BpmnReader {
                 if (redaction != null && !redaction.isEmpty()) {
                     config.set("redaction", redaction);
                 }
+            }
+            case "calculate" -> {
+                // S137: the outputs and calendar travel as canonical JSON.
+                JsonNode settings = base64Json(id, x.attr("configBase64"));
+                if (settings == null || !settings.isObject()) {
+                    unsupported(id, "Calculate step '" + id + "' needs its orqix:calculate settings.");
+                    return null;
+                }
+                ((ObjectNode) config).setAll((ObjectNode) settings);
             }
             case "compensate" -> {
                 // Nothing to read: the undo entries are recomputed from the calls marked as automatic undo calls.
@@ -1078,6 +1089,11 @@ public final class BpmnReader {
     }
 
     private JsonNode condition(String id, El c) {
+        if (c.attr("expression") != null) {
+            ObjectNode expression = F.objectNode();
+            expression.put("expression", c.attr("expression"));
+            return expression;
+        }
         if (c.attr("group") != null) {
             ArrayNode terms = F.arrayNode();
             for (El term : c.all(ORQIX_NS, "term")) {

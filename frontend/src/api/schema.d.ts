@@ -10251,7 +10251,9 @@ export interface components {
         };
         AiSkillDocumentRequest: {
             /** @description contracts/ai-skill-v1.schema.json, kind skill */
-            document: Record<string, never>;
+            document: {
+                [key: string]: unknown;
+            };
         };
         AiReasonRequest: {
             reason: string;
@@ -10284,7 +10286,9 @@ export interface components {
             };
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
-            document?: Record<string, never>;
+            document?: {
+                [key: string]: unknown;
+            };
         };
         AiSkill: {
             key: components["schemas"]["Key"];
@@ -10308,13 +10312,17 @@ export interface components {
             contentHash: string;
             updatedAt: components["schemas"]["Timestamp"];
             /** @description contracts/ai-skill-v1.schema.json, kind evaluationSuite */
-            document?: Record<string, never>;
+            document?: {
+                [key: string]: unknown;
+            };
         };
         AiEvalSuiteList: {
             items: components["schemas"]["AiEvalSuite"][];
         };
         AiEvalSuiteSaveRequest: {
-            document: Record<string, never>;
+            document: {
+                [key: string]: unknown;
+            };
         };
         AiEvaluationStartRequest: {
             suiteKey?: components["schemas"]["Key"];
@@ -10330,7 +10338,9 @@ export interface components {
             status: "running" | "passed" | "failed" | "error";
             caseCount: number;
             /** @description accuracy, perLabel precision/recall, confusion, costPerCaseUsd, p95LatencyMs, thresholds trade-off, failures */
-            metrics: Record<string, never> | null;
+            metrics: {
+                [key: string]: unknown;
+            } | null;
             /** @description Ten buckets of raw confidence with the observed accuracy of each */
             calibration: {
                 from: number;
@@ -10443,8 +10453,12 @@ export interface components {
                 skillKey: components["schemas"]["Key"];
                 decisionId: components["schemas"]["Uuid"];
                 /** @description Only when the decision retained values */
-                input: Record<string, never> | null;
-                expected: Record<string, never>;
+                input: {
+                    [key: string]: unknown;
+                } | null;
+                expected: {
+                    [key: string]: unknown;
+                };
                 createdAt: components["schemas"]["Timestamp"];
             }[];
         };
@@ -10454,8 +10468,12 @@ export interface components {
             suiteKey?: components["schemas"]["Key"];
             caseId?: string;
             /** @description Redacted or synthetic case input */
-            input?: Record<string, never>;
-            expected?: Record<string, never>;
+            input?: {
+                [key: string]: unknown;
+            };
+            expected?: {
+                [key: string]: unknown;
+            };
         };
         AiEvalCandidateReviewResult: {
             id: components["schemas"]["Uuid"];
@@ -10517,15 +10535,21 @@ export interface components {
             inputDigest: string;
             /** @enum {string} */
             inputRetention: "digest" | "redactedValues" | "fullValues";
-            inputValues: Record<string, never> | null;
+            inputValues: {
+                [key: string]: unknown;
+            } | null;
             /** @enum {string} */
             status: "decided" | "lowConfidence" | "needsReview" | "unavailable" | "shadow";
-            output: Record<string, never> | null;
+            output: {
+                [key: string]: unknown;
+            } | null;
             rawConfidence: number | null;
             confidence: number | null;
             threshold: number | null;
             route: string;
-            guardrails: Record<string, never>;
+            guardrails: {
+                [key: string]: unknown;
+            };
             unavailableReason: string | null;
             reviewSampled: boolean;
             human: {

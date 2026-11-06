@@ -13995,7 +13995,7 @@ components:
       type: object
       required: [document]
       properties:
-        document: { type: object, description: 'contracts/ai-skill-v1.schema.json, kind skill' }
+        document: { type: object, additionalProperties: true, description: 'contracts/ai-skill-v1.schema.json, kind skill' }
     AiReasonRequest:
       type: object
       required: [reason]
@@ -14026,7 +14026,7 @@ components:
             runId: { type: [string, 'null'], format: uuid }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
-        document: { type: object }
+        document: { type: object, additionalProperties: true }
     AiSkill:
       type: object
       required: [key, name, ownerId, createdAt, approvedVersion, mode, versions]
@@ -14054,7 +14054,7 @@ components:
         revision: { type: integer, minimum: 1 }
         contentHash: { type: string }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
-        document: { type: object, description: 'contracts/ai-skill-v1.schema.json, kind evaluationSuite' }
+        document: { type: object, additionalProperties: true, description: 'contracts/ai-skill-v1.schema.json, kind evaluationSuite' }
     AiEvalSuiteList:
       type: object
       required: [items]
@@ -14064,7 +14064,7 @@ components:
       type: object
       required: [document]
       properties:
-        document: { type: object }
+        document: { type: object, additionalProperties: true }
     AiEvaluationStartRequest:
       type: object
       properties:
@@ -14084,6 +14084,7 @@ components:
         metrics:
           description: accuracy, perLabel precision/recall, confusion, costPerCaseUsd, p95LatencyMs, thresholds trade-off, failures
           type: [object, 'null']
+          additionalProperties: true
         calibration:
           description: Ten buckets of raw confidence with the observed accuracy of each
           type: [array, 'null']
@@ -14211,8 +14212,8 @@ components:
               id: { $ref: '#/components/schemas/Uuid' }
               skillKey: { $ref: '#/components/schemas/Key' }
               decisionId: { $ref: '#/components/schemas/Uuid' }
-              input: { type: [object, 'null'], description: 'Only when the decision retained values' }
-              expected: { type: object }
+              input: { type: [object, 'null'], additionalProperties: true, description: 'Only when the decision retained values' }
+              expected: { type: object, additionalProperties: true }
               createdAt: { $ref: '#/components/schemas/Timestamp' }
     AiEvalCandidateReview:
       type: object
@@ -14221,8 +14222,8 @@ components:
         decision: { type: string, enum: [accept, discard] }
         suiteKey: { $ref: '#/components/schemas/Key' }
         caseId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$' }
-        input: { type: object, description: 'Redacted or synthetic case input' }
-        expected: { type: object }
+        input: { type: object, additionalProperties: true, description: 'Redacted or synthetic case input' }
+        expected: { type: object, additionalProperties: true }
     AiEvalCandidateReviewResult:
       type: object
       required: [id, status]
@@ -14283,14 +14284,14 @@ components:
         inputFields: { type: array, items: { type: string } }
         inputDigest: { type: string }
         inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
-        inputValues: { type: [object, 'null'] }
+        inputValues: { type: [object, 'null'], additionalProperties: true }
         status: { type: string, enum: [decided, lowConfidence, needsReview, unavailable, shadow] }
-        output: { type: [object, 'null'] }
+        output: { type: [object, 'null'], additionalProperties: true }
         rawConfidence: { type: [number, 'null'] }
         confidence: { type: [number, 'null'] }
         threshold: { type: [number, 'null'] }
         route: { type: string }
-        guardrails: { type: object }
+        guardrails: { type: object, additionalProperties: true }
         unavailableReason: { type: [string, 'null'] }
         reviewSampled: { type: boolean }
         human:

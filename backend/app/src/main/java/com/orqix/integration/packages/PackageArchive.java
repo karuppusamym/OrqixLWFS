@@ -54,7 +54,8 @@ public final class PackageArchive {
             "^(connections|triggers|templates|templates/steps|templates/workflows|fixtures|docs)(/[A-Za-z0-9][A-Za-z0-9._-]{0,80})?/$");
     private static final Pattern CHECKSUM_LINE = Pattern.compile("^([0-9a-f]{64})  (\\S+)$");
     /** Fixed entry time so the same files always give the same bytes (and the same package hash). */
-    private static final long ENTRY_TIME = 1_767_225_600_000L; // 2026-01-01T00:00:00Z
+    /** Fixed DOS time of every entry, written as local date-time so the archive does not depend on the time zone. */
+    private static final java.time.LocalDateTime ENTRY_TIME = java.time.LocalDateTime.of(2026, 1, 1, 0, 0);
 
     /** A broken archive rule; {@code path} names the file when there is one (never file content). */
     public static final class Invalid extends RuntimeException {
@@ -259,7 +260,7 @@ public final class PackageArchive {
             List<String> names = new ArrayList<>(all.keySet());
             for (String name : names) {
                 ZipEntry entry = new ZipEntry(name);
-                entry.setTime(ENTRY_TIME);
+                entry.setTimeLocal(ENTRY_TIME);
                 zip.putNextEntry(entry);
                 zip.write(all.get(name));
                 zip.closeEntry();

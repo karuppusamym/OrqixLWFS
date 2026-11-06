@@ -35,6 +35,8 @@ public final class Enums {
         SEND_ADAPTER("sendAdapter", "Send through an adapter"),
         /** Run an approved AI skill: classify, extract, score, recommend or summarize (CG-A01, S134). */
         AI_TASK("aiTask", "AI task"),
+        /** Wait for the first of several events: message, signal, callback, time or check (CG-W07, S139). */
+        WAIT_FOR_FIRST("waitForFirst", "Wait for the first"),
         END("end", "Finish");
 
         private final String json;
@@ -75,7 +77,9 @@ public final class Enums {
         /** AI task: a person must look (suggest autonomy, policy, low field confidence, sampled review). */
         NEEDS_REVIEW("needsReview"),
         /** AI task: AI could not produce a valid answer (disabled, refused, failed, over budget, invalid twice). */
-        AI_UNAVAILABLE("aiUnavailable");
+        AI_UNAVAILABLE("aiUnavailable"),
+        /** Wait for the first (S139): the path of one branch; the transition names it in {@code branch}. */
+        BRANCH("branch");
 
         private final String json;
 

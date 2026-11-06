@@ -115,6 +115,8 @@ final class GraphRules {
                 case RAISE_ERROR -> Set.of();
                 // S134: the routes of an AI task depend on its mode and autonomy; AiTaskRules counts them.
                 case AI_TASK -> AiTaskRules.allowed((Node.AiTask) n);
+                // S139: one path per branch; WaitsAndStartsRules counts them.
+                case WAIT_FOR_FIRST -> Set.of(Route.BRANCH);
                 default -> Set.of(Route.NEXT);
             };
             if (n.kind() == NodeKind.RAISE_ERROR) {
@@ -205,6 +207,9 @@ final class GraphRules {
                 }
                 case AI_TASK -> {
                     // Counted by AiTaskRules (per label, lowConfidence, needsReview, aiUnavailable).
+                }
+                case WAIT_FOR_FIRST -> {
+                    // Counted per branch by WaitsAndStartsRules (S139).
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);

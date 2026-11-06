@@ -247,6 +247,7 @@ final class SimulationRun {
             }
             case Node.Wait n -> wait(n);
             case Node.WaitForMessage n -> waitForMessage(n);
+            case Node.WaitForFirst n -> waitForFirst(n);
             case Node.StartWorkflow n -> startWorkflow(n);
             case Node.RaiseError n -> raiseError(n);
             case Node.SendSignal n -> {
@@ -1465,6 +1466,15 @@ final class SimulationRun {
                 sentence = Text.quote(n.label()) + ": would wait until a date that the test does not have. The test"
                         + " skips the wait.";
             }
+        } else if (def.waits().working(n.id()) != null) {
+            // S139: working time of a shared calendar.
+            var working = def.waits().working(n.id());
+            long minutes = Durations.minutes(working.duration());
+            d.put("workingDuration", working.duration());
+            d.put("calendarRef", working.calendarRef());
+            sentence = Text.quote(n.label()) + ": would wait " + (minutes > 0 ? Durations.describe(minutes)
+                    : String.valueOf(working.duration())) + " of working time in the calendar "
+                    + Text.quote(working.calendarRef()) + ". The test skips the wait.";
         } else {
             long minutes = Durations.minutes(n.duration());
             d.put("duration", n.duration());
@@ -1810,6 +1820,65 @@ final class SimulationRun {
             d.put("note", note);
             sentence += " " + note;
         }
+        steps.put(n.id(), out);
+        add(n, sentence, d, out, t);
+        return t;
+    }
+
+    // ------------------------------------------------------------------ wait for the first (S139)
+
+    /**
+     * The scenario chooses the branch that happens first: {@code messages.<step>} is a branch id, or an object
+     * {@code {branch, payload}}; without a choice the first branch wins.
+     */
+    private Transition waitForFirst(Node.WaitForFirst n) {
+        JsonNode setting = scenario.path("messages").path(n.id());
+        String chosen = setting.isObject() ? setting.path("branch").asString(null)
+                : setting.isString() ? setting.asString() : null;
+        Node.FirstBranch branch = chosen == null ? n.branches().get(0) : n.branch(chosen);
+        if (branch == null) {
+            throw new IllegalArgumentException("messages." + n.id() + " must name a branch: "
+                    + String.join(", ", n.branches().stream().map(Node.FirstBranch::id).toList()));
+        }
+        JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
+        if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
+            throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
+        }
+        if (payloadMock.isObject()) {
+            String problem = Mocks.fieldProblem(branch.payload(), payloadMock);
+            if (problem != null) {
+                String message = "The test values of " + Text.quote(branch.label()) + " do not fit its declared"
+                        + " values: " + problem + ".";
+                stallWith(n, Text.quote(n.label()) + ": " + message, F.objectNode().put("branch", branch.id()),
+                        "TEST_MOCK_INVALID", message);
+                return null;
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(Node.WaitForFirst.BRANCH_OUTPUT, branch.id());
+        for (Node.PayloadField field : branch.payload()) {
+            JsonNode supplied = payloadMock.path(field.name());
+            out.put(field.name(), !supplied.isMissingNode() && !supplied.isNull() ? Mocks.plainField(supplied)
+                    : Mocks.sampleField(field));
+        }
+        ObjectNode d = F.objectNode();
+        d.put("branch", branch.id());
+        d.put("branchKind", branch.kind());
+        d.put("branches", n.branches().size());
+        if (setting.isObject() || setting.isString()) {
+            d.put("mocked", true);
+        }
+        Transition t = null;
+        for (Transition candidate : graph.outgoing(n)) {
+            if (candidate.on() == Route.BRANCH && branch.id().equals(candidate.branch())) {
+                t = candidate;
+            }
+        }
+        String others = String.join(", ", n.branches().stream().filter(b -> b != branch)
+                .map(b -> Text.quote(b.label())).toList());
+        String sentence = Text.quote(n.label()) + ": " + Text.quote(branch.label()) + " happens first, so the"
+                + " request takes its path and stops waiting for " + others + "."
+                + (out.size() > 1 ? " It brings " + outputsText(out) + "." : "");
         steps.put(n.id(), out);
         add(n, sentence, d, out, t);
         return t;
@@ -2337,7 +2406,7 @@ final class SimulationRun {
                 boolean right = n != null && switch (group) {
                     case "approvals" -> n.kind() == NodeKind.APPROVAL;
                     case "calls" -> n.kind() == NodeKind.HTTP;
-                    case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
+                    case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE || n.kind() == NodeKind.WAIT_FOR_FIRST;
                     case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
                     case "adapters" -> n.kind() == NodeKind.SEND_ADAPTER;
                     case "ai" -> n.kind() == NodeKind.AI_TASK;
@@ -2432,6 +2501,8 @@ final class SimulationRun {
             case TIMED_OUT -> "when the time limit fires";
             case DEFAULT -> "otherwise";
             case CONDITION -> "when " + routeName(t);
+            case BRANCH -> from instanceof Node.WaitForFirst w && w.branch(t.branch()) != null
+                    ? "when " + w.branch(t.branch()).label() + " happens first" : "for the branch " + t.branch();
             default -> "next";
         };
         return from.label() + ", " + when + ", goes to " + to.label();

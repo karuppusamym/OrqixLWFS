@@ -132,6 +132,9 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
             } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
                 // S129: the safety-net check of a message wait calls its connection too.
                 usedConnections.add(m.fallbackCheck().connectionRef());
+            } else if (n instanceof Node.WaitForFirst w) {
+                // S139: check branches call their connections too.
+                w.branches().stream().filter(b -> b.check() != null).forEach(b -> usedConnections.add(b.check().connectionRef()));
             } else if (n instanceof Node.Approval a) {
                 groups.add(a.candidateGroupRef());
                 groups.addAll(a.requiredSkills());

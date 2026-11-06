@@ -32,7 +32,16 @@ public record WorkflowDefinition(
         Map<String, OutputEntry> outputMapping,
         Layout uiLayout,
         List<Stage> stages,
-        List<Subprocess> subprocesses) {
+        List<Subprocess> subprocesses,
+        WaitExtras waits) {
+
+    public WorkflowDefinition(String schemaVersion, String workflowKey, String name, FormSchema inputSchema,
+            InputUi inputUi, FormSchema outputSchema, List<Node> nodes, List<Transition> transitions,
+            List<DecisionTable> decisions, Execution execution, String selfApproval, List<Dependency> dependencies,
+            Map<String, OutputEntry> outputMapping, Layout uiLayout, List<Stage> stages, List<Subprocess> subprocesses) {
+        this(schemaVersion, workflowKey, name, inputSchema, inputUi, outputSchema, nodes, transitions, decisions,
+                execution, selfApproval, dependencies, outputMapping, uiLayout, stages, subprocesses, WaitExtras.NONE);
+    }
 
     /**
      * A scope over existing steps (S59). An embedded subprocess is a section entered through one entry step and left
@@ -43,7 +52,25 @@ public record WorkflowDefinition(
     public record Subprocess(int index, String id, String label, boolean event, List<String> nodes,
                              String timeoutAfter, String onTimeout, String errorTo, String errorCode,
                              String triggerType, String triggerErrorCode, String signal, String after,
-                             boolean interrupting) {
+                             boolean interrupting, String message, String correlationField,
+                             List<Node.PayloadField> payload) {
+        public Subprocess(int index, String id, String label, boolean event, List<String> nodes,
+                String timeoutAfter, String onTimeout, String errorTo, String errorCode, String triggerType,
+                String triggerErrorCode, String signal, String after, boolean interrupting) {
+            this(index, id, label, event, nodes, timeoutAfter, onTimeout, errorTo, errorCode, triggerType,
+                    triggerErrorCode, signal, after, interrupting, null, null, List.of());
+        }
+
+        /** @return true for a message handler (CG-E08, S139): a handler started by a message for this request */
+        public boolean messageHandler() {
+            return event && "message".equals(triggerType);
+        }
+
+        /** @return the declared message value with this name, or null */
+        public Node.PayloadField field(String name) {
+            return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+
         public String path() {
             return "/subprocesses/" + index;
         }
@@ -65,9 +92,14 @@ public record WorkflowDefinition(
 
     /** @param label may be null; @param condition non-null only for {@code on: condition} */
     public record Transition(int index, String id, String from, String to, Route on, String label,
-                             Condition condition, String aiLabel) {
+                             Condition condition, String aiLabel, String branch) {
         public Transition(int index, String id, String from, String to, Route on, String label, Condition condition) {
-            this(index, id, from, to, on, label, condition, null);
+            this(index, id, from, to, on, label, condition, null, null);
+        }
+
+        public Transition(int index, String id, String from, String to, Route on, String label, Condition condition,
+                String aiLabel) {
+            this(index, id, from, to, on, label, condition, aiLabel, null);
         }
 
         public String path() {

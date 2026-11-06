@@ -173,6 +173,16 @@ final class Conditions {
                     + " can also be reached when it does not. Use it only on the path after the message.");
             return;
         }
+        if (producer instanceof Node.WaitForFirst w && !Node.WaitForFirst.BRANCH_OUTPUT.equals(r.key())
+                && w.declaring(r.key()) != null && w.declaring(r.key()).field(r.key()).required()
+                && WaitsAndStartsRules.reachableWithoutBranch(rc, w, w.declaring(r.key()).id(), usedAt)) {
+            // S139: a branch's values exist only when that branch wins.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when " + q(w.declaring(r.key()).label()) + " happens first,"
+                    + " and " + q(usedAt) + " can also be reached when another branch wins. Use it only on that"
+                    + " branch's path.");
+            return;
+        }
         if (producer instanceof Node.Approval a && a.capture() != null && a.capture().properties().containsKey(r.key())
                 && !FieldTypes.APPROVAL_OUTPUTS.contains(r.key())
                 && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.APPROVED, usedAt)) {

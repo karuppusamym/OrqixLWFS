@@ -35,6 +35,7 @@ public final class Rules {
         ChildRules.check(rc);
         FailureRules.check(rc);
         ScopeRules.check(rc);
+        WaitsAndStartsRules.check(rc);
         StageRules.check(rc);
         return rc;
     }

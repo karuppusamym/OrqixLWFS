@@ -36,6 +36,18 @@ final class TimerRules {
     private static void wait(RuleContext rc, Node.Wait w) {
         boolean hasDuration = w.duration() != null;
         boolean hasDate = w.untilField() != null;
+        var working = rc.definition().waits().working(w.id());
+        if (working != null && working.duration() != null) {
+            // S139 (CG-W05): working time instead of a length of time or a date.
+            if (hasDuration || hasDate) {
+                rc.issues().blocker("WF_WAIT_CHOICE", w.configPath("workingDuration"), w.id(), null, q(w)
+                        + " has a working time and also " + (hasDuration ? "a length of time" : "a date")
+                        + ". Choose one.");
+                return;
+            }
+            duration(rc, w, "workingDuration", working.duration(), "waits");
+            return;
+        }
         if (hasDuration == hasDate) {
             rc.issues().blocker("WF_WAIT_CHOICE", w.configPath(hasDuration ? "untilField" : "duration"), w.id(), null,
                     q(w) + (hasDuration ? " has both a length of time and a date. Choose one."
@@ -69,9 +81,12 @@ final class TimerRules {
         }
     }
 
-    private static void duration(RuleContext rc, Node n, String member, String text, String verb) {
+    static void duration(RuleContext rc, Node n, String member, String text, String verb) {
+        durationAt(rc, n, n.configPath(member), text, verb);
+    }
+
+    static void durationAt(RuleContext rc, Node n, String path, String text, String verb) {
         long minutes = Durations.minutes(text);
-        String path = n.configPath(member);
         if (minutes < 0) {
             rc.issues().blocker("WF_DURATION_INVALID", path, n.id(), null, q(n) + " has a time that is not valid ("
                     + text + "). Use days, hours and minutes, for example PT30M, PT48H or P2D.");

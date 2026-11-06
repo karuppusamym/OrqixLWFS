@@ -116,6 +116,7 @@ public final class FieldTypes {
             case Node.Http h -> httpOutput(h, key);
             case Node.StartWorkflow w -> startWorkflowOutput(w, key);
             case Node.WaitForMessage m -> messageOutput(m, key);
+            case Node.WaitForFirst w -> firstOutput(w, key);
             case Node.ExternalTask e -> externalOutput(e, key);
             case Node.SendAdapter a -> adapterOutput(a, key);
             case Node.AiTask ai -> aiOutput(ai, key);
@@ -294,6 +295,29 @@ public final class FieldTypes {
             return new Unknown("\"" + m.label() + "\" does not carry \"" + key + "\". It carries: " + carried + ".");
         }
         return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), m, key);
+    }
+
+    /**
+     * Outputs of "Wait for the first" (S139): {@code branch}, the id of the winning branch, and the values the
+     * branches declare. A value exists only when its branch wins, so a required one is guaranteed only on that branch's
+     * path ({@code Conditions.availability}); one that is not required may be missing.
+     */
+    private Resolution firstOutput(Node.WaitForFirst w, String key) {
+        if (Node.WaitForFirst.BRANCH_OUTPUT.equals(key)) {
+            Set<String> ids = new TreeSet<>();
+            w.branches().forEach(b -> ids.add(b.id()));
+            return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(ids), false, null, null),
+                    w, key);
+        }
+        Node.FirstBranch branch = w.declaring(key);
+        if (branch == null) {
+            List<String> names = new java.util.ArrayList<>(List.of(Node.WaitForFirst.BRANCH_OUTPUT));
+            w.branches().forEach(b -> b.payload().forEach(f -> names.add(f.name())));
+            return new Unknown("\"" + w.label() + "\" does not provide \"" + key + "\". It provides: "
+                    + String.join(", ", names) + ".");
+        }
+        Node.PayloadField field = branch.field(key);
+        return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), w, key);
     }
 
     /** Extra outputs of a list-driven approval (S88). */

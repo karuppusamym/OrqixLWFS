@@ -400,6 +400,85 @@ public sealed interface Node {
                          Map<String, String> resultMapping, int timeoutSeconds, String every, int jitterPercent,
                          WorkflowDefinition.Condition until, Integer maxChecks, tools.jackson.databind.JsonNode json) { }
 
+    /**
+     * Wait for the first of several events (S139, CG-W07): 2 to 5 branches, each with its own route
+     * ({@code on: branch}); the first branch to fire wins and the others are cancelled. Outputs are {@code branch} (the
+     * id of the winning branch) and the declared values of the message, callback and check branches.
+     */
+    record WaitForFirst(int index, String id, String label, java.util.List<FirstBranch> branches) implements Node {
+
+        /** Output naming the branch that won. */
+        public static final String BRANCH_OUTPUT = "branch";
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.WAIT_FOR_FIRST;
+        }
+
+        /** @return the branch with this id, or null */
+        public FirstBranch branch(String branchId) {
+            return branches.stream().filter(b -> b.id().equals(branchId)).findFirst().orElse(null);
+        }
+
+        /** @return the branch declaring this value, or null */
+        public FirstBranch declaring(String field) {
+            return branches.stream().filter(b -> b.field(field) != null).findFirst().orElse(null);
+        }
+
+        /** BPMN id of the catch event of a branch (also the id its wait is shown and stored under). */
+        public static String elementId(String stepId, String branchId) {
+            return stepId + "__" + branchId;
+        }
+
+        /**
+         * Internal message name of a callback or check branch: they are delivered to their branch as a message
+         * correlated by the request id. Names start with {@code orqix-}, which the message API refuses from outside.
+         */
+        public static String internalMessage(String stepId, String branchId) {
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest((stepId + "/" + branchId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return "orqix-" + branchId + "-" + java.util.HexFormat.of().formatHex(digest).substring(0, 10);
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    /**
+     * One branch of {@link WaitForFirst}. {@code kind} is {@code message} ({@code message}, {@code correlationField},
+     * {@code payload}), {@code signal} ({@code signal}), {@code callback} ({@code tokenValidFor}, {@code payload}),
+     * {@code timer} (exactly one of {@code after}, {@code untilField} with {@code atTime}, or {@code workingDuration}
+     * with {@code calendarRef}) or {@code check} ({@code check} and the {@code payload} its mapped results fill).
+     */
+    record FirstBranch(int index, String id, String label, String kind, String message, String correlationField,
+            java.util.List<PayloadField> payload, String signal, String after, String untilField, String atTime,
+            String workingDuration, String calendarRef, String tokenValidFor, FallbackCheck check) {
+
+        public static final java.util.List<String> KINDS = java.util.List.of("message", "signal", "callback", "timer",
+                "check");
+
+        /** @return true for the branches delivered as a message (message, callback, check) */
+        public boolean messageLike() {
+            return kind.equals("message") || kind.equals("callback") || kind.equals("check");
+        }
+
+        /** @return the declared value with this name, or null */
+        public PayloadField field(String name) {
+            return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+
+        /** @return the name the engine waits for: the authored message, or the internal one */
+        public String messageName(String stepId) {
+            return kind.equals("message") ? message : WaitForFirst.internalMessage(stepId, id);
+        }
+
+        /** @return the JSON Pointer of this branch inside its step */
+        public String path(Node step) {
+            return step.configPath("branches") + "/" + index;
+        }
+    }
+
     /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
     record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }
 

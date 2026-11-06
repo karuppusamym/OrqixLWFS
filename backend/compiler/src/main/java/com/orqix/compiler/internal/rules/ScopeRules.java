@@ -46,8 +46,9 @@ final class ScopeRules {
             NodeKind.HTTP, NodeKind.GENERATE_DOCUMENT, NodeKind.NOTIFICATION, NodeKind.WAIT, NodeKind.SEND_SIGNAL,
             NodeKind.COMPENSATE, NodeKind.END);
     /** Work an interrupting handler could not cancel cleanly (child requests, worker jobs, message waits). */
+    // S139: message waits (and "Wait for the first") are closed when a handler interrupts them, so they may coexist.
     private static final Set<NodeKind> NOT_INTERRUPTIBLE = Set.of(NodeKind.START_WORKFLOW, NodeKind.EXTERNAL_TASK,
-            NodeKind.WAIT_FOR_MESSAGE, NodeKind.SEND_ADAPTER);
+            NodeKind.SEND_ADAPTER);
 
     private ScopeRules() {
     }
@@ -190,6 +191,12 @@ final class ScopeRules {
                             + q(s.label()) + " starts on a signal; name the signal.");
                 }
                 if (s.triggerErrorCode() != null || s.after() != null) {
+                    mixed(rc, s);
+                }
+            }
+            case "message" -> {
+                // S139 (CG-E08): WaitsAndStartsRules checks the message, the identifying field and the values.
+                if (s.triggerErrorCode() != null || s.signal() != null || s.after() != null) {
                     mixed(rc, s);
                 }
             }
@@ -342,12 +349,14 @@ final class ScopeRules {
             String key = switch (s.triggerType()) {
                 case "error" -> "error:" + Objects.requireNonNullElse(s.triggerErrorCode(), "*");
                 case "signal" -> "signal:" + s.signal();
+                case "message" -> "message:" + s.message();
                 default -> null;
             };
             if (key != null && seen.putIfAbsent(key, s.label()) != null) {
                 rc.issues().blocker("WF_SUBPROCESS_TRIGGER_DUPLICATE", s.path() + "/trigger", null, null, "The handlers "
                         + q(seen.get(key)) + " and " + q(s.label()) + " start on the same "
-                        + (key.startsWith("error") ? "error" : "signal") + ". Keep one of them.");
+                        + (key.startsWith("error") ? "error" : key.startsWith("message") ? "message" : "signal")
+                        + ". Keep one of them.");
             }
         }
     }

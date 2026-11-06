@@ -865,7 +865,7 @@
       ]
     },
     "async": {
-      "description": "Declaration only in this version (CG-W02 executes it): the remote system answers with an accepted status and a status location that a read-only operation follows. The status URL must stay inside the binding.",
+      "description": "Start and follow up (CG-W02, docs/build/S133): the remote system answers with an accepted status and a status location (a header or a body value). Accepted statuses count as success. The location must have the binding's scheme, host, port and base path (else STATUS_URL_OUTSIDE_BINDING) and match the status operation's path template; its path parameters become the results /@async/<name>, which a Check until done on statusOperation maps in.",
       "type": "object",
       "properties": {
         "acceptedStatuses": {

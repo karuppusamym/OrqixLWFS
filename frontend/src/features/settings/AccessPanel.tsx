@@ -51,6 +51,8 @@ const PERMISSION_HELP: Record<GrantPermission, string> = {
   'job.work': 'Can take and complete jobs for external workers',
   'workflow.approve-promotion': 'Can approve or reject requests to promote a release into this workspace',
   'agent.approve-write-tool': 'Can approve or revoke the write tools an AI agent may use in a workflow (never for their own requests)',
+  'connector.manage': 'Can import, install, upgrade and retire connector packages and set up their triggers',
+  'connector.approve': 'Can approve connector packages another person imported (the exact package reviewed)',
 }
 const PERMISSIONS = Object.keys(PERMISSION_HELP) as GrantPermission[]
 

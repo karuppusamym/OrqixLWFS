@@ -1,0 +1,145 @@
+{
+  "key": "it-access-request",
+  "label": "IT access request",
+  "description": "Raises an incident for the service desk, waits for ServiceNow's answer (business rule webhook, with a check every 2 hours as a safety net, at most 5 days), confirms the outcome in ServiceNow and tells the requester. Canceled incidents take the cancelled path. Add an approval step before Raise when your process needs one.",
+  "workflow": {
+    "schemaVersion": "0.1",
+    "workflowKey": "it-access-request",
+    "name": "IT access request",
+    "metadata": {
+      "description": "Access requests fulfilled by the IT service desk in ServiceNow (connector package com.orqix.servicenow-itsm).",
+      "tags": ["servicenow", "itsm", "access"]
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accessTo", "justification", "urgency"],
+      "properties": {
+        "accessTo": { "type": "string", "title": "What do you need access to?", "minLength": 3, "maxLength": 160 },
+        "justification": { "type": "string", "title": "Why do you need it?", "minLength": 3, "maxLength": 4000 },
+        "urgency": { "type": "string", "title": "Urgency", "enum": ["1", "2", "3"] }
+      }
+    },
+    "inputUi": { "order": ["accessTo", "justification", "urgency"], "widgets": {} },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "incidentNumber": { "type": "string", "title": "Incident", "maxLength": 40 },
+        "closeCode": { "type": "string", "title": "Close code", "maxLength": 80 }
+      }
+    },
+    "triggers": ["manual", "api"],
+    "decisions": [],
+    "execution": { "maxConcurrentRuns": 100, "maxAttempts": 3, "retryDelaySeconds": 30 },
+    "security": { "selfApproval": "deny" },
+    "dependencies": { "connections": [{ "key": "servicenow-itsm", "definitionVersion": 1 }] },
+    "outputMapping": {
+      "incidentNumber": { "fieldRef": "/steps/raiseIncident/incidentNumber", "required": false },
+      "closeCode": { "fieldRef": "/steps/waitOutcome/closeCode", "required": false }
+    },
+    "nodes": [
+      { "id": "start", "type": "start", "label": "Access requested", "config": {} },
+      {
+        "id": "raiseIncident",
+        "type": "http",
+        "label": "Raise an incident in ServiceNow",
+        "config": {
+          "connectionRef": "servicenow-itsm",
+          "operation": "createIncident",
+          "inputMapping": {
+            "shortDescription": "/input/accessTo",
+            "description": "/input/justification",
+            "urgency": "/input/urgency",
+            "impact": "/input/urgency"
+          },
+          "resultMapping": {
+            "incidentNumber": "/result/number",
+            "incidentSysId": "/result/sys_id",
+            "correlationId": "/result/correlation_id"
+          },
+          "timeoutSeconds": 20
+        }
+      },
+      {
+        "id": "waitOutcome",
+        "type": "waitForMessage",
+        "label": "Wait for the service desk",
+        "config": {
+          "message": "servicenow-incident-updated",
+          "correlationField": "/steps/raiseIncident/correlationId",
+          "timeoutAfter": "P5D",
+          "payload": [
+            { "name": "state", "type": "string", "title": "State", "required": true },
+            { "name": "closeCode", "type": "string", "title": "Close code" },
+            { "name": "incidentNumber", "type": "string", "title": "Incident" }
+          ],
+          "fallbackCheck": {
+            "connectionRef": "servicenow-itsm",
+            "operation": "getIncident",
+            "inputMapping": { "sysId": "/steps/raiseIncident/incidentSysId" },
+            "resultMapping": { "state": "/result/state", "closeCode": "/result/close_code", "incidentNumber": "/result/number" },
+            "timeoutSeconds": 20,
+            "every": "PT2H",
+            "until": { "fieldRef": "/steps/waitOutcome/state", "operator": "in", "value": ["6", "7", "8"] }
+          }
+        }
+      },
+      {
+        "id": "confirmOutcome",
+        "type": "http",
+        "label": "Confirm the outcome in ServiceNow",
+        "config": {
+          "connectionRef": "servicenow-itsm",
+          "operation": "getIncident",
+          "inputMapping": { "sysId": "/steps/raiseIncident/incidentSysId" },
+          "resultMapping": { "state": "/result/state" },
+          "timeoutSeconds": 20,
+          "poll": {
+            "every": "PT1M",
+            "until": { "fieldRef": "/steps/confirmOutcome/state", "operator": "in", "value": ["6", "7"] },
+            "failWhen": { "fieldRef": "/steps/confirmOutcome/state", "operator": "eq", "value": "8" },
+            "giveUpAfter": "PT1H",
+            "onCheckError": { "maxConsecutive": 5, "then": "needsAttention" },
+            "finalCheckAtDeadline": true,
+            "showWhileWaiting": ["state"]
+          }
+        }
+      },
+      {
+        "id": "notifyGranted",
+        "type": "notification",
+        "label": "Tell the requester access was granted",
+        "config": { "channel": "inApp", "recipient": "initiator", "message": "The service desk resolved your access request." }
+      },
+      { "id": "granted", "type": "end", "label": "Access granted", "config": { "businessOutcome": "Access granted", "outcomeKind": "success" } },
+      {
+        "id": "notifyCancelled",
+        "type": "notification",
+        "label": "Tell the requester IT cancelled it",
+        "config": { "channel": "inApp", "recipient": "initiator", "message": "IT cancelled your request in ServiceNow." }
+      },
+      { "id": "cancelled", "type": "end", "label": "Cancelled by IT", "config": { "businessOutcome": "Cancelled by IT", "outcomeKind": "rejected" } },
+      {
+        "id": "notifyNoAnswer",
+        "type": "notification",
+        "label": "Tell the requester there is no answer yet",
+        "config": { "channel": "inApp", "recipient": "initiator", "message": "The service desk has not answered within 5 working days; the service desk lead will follow up." }
+      },
+      { "id": "noAnswer", "type": "end", "label": "No answer in time", "config": { "businessOutcome": "No answer in time", "outcomeKind": "rejected" } },
+      { "id": "notConfirmed", "type": "end", "label": "Not confirmed", "config": { "businessOutcome": "Not confirmed", "outcomeKind": "rejected" } }
+    ],
+    "transitions": [
+      { "id": "t1", "from": "start", "to": "raiseIncident", "on": "next" },
+      { "id": "t2", "from": "raiseIncident", "to": "waitOutcome", "on": "next" },
+      { "id": "t3", "from": "waitOutcome", "to": "confirmOutcome", "on": "next", "label": "ServiceNow answered" },
+      { "id": "t4", "from": "waitOutcome", "to": "notifyNoAnswer", "on": "timedOut", "label": "No answer in 5 days" },
+      { "id": "t5", "from": "confirmOutcome", "to": "notifyGranted", "on": "next", "label": "Resolved" },
+      { "id": "t6", "from": "confirmOutcome", "to": "notifyCancelled", "on": "failed", "label": "Canceled" },
+      { "id": "t7", "from": "confirmOutcome", "to": "notConfirmed", "on": "timedOut", "label": "Still open after an hour" },
+      { "id": "t8", "from": "notifyGranted", "to": "granted", "on": "next" },
+      { "id": "t9", "from": "notifyCancelled", "to": "cancelled", "on": "next" },
+      { "id": "t10", "from": "notifyNoAnswer", "to": "noAnswer", "on": "next" }
+    ]
+  }
+}

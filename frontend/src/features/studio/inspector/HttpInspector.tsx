@@ -21,6 +21,8 @@ import { CallFailureErrorFields, UndoFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
 import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
 import { PollFields } from './PollFields'
+import { Button } from '@/components/ui/button'
+import { asyncResultNames, callAndWait, type AsyncDeclaration, type AsyncOperation } from '../model/packageSteps'
 import { applyDocumentReference } from '../model/documentReference'
 import type { DocumentOperation } from '@/features/settings/DocumentVersionPicker'
 
@@ -42,6 +44,8 @@ interface OperationDoc extends V1Operation {
   maxTimeoutSeconds: number
   /** Present on operations of an agent connection (S13). */
   agent?: AgentSpec
+  /** CG-W02 (S133): the operation answers "accepted" and the work finishes later. */
+  async?: AsyncDeclaration
 }
 
 function compatible(source: FieldInfo['type'], target: ScalarSchema['type']): boolean {
@@ -97,7 +101,23 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
   }
 
   // S130: nested values, lists of rows, lists of single values and response headers (flat v0 answers: top-level values).
-  const candidates = useMemo(() => resultCandidates(operation), [operation])
+  const candidates = useMemo(() => [
+    ...resultCandidates(operation),
+    // CG-W02: the status reference of an accepted answer (a path parameter of the status operation).
+    ...(operation?.async ? asyncResultNames((operationDocs ?? {}) as Record<string, AsyncOperation>, operationName).map((name) => ({
+      pointer: `/@async/${name}`, label: `Status reference ${name}`, kind: 'value' as const, name, type: 'string' as const,
+    })) : []),
+  ], [operation, operationDocs, operationName])
+  const waitForCompletion = () => {
+    let added: string | undefined
+    store.getState().apply((d) => {
+      const result = callAndWait(d, node.id, (operationDocs ?? {}) as Record<string, AsyncOperation>)
+      if (!result.ok) return d
+      added = result.id
+      return result.def
+    })
+    if (added) store.getState().select({ type: 'node', id: added })
+  }
   const inputs = useMemo(() => operationInputs(operation), [operation])
   const resultByPointer = new Map(Object.entries(resultMapping).map(([name, pointer]) => [pointer, name]))
   const fileFields = useMemo(
@@ -270,6 +290,17 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
           </fieldset>
         ) : null}
       </InspectorSection>
+
+      {operation?.async && !readOnly ? (
+        <InspectorSection title="Finishes later">
+          <p className="text-sm text-muted-foreground">
+            {summary?.name ?? connectionKey} answers that it accepted the work and tells Orqix where to ask for the result. Orqix
+            only follows that address when it stays inside this connection&apos;s address.
+          </p>
+          <Button size="sm" data-testid="call-and-wait" onClick={waitForCompletion}>Call and wait for completion</Button>
+          <p className="text-xs text-muted-foreground">Adds a step after this one that keeps checking {operation.async.statusOperation} until the work is done. Then choose when it is done and draw its timed-out path.</p>
+        </InspectorSection>
+      ) : null}
 
       {operation && !operation.agent ? (
         <PollFields

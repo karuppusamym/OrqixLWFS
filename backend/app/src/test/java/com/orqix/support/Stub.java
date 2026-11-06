@@ -109,6 +109,7 @@ public final class Stub {
         BankingStub.reset();
         TrackingStub.reset();
         ServiceNowStub.reset();
+        ReportJobStub.reset();
         requireKey = true;
         ORDERS.clear();
         FAULTS.clear();
@@ -168,6 +169,9 @@ public final class Stub {
         }
         if (path.startsWith("/servicenow/")) {
             return ServiceNowStub.handle(request);
+        }
+        if (path.startsWith("/reports/")) {
+            return ReportJobStub.handle(request);
         }
         if (path.equals("/mcp") || path.startsWith("/mcp?")) {
             return McpStub.handle(request);

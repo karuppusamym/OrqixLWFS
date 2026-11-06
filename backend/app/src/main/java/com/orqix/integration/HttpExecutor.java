@@ -197,21 +197,45 @@ public class HttpExecutor {
         int status = response.statusCode();
         if (status == 401 && ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType())) && secrets != null)
             secrets.invalidateOAuth(target.workspaceId(), target.secretRef());
+        return handle(started, definition, operation, resultMapping, status, response.body(), response.headers(),
+                target.baseUrl(), request.uri());
+    }
+
+    /**
+     * Replays a recorded answer through exactly the response handling of a live call (CG-C03 fixtures, S133): status
+     * classification, error mapping, accepted asynchronous answers, the response schema and result mapping. Nothing is
+     * sent. {@code baseUrl} stands for the binding (status locations are checked against it).
+     */
+    public CallResult replay(ConnectionDefinition definition, Operation operation, int status, Map<String, String> headers,
+            byte[] body, Map<String, String> resultMapping, String baseUrl) {
+        Map<String, List<String>> map = new java.util.LinkedHashMap<>();
+        if (headers != null) {
+            headers.forEach((name, value) -> map.put(name, List.of(value)));
+        }
+        java.net.http.HttpHeaders recorded = java.net.http.HttpHeaders.of(map, (a, b) -> true);
+        URI request = URI.create(baseUrl.replaceAll("/+$", "") + operation.path().replaceAll("\\{[^}]*\\}", "x"));
+        return handle(System.nanoTime(), definition, operation, resultMapping, status, body, recorded, baseUrl, request);
+    }
+
+    /** Everything after the status line arrived; shared by live calls and fixture replays. */
+    private CallResult handle(long started, ConnectionDefinition definition, Operation operation,
+            Map<String, String> resultMapping, int status, byte[] responseBytes, java.net.http.HttpHeaders responseHeaders,
+            String baseUrl, URI requestUri) {
         if (status >= 300 && status < 400) {
             return finish(started, Observation.REDIRECT, operation.effectClass(), status, "UNEXPECTED_STATUS",
                     "HTTP " + status + " (redirects are not followed)", null, null);
         }
         if (status == 429) {
             return finish(started, Observation.DECLINED_429, operation.effectClass(), status, "RATE_LIMITED",
-                    "HTTP 429", null, null).withRetryAfter(retryAfter(response));
+                    "HTTP 429", null, null).withRetryAfter(retryAfter(responseHeaders));
         }
         if (status == 408 || status >= 500) {
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), status, "HTTP_" + status,
-                    "HTTP " + status, null, null).withRetryAfter(status == 503 ? retryAfter(response) : null);
+                    "HTTP " + status, null, null).withRetryAfter(status == 503 ? retryAfter(responseHeaders) : null);
         }
         if (status >= 400) {
             if (operation.v1()) {
-                CallResult mapped = mappedError(started, operation, status, response.body());
+                CallResult mapped = mappedError(started, operation, status, responseBytes);
                 if (mapped != null) {
                     return mapped;
                 }
@@ -219,16 +243,17 @@ public class HttpExecutor {
             return finish(started, Observation.CLIENT_ERROR, operation.effectClass(), status, "HTTP_" + status,
                     "HTTP " + status, null, null);
         }
-        // 2xx
-        if (!operation.successStatuses().contains(status)) {
+        // 2xx; an accepted status of an asynchronous operation (CG-W02) counts as success.
+        boolean accepted = AsyncStatus.accepted(operation, status);
+        if (!operation.successStatuses().contains(status) && !accepted) {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "UNEXPECTED_STATUS",
                     "HTTP " + status + " is not a declared success status", null, null);
         }
         if (operation.v1()) {
-            return mapV1Response(started, definition, operation, resultMapping, status, response.body(),
-                    response.headers());
+            return mapV1Response(started, definition, operation, resultMapping, status, responseBytes,
+                    responseHeaders, accepted ? new AsyncContext(baseUrl, requestUri) : null);
         }
-        return mapResponse(started, definition, operation, resultMapping, status, response.body());
+        return mapResponse(started, definition, operation, resultMapping, status, responseBytes);
     }
 
     /** v1 error mapping: a declared client error becomes a known rejection with the business code. */
@@ -256,9 +281,17 @@ public class HttpExecutor {
         return null;
     }
 
-    /** v1 results: JSON pointers with array indexes, /[*] list projections and /@headers/ response headers. */
+    /** Where an accepted asynchronous answer came from: the binding base and the request address (CG-W02). */
+    private record AsyncContext(String baseUrl, URI requestUri) {
+    }
+
+    /**
+     * v1 results: JSON pointers with array indexes, /[*] list projections, /@headers/ response headers and, for an
+     * accepted asynchronous answer, /@async/ status location values.
+     */
     private CallResult mapV1Response(long started, ConnectionDefinition definition, Operation operation,
-            Map<String, String> resultMapping, int status, byte[] bytes, java.net.http.HttpHeaders headers) {
+            Map<String, String> resultMapping, int status, byte[] bytes, java.net.http.HttpHeaders headers,
+            AsyncContext async) {
         if (bytes == null) {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_TOO_LARGE",
                     "Response body exceeds 1 MiB", null, null);
@@ -274,9 +307,20 @@ public class HttpExecutor {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
                     "Response body does not match the operation response schema", null, null);
         }
+        Map<String, JsonNode> asyncValues = null;
+        if (async != null) {
+            try {
+                asyncValues = AsyncStatus.read(async.baseUrl(), async.requestUri(), definition, operation, headers,
+                        responseBody);
+            } catch (AsyncStatus.Refused e) {
+                // The remote system accepted the work but pointed elsewhere: never followed, never retried blindly.
+                return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, e.code(),
+                        "HTTP " + status + ": " + e.getMessage(), null, null);
+            }
+        }
         V1Results.Mapped mapped;
         try {
-            mapped = V1Results.map(operation, resultMapping, responseBody, headers, json);
+            mapped = V1Results.map(operation, resultMapping, responseBody, headers, json, asyncValues);
         } catch (V1Results.Unresolved e) {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
                     "Result pointer " + e.getMessage() + " did not resolve", null, null);
@@ -336,8 +380,8 @@ public class HttpExecutor {
     }
 
     /** CG-W04 (S131): the server's {@code Retry-After}, seconds or an HTTP date; null when absent or not valid. */
-    private static Duration retryAfter(HttpResponse<?> response) {
-        return RetryAfter.parse(response.headers().firstValue("Retry-After").orElse(null), java.time.Instant.now());
+    private static Duration retryAfter(java.net.http.HttpHeaders headers) {
+        return RetryAfter.parse(headers.firstValue("Retry-After").orElse(null), java.time.Instant.now());
     }
 
     /** S5 section 6.2 classification table. */

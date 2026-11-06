@@ -1506,6 +1506,8 @@ function outputsTextOf(out: Record<string, unknown>): string {
 
 function pointer(body: unknown, ref: string): unknown {
   const tokens = parsePointer(ref)
+  // CG-W02 (S133): a dry run has no status location; like the Java simulator, the status reference is a sample value.
+  if (tokens?.length === 2 && tokens[0] === '@async') return `sample-${tokens[1]}`
   let current: unknown = body
   for (const token of tokens ?? []) {
     current = current !== null && typeof current === 'object' && !Array.isArray(current) ? (current as Record<string, unknown>)[token] : undefined

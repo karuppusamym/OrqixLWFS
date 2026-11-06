@@ -361,6 +361,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
+        // S133: package versions are organization assets; a foreign caller is refused on the workspace before any lookup.
+        ids.put("packageVersionId", UUID.randomUUID().toString());
+        ids.put("packageTriggerId", UUID.randomUUID().toString());
+        ids.put("templateKey", "it-access-request");
         ids.put("writeId", UUID.randomUUID().toString());
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
@@ -567,6 +571,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",
                     Map.of("bindings", List.of(), "actions", List.of()), "height", 120);
             case "decideUiExtensionVersion" -> Map.of("decision", "approve", "note", "Foreign attempt", "expectedStatus", "pending");
+            case "importConnectorPackage" -> Map.of("archive", "UEsDBBQAAAAIAA==");
+            case "decideConnectorPackage" -> Map.of("decision", "approve", "sha256", "0".repeat(64), "note", "Foreign",
+                    "expectedRevision", 1);
+            case "retireConnectorPackage" -> Map.of("reason", "Foreign attempt", "expectedRevision", 1);
+            case "createWorkflowFromPackageTemplate" -> Map.of("key", "foreign-package-wf", "name", "Foreign");
+            case "createPackageTrigger" -> Map.of("packageId", "com.orqix.servicenow-itsm", "triggerKey", "incident-updated",
+                    "secretRef", "foreign-hook");
+            case "updatePackageTrigger" -> Map.of("secretRef", "foreign-hook", "enabled", false, "expectedVersion", 1);
+            case "receivePackageTriggerEvent" -> Map.of("sys_id", "x");
             default -> null;
         };
     }
@@ -585,7 +598,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

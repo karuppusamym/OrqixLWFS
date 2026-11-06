@@ -305,7 +305,7 @@ final class BindingRules {
             if (Connections.responseList(operation, e.getValue()) != null) {
                 continue;
             }
-            Connections.ResponseScalar scalar = Connections.responseScalar(operation, e.getValue());
+            Connections.ResponseScalar scalar = rc.connections().result(n.connectionRef(), n.operation(), e.getValue());
             if (scalar == null) {
                 rc.issues().blocker("WF_RESULT_POINTER_UNKNOWN", path, n.id(), null, "The response of " + op
                         + " has no single value at " + e.getValue() + ".");

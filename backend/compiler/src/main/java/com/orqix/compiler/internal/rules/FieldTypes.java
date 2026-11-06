@@ -375,7 +375,7 @@ public final class FieldTypes {
                     : null, false, null, null);
             return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, item), h, key);
         }
-        Connections.ResponseScalar scalar = Connections.responseScalar(operation, pointer);
+        Connections.ResponseScalar scalar = connections.result(h.connectionRef(), h.operation(), pointer);
         if (scalar == null) {
             return new Indeterminate();
         }

@@ -171,6 +171,42 @@ public class WorkflowService {
         return view(store.workflow(workspaceId, id).orElseThrow(), access);
     }
 
+    /**
+     * Creates a workflow from a starter workflow of an installed connector package (S133). The template's package
+     * connections are pinned to the versions installed in this workspace; the new draft is then edited and published
+     * like any other.
+     */
+    @Transactional
+    public CatalogDtos.WorkflowView createFromPackageTemplate(Caller caller, UUID workspaceId, UUID packageVersionId,
+            String templateKey, CatalogDtos.CreateWorkflowRequest request,
+            com.orqix.integration.ConnectorPackageTemplates packages) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        com.orqix.integration.ConnectorPackageTemplates.Starter starter = packages
+                .starterWorkflow(workspaceId, packageVersionId, templateKey).orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.WORKFLOW_EDIT, "createWorkflowFromPackageTemplate", false);
+        if (request.templateId() != null) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A package starter workflow takes no templateId.")
+                    .withFieldErrors(List.of(new ApiException.FieldError("/templateId", "not", "Leave templateId out")));
+        }
+        ObjectNode definition = (ObjectNode) json.parse(starter.definitionJson());
+        definition.put("workflowKey", request.key());
+        definition.put("name", request.name());
+        if (request.description() != null) {
+            ((ObjectNode) definition.withObjectProperty("metadata")).put("description", request.description());
+        }
+        UUID id = Ids.newId();
+        if (!store.insertWorkflow(id, workspaceId, request.key(), request.name(), request.description(), caller.subjectId())) {
+            throw new ApiException(ProblemCode.DUPLICATE_KEY, "A workflow with this key already exists.");
+        }
+        store.insertDraft(workspaceId, id, 1, json.write(definition), "0.1", caller.subjectId());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("key", request.key());
+        metadata.put("templateId", "package:" + starter.packageId() + "@" + starter.packageVersion() + "/" + templateKey);
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.created",
+                "workflow", id.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+        return view(store.workflow(workspaceId, id).orElseThrow(), access);
+    }
+
     @Transactional(readOnly = true)
     public CatalogDtos.WorkflowView getWorkflow(Caller caller, UUID workspaceId, UUID workflowId) {
         Visible visible = visible(caller, workspaceId, workflowId, "getWorkflow");

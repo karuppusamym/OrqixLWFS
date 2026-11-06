@@ -36,6 +36,7 @@ PERMISSION_QUALIFIERS = {
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
     "callbackToken",  # EX10 (S98): possession of a one-wait callback token; no session
     "extensionFileToken",  # UI02 (S116): a short-lived signed file path minted by the frame endpoint; no session
+    "packageTriggerVerification",  # CG-C05 (S133): the package trigger's HMAC, JWT or basic scheme; no session
 }
 # Free-text fragments allowed inside an x-orqix-permission value.
 PERMISSION_PHRASES = ("underlying action permission", "underlying read permission")

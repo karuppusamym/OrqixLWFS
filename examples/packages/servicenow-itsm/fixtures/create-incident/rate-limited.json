@@ -1,0 +1,12 @@
+{
+  "label": "Instance rate limit",
+  "connection": "servicenow-itsm",
+  "operation": "createIncident",
+  "response": {
+    "status": 429,
+    "headers": { "Retry-After": "30" },
+    "body": { "error": { "message": "Rate limit exceeded" } }
+  },
+  "resultMapping": { "incidentNumber": "/result/number" },
+  "expect": { "outcome": "retryable", "code": "RATE_LIMITED" }
+}

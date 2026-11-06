@@ -1303,8 +1303,13 @@ final class SimulationRun {
     }
 
     private static JsonNode pointer(JsonNode body, String pointer) {
+        List<String> tokens = JsonPointers.parse(pointer);
+        if (tokens.size() == 2 && com.orqix.compiler.ConnectionContracts.ASYNC_SEGMENT.equals(tokens.get(0))) {
+            // CG-W02: a dry run has no status location; the status reference is a sample value.
+            return F.textNode("sample-" + tokens.get(1));
+        }
         JsonNode current = body;
-        for (String token : JsonPointers.parse(pointer)) {
+        for (String token : tokens) {
             current = current == null ? null : current.get(token);
         }
         return current;

@@ -14,7 +14,7 @@ import org.flowable.engine.delegate.JavaDelegate;
 import org.flowable.engine.impl.util.CommandContextUtil;
 import org.springframework.stereotype.Component;
 
-import com.orqix.compiler.expr.Calculation;
+import com.orqix.compiler.Expressions;
 import com.orqix.runtime.internal.RunEvents;
 import com.orqix.shared.json.Json;
 
@@ -54,9 +54,9 @@ public class CalculateTaskDelegate implements JavaDelegate {
         Instant now = CommandContextUtil.getProcessEngineConfiguration().getClock().getCurrentTime().toInstant();
         ObjectNode outputs;
         try {
-            outputs = Calculation.run(config, types, ProcessData.input(execution, json),
+            outputs = Expressions.calculate(config, types, ProcessData.input(execution, json),
                     id -> ProcessData.step(execution, json, id).orElse(null), now);
-        } catch (Calculation.Failure f) {
+        } catch (Expressions.Failure f) {
             throw new IllegalStateException("EXPR_CALCULATION: " + element.getId() + " " + f.code() + ": " + f.getMessage());
         }
         execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(outputs));

@@ -9,6 +9,7 @@ import org.flowable.engine.delegate.DelegateExecution;
 import org.springframework.stereotype.Component;
 
 import com.orqix.compiler.ConditionMatcher;
+import tools.jackson.databind.JsonNode;
 import com.orqix.shared.json.Json;
 
 /**

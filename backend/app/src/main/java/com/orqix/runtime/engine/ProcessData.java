@@ -80,14 +80,11 @@ public final class ProcessData {
     public static JsonNode expression(VariableScope scope, Json json, String source, String typesBase64) {
         JsonNode types = CalculateTaskDelegate.base64(json, typesBase64);
         try {
-            Object value = com.orqix.compiler.expr.Expression.compile(source,
-                    com.orqix.compiler.expr.PinnedTypes.scope(types, java.util.Map.of()))
-                    .evaluate(com.orqix.compiler.expr.Values.of(input(scope, json),
-                            id -> step(scope, json, id).orElse(null), java.util.Map.of(),
-                            org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getClock()
-                                    .getCurrentTime().toInstant(), null));
-            return com.orqix.compiler.expr.Expression.toJson(value);
-        } catch (com.orqix.compiler.expr.ExpressionException e) {
+            return com.orqix.compiler.Expressions.evaluate(source, types, input(scope, json),
+                    id -> step(scope, json, id).orElse(null),
+                    org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getClock()
+                            .getCurrentTime().toInstant());
+        } catch (com.orqix.compiler.Expressions.Failure e) {
             throw new IllegalStateException("EXPR_EVALUATION: " + e.code() + ": " + e.getMessage());
         }
     }

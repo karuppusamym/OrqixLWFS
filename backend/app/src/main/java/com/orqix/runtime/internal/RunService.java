@@ -144,11 +144,14 @@ public class RunService {
                                 + "\" for you, and you are not allowed to start that workflow."));
             }
         }
+        // CG-F04 (S137): computed fields are recomputed here with the browser's engine; what was sent is replaced.
+        JsonNode input = com.orqix.compiler.FormComputation.apply(release.inputSchema(), release.inputUi(), request.input(),
+                java.time.Instant.now());
         List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
-                json.write(release.inputSchema()), json.write(request.input()),json.write(release.inputUi())));
+                json.write(release.inputSchema()), json.write(input),json.write(release.inputUi())));
         if (errors.isEmpty()) {
             // A "wait until a date" step cannot wait further than its horizon (S12 section 10).
-            errors.addAll(WaitDates.check(release.definition(), request.input(), WaitDates.today()));
+            errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
         }
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(
@@ -156,7 +159,7 @@ public class RunService {
                             .toList());
         }
         // Files chosen on the form (fields of format attachment): must be the caller's own and fit the field (S17).
-        RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), request.input());
+        RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), input);
         // Open-request limit (S101, S103): exact near the limit, without making far-off starts wait (RunQuota).
         if (!quota.hasRoom(workspaceId, workflow.id(), release.maxConcurrentRuns())) {
             throw new ApiException(ProblemCode.QUOTA_EXCEEDED, "Too many requests of this workflow are in progress.")
@@ -164,7 +167,7 @@ public class RunService {
         }
 
         runs.insert(runId, workspaceId, workflow.id(), release.id(), request.businessKey(), caller.subjectId(),
-                request.input());
+                input);
         Map<String, Object> started = new LinkedHashMap<>();
         started.put("releaseNumber", release.releaseNumber());
         started.put("businessKey", request.businessKey());
@@ -175,7 +178,7 @@ public class RunService {
         variables.put(ProcessData.RUN_ID, runId.toString());
         variables.put(ProcessData.WORKSPACE_ID, workspaceId.toString());
         variables.put(ProcessData.INITIATOR, caller.subjectId().toString());
-        variables.put(ProcessData.INPUT, json.write(request.input()));
+        variables.put(ProcessData.INPUT, json.write(input));
         String processInstanceId;
         try {
             processInstanceId = engine.startProcess(release.processDefinitionId(), access.workspace().engineTenantId(),
@@ -222,6 +225,7 @@ public class RunService {
             throw new ApiException(ProblemCode.NO_ACTIVE_RELEASE, "This workflow has not been published yet.");
         }
         ReleaseQueries.ReleaseView release = releases.require(workspaceId, workflow.activeReleaseId());
+        input = com.orqix.compiler.FormComputation.apply(release.inputSchema(), release.inputUi(), input, java.time.Instant.now());
         List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
                 json.write(release.inputSchema()), json.write(input), json.write(release.inputUi())));
         if (errors.isEmpty()) {

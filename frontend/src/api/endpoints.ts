@@ -214,6 +214,10 @@ export const validateDraft = (ws: string, workflowId: string, revision: number) 
     }),
   )
 
+/** CG-X01 (S137): the server's own check and evaluation of an expression, for the guided editor's preview. */
+export const evaluateExpression = (ws: string, body: S['ExpressionEvaluateRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/expressions/evaluate', { params: { path: { workspaceId: ws } }, body }))
+
 export const evaluateDecision = (ws: string, workflowId: string, decisionKey: string, body: S['DecisionEvaluateRequest']) =>
   call(
     api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/evaluate', {

@@ -50,6 +50,7 @@ tags:
   - name: Attachments
   - name: Cases
   - name: Views
+  - name: McpServer
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -6841,6 +6842,76 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/mcp-server:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [McpServer]
+      operationId: getMcpServer
+      summary: Whether AI assistants may use Orqix through MCP in this workspace (CG-M04, S136)
+      description: |
+        The Orqix MCP server (endpoint /mcp, Streamable HTTP, protocol 2025-11-25) lets an assistant act for the
+        signed-in person with that person's own permissions. It is off in every workspace until a workspace
+        administrator switches it on. The endpoint and protected resource metadata URLs are what an MCP client needs.
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The switch and the connection details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpServer' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [McpServer]
+      operationId: setMcpServer
+      summary: Switch the MCP server on or off for this workspace (S136)
+      description: |
+        Takes effect on the next MCP call on every replica (no cache). Switching off hides the workspace from MCP
+        clients at once (its tools disappear, calls answer like an unknown workspace) and pending confirmations can no
+        longer be confirmed. Setting the current value again changes nothing and writes no audit record.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: mcp.server.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetMcpServer' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpServer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/mcp-server/calls:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [McpServer]
+      operationId: listMcpCalls
+      summary: Recent MCP tool calls in this workspace, newest first (S136)
+      description: |
+        Read from the audit log (action mcp.tool-called): who called which tool, the step (read, prepare, confirm,
+        elicitation answer), the outcome and the IDs involved. Never arguments, values or results.
+      x-orqix-permission: workspace.manage-access
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Recent calls
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpCallList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/access:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -10656,6 +10727,48 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceFeatureState' }
+    McpServer:
+      type: object
+      additionalProperties: false
+      required: [enabled, endpoint, metadataUrl, audiences, callsPerMinute, confirmationSeconds, updatedAt, updatedBy]
+      properties:
+        enabled: { type: boolean, description: 'false until a workspace administrator switches it on' }
+        endpoint: { type: string, format: uri, description: 'The MCP endpoint (resource URI) to give an MCP client' }
+        metadataUrl: { type: string, format: uri, description: 'OAuth protected resource metadata (RFC 9728)' }
+        audiences: { type: array, items: { type: string }, description: 'Token audiences accepted besides the endpoint URI' }
+        callsPerMinute: { type: integer, minimum: 1, description: 'Tool calls one person may make per minute (per pod)' }
+        confirmationSeconds: { type: integer, minimum: 1, description: 'How long a prepared write can be confirmed' }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: 'null until first switched' }
+        updatedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+    SetMcpServer:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    McpCall:
+      type: object
+      additionalProperties: false
+      required: [occurredAt, actor, tool, step, outcome, errorCode, runId, taskId, workflowId, confirmationId]
+      properties:
+        occurredAt: { $ref: '#/components/schemas/Timestamp' }
+        actor: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        tool: { type: string, description: 'Tool name, or unknown for a name that is not an Orqix tool' }
+        step: { type: [string, 'null'], description: 'read, prepare, confirm, elicitationAccepted or elicitationDeclined' }
+        outcome: { type: string, description: 'success, confirmationRequired, replayed, declined, expired, rateLimited, denied or failed' }
+        errorCode: { type: [string, 'null'] }
+        runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        taskId: { type: [string, 'null'] }
+        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        confirmationId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+    McpCallList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/McpCall' }
     SetWorkspaceFeature:
       type: object
       additionalProperties: false

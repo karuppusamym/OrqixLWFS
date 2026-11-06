@@ -154,6 +154,17 @@ orqix:
     cache-ttl: 50s
   idempotency:
     retention: 30d
+  mcp:
+    # CG-M04 MCP server (docs/build/S136). Off in every workspace until a workspace administrator switches it on in
+    # Settings. Tokens must come from the issuer below and name this resource (resource-uri) or one of the audiences.
+    resource-uri: ${ORQIX_MCP_RESOURCE_URI:}
+    audiences: ${ORQIX_MCP_AUDIENCES:orqix-mcp}
+    issuer: ${ORQIX_MCP_ISSUER:${spring.security.oauth2.resourceserver.jwt.issuer-uri:}}
+    jwk-set-uri: ${ORQIX_MCP_JWK_SET_URI:${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}}
+    allowed-origins: ${ORQIX_MCP_ALLOWED_ORIGINS:}
+    calls-per-minute: 60
+    confirmation-ttl: 5m
+    elicitation-wait: 60s
   callbacks:
     # S104: closed callback waits are deleted after this (their tokens then answer 404); poll + resume calls per token
     # per minute on each pod.

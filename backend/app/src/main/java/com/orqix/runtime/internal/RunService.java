@@ -195,6 +195,42 @@ public class RunService {
         return new Started(summary(runs.find(workspaceId, runId).orElseThrow(), access), false);
     }
 
+    /**
+     * CG-M04 (S136): the checks of {@link #start} that need no write (visibility, workflow.start, active release, form
+     * validation, wait-date horizon), so an assistant can show a valid summary before the person confirms. The start
+     * itself checks everything again.
+     *
+     * @return the field errors, empty when the input would be accepted now
+     */
+    @Transactional(readOnly = true)
+    public List<ApiException.FieldError> checkStart(Caller caller, UUID workspaceId, UUID workflowId, JsonNode input) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        ReleaseQueries.WorkflowRef workflow = releases.workflow(workspaceId, workflowId).orElseThrow(ApiException::notFound);
+        if (!access.canStart(workflow.id())) {
+            if (!access.has(Permission.WORKFLOW_READ)) {
+                throw ApiException.notFound();
+            }
+            throw new ApiException(ProblemCode.FORBIDDEN);
+        }
+        if (input == null || !input.isObject()) {
+            throw ApiException.malformed("input must be a JSON object.");
+        }
+        if (Json.depth(input) > properties.limits().jsonMaxDepth()) {
+            throw ApiException.malformed("input is nested too deeply.");
+        }
+        if (workflow.activeReleaseId() == null) {
+            throw new ApiException(ProblemCode.NO_ACTIVE_RELEASE, "This workflow has not been published yet.");
+        }
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, workflow.activeReleaseId());
+        List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
+                json.write(release.inputSchema()), json.write(input), json.write(release.inputUi())));
+        if (errors.isEmpty()) {
+            errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
+        }
+        return errors.stream().map(e -> new ApiException.FieldError("/input" + e.pointer(), e.code(), e.message()))
+                .toList();
+    }
+
     // ---------------------------------------------------------------- lists
 
     @Transactional(readOnly = true)

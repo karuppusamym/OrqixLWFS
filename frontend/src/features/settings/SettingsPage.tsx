@@ -1,4 +1,4 @@
-import { Archive, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
+import { Archive, Bot, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -14,6 +14,7 @@ import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 import { FeaturesPanel } from './FeaturesPanel'
+import { McpServerPanel } from './McpServerPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -59,6 +60,11 @@ export function SettingsPage() {
               <ToggleRight className="size-4" aria-hidden="true" /> Features
             </TabsTrigger>
           ) : null}
+          {showAccess ? (
+            <TabsTrigger value="mcp">
+              <Bot className="size-4" aria-hidden="true" /> AI assistants
+            </TabsTrigger>
+          ) : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
@@ -101,6 +107,11 @@ export function SettingsPage() {
         {showAccess ? (
           <TabsContent value="features">
             <FeaturesPanel />
+          </TabsContent>
+        ) : null}
+        {showAccess ? (
+          <TabsContent value="mcp">
+            <McpServerPanel />
           </TabsContent>
         ) : null}
         {showAccess ? (

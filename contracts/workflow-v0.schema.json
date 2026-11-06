@@ -154,6 +154,10 @@
         ]
       }
     },
+    "exposeAsTool": {
+      "type": "boolean",
+      "description": "CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution."
+    },
     "nodes": {
       "type": "array",
       "minItems": 2,

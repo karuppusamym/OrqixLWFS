@@ -78,6 +78,10 @@ public class AuditWriter {
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
             // S127: workspace feature switches.
             Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
+            // CG-M04 (S136): MCP server switch and tool calls; tool name, step, outcome and ids only, never arguments.
+            Map.entry("mcp.server.updated", Set.of("enabled")),
+            Map.entry("mcp.tool-called", Set.of("tool", "step", "outcome", "errorCode", "confirmationId", "runId", "taskId",
+                    "workflowId", "messageId", "client")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
             // S126: case type drafts; the key and draft version only, never the model or its fields.
@@ -272,6 +276,12 @@ public class AuditWriter {
     /** Writes a denial in its own transaction; the denied command itself is rolled back. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void writeDenied(Entry entry) {
+        insert(entry);
+    }
+
+    /** Writes in its own transaction whatever the outcome (MCP tool calls: the call itself may have rolled back). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeSeparately(Entry entry) {
         insert(entry);
     }
 

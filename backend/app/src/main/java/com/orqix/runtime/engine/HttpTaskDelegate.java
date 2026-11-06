@@ -89,6 +89,8 @@ public class HttpTaskDelegate implements JavaDelegate {
                 : routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation, raise);
         if (recordedError != null)
             throw new BpmnError(recordedError);
+        extendJobLock(execution, dispatcher.leaseSeconds(workspaceId, connection, connectionVersion, operation,
+                timeoutSeconds));
         EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(workspaceId,
                 runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
                 results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution)));
@@ -116,6 +118,10 @@ public class HttpTaskDelegate implements JavaDelegate {
             }
             if (success.meta() != null) {
                 data.put("agent", success.meta());
+            }
+            if (success.facts() != null) {
+                // v1 (S130): pages read, lists cut at the bound, automatic lookup reconciliation.
+                success.facts().properties().forEach(e -> data.put(e.getKey(), e.getValue()));
             }
             events.append(workspaceId, runId, "EFFECT_SUCCEEDED", element.getId(), null, data);
             return;
@@ -160,15 +166,22 @@ public class HttpTaskDelegate implements JavaDelegate {
                 .param("node", element.getId()).param("occurrence", OCCURRENCE).query(Boolean.class).single();
         if (!recorded) return null;
         String kind = rejected ? "rejected" : "invalidResponse";
-        String message = rejected ? "The external system rejected this request." : "The read-only system returned an invalid response.";
+        // A v1 connection maps known client errors to business codes (S130); the code is a failure fact.
+        String failureCode = rejected && failed.errorCode() != null && !failed.errorCode().startsWith("HTTP_")
+                ? failed.errorCode() : "";
+        String message = failed.failureMessage() != null ? failed.failureMessage()
+                : rejected ? "The external system rejected this request." : "The read-only system returned an invalid response.";
         execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(json.object()
                 .put("failureKind", kind).put("failureHttpStatus", failed.httpStatus() == null ? 0 : failed.httpStatus())
-                .put("failureMessage", message)));
+                .put("failureMessage", message).put("failureCode", failureCode)));
         runs.mutate(workspaceId, runId, m -> { m.removeStep(element.getId()); m.settle(); });
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("connectionKey", connection); data.put("operation", operation); data.put("attempt", failed.attempt());
         data.put("httpStatus", failed.httpStatus()); data.put("classification", failed.classification());
         data.put("errorCode", failed.errorCode()); data.put("failureKind", kind); data.put("routed", true);
+        if (!failureCode.isEmpty()) {
+            data.put("failureCode", failureCode);
+        }
         if (!failurePath) {
             data.put("raisedError", code);
         }
@@ -189,7 +202,31 @@ public class HttpTaskDelegate implements JavaDelegate {
 
     private static boolean knownRejection(Integer status, String code) {
         return status != null && status >= 400 && status < 500 && status != 401 && status != 403 && status != 408
-                && status != 429 && ("HTTP_" + status).equals(code);
+                && status != 429 && (("HTTP_" + status).equals(code) || mappedCode(code));
+    }
+
+    /** A business code from a v1 connection's error mapping (S130); platform codes never look like this on a 4xx. */
+    private static boolean mappedCode(String code) {
+        return code != null && code.matches("^[A-Z][A-Z0-9_]{1,63}$") && !code.startsWith("HTTP_")
+                && !java.util.Set.of("UNEXPECTED_STATUS", "RESPONSE_INVALID", "RESPONSE_TOO_LARGE", "INVALID_REQUEST")
+                        .contains(code);
+    }
+
+    /**
+     * Long operations (up to 120 s), paginated reads and lookup reconciliation can need more time than the async job
+     * lock. The job row is re-locked inside this job transaction, so no other executor takes the job while the call
+     * runs (S130). Calls that fit in the lock change nothing.
+     */
+    private void extendJobLock(DelegateExecution execution, long seconds) {
+        long lock = properties.runtime().asyncJobLockTime().toSeconds();
+        if (seconds + 15 <= lock) {
+            return;
+        }
+        jdbc.sql("""
+                UPDATE act_ru_job SET lock_exp_time_ = now() + make_interval(secs => :seconds)
+                WHERE execution_id_ = :execution AND lock_owner_ = :owner
+                """).param("seconds", seconds + 30).param("execution", execution.getId())
+                .param("owner", properties.runtime().lockOwner()).update();
     }
 
     private static boolean knownInvalidRead(String effectClass, String code) {

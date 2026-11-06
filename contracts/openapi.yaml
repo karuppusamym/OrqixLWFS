@@ -6422,7 +6422,7 @@ paths:
               additionalProperties: false
               required: [definition]
               properties:
-                definition: { $ref: './connection-definition-v0.schema.json' }
+                definition: { $ref: '#/components/schemas/ConnectionDefinitionDocument' }
       responses:
         '201':
           description: Registered
@@ -9941,7 +9941,7 @@ components:
             required: [key, effectClass]
             properties:
               key: { type: string, minLength: 1, maxLength: 80 }
-              effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+              effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentNatural, nonIdempotent] }
               idempotencyHeader: { type: string, maxLength: 64 }
     OpenApiReviewResult:
       type: object
@@ -9950,7 +9950,7 @@ components:
       properties:
         definition:
           oneOf:
-            - $ref: './connection-definition-v0.schema.json'
+            - $ref: '#/components/schemas/ConnectionDefinitionDocument'
             - type: 'null'
         report:
           type: object
@@ -12660,7 +12660,7 @@ components:
         label: { type: string }
         connectionKey: { $ref: '#/components/schemas/Key' }
         operation: { type: string }
-        effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+        effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentByLookup, idempotentNatural, nonIdempotent] }
         state: { type: string, enum: [pending, inFlight, succeeded, retryableFailure, permanentFailure, unknown, notApplied] }
         attempts: { type: integer }
         lastHttpStatus: { type: [integer, 'null'] }
@@ -12843,17 +12843,28 @@ components:
             properties:
               name: { type: string }
               label: { type: string }
-              effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+              effectClass: { type: string, enum: [readOnly, idempotentWithKey, idempotentByLookup, idempotentNatural, nonIdempotent] }
               testable: { type: boolean }
     ConnectionDefinitionRecord:
       type: object
       required: [version, definition, definitionHash, createdAt, createdBy]
       properties:
         version: { type: integer }
-        definition: { $ref: './connection-definition-v0.schema.json' }
+        definition: { $ref: '#/components/schemas/ConnectionDefinitionDocument' }
         definitionHash: { type: string }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         createdBy: { $ref: '#/components/schemas/SubjectRef' }
+    # --- CG-C01 connection definition v1 (docs/build/S130-connection-definition-v1.md) ---
+    ConnectionDefinitionDocument:
+      description: >-
+        A connection definition version: schemaVersion 0.1 (http, agent, microsoftGraph) or 1.0 (http with path
+        templates, query encoders, headers, DELETE, nested, form, multipart and binary bodies, row lists, response
+        headers, pagination, error mapping, long operations, async declarations and lookup reconciliation).
+        Registration validates against the schema the schemaVersion names, then the CONN_V1_* rules.
+      oneOf:
+        - $ref: './connection-definition-v0.schema.json'
+        - $ref: './connection-definition-v1.schema.json'
+    # --- end CG-C01 ---
     ConnectionDetail:
       type: object
       required: [key, definitions, binding]

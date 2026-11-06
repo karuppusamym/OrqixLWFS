@@ -363,6 +363,13 @@ public final class FieldTypes {
         if (operation == null) {
             return new Indeterminate();
         }
+        Connections.ResponseList list = Connections.responseList(operation, pointer);
+        if (list != null) {
+            // A list of rows or of single values projected from the response (connection definition v1, S130).
+            FieldType item = new FieldType(list.itemKind(), list.itemKind() == FieldKind.STRING ? list.enumValues()
+                    : null, false, null, null);
+            return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, item), h, key);
+        }
         Connections.ResponseScalar scalar = Connections.responseScalar(operation, pointer);
         if (scalar == null) {
             return new Indeterminate();

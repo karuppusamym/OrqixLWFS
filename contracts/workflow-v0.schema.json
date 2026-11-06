@@ -1301,9 +1301,10 @@
               }
             },
             "timeoutSeconds": {
+              "description": "Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long).",
               "type": "integer",
               "minimum": 1,
-              "maximum": 30
+              "maximum": 120
             },
             "compensates": {
               "description": "This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request.",

@@ -1193,6 +1193,19 @@ final class SimulationRun {
         return out;
     }
 
+    /** @return the business code a v1 connection maps this status to (S130), else empty */
+    private static String mappedErrorCode(JsonNode op, Integer httpStatus) {
+        if (httpStatus == null) {
+            return "";
+        }
+        for (JsonNode error : op.path("errors")) {
+            if (error.path("status").asInt() == httpStatus) {
+                return error.path("code").asString("");
+            }
+        }
+        return "";
+    }
+
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
         return knownFailure(n, details, description, reason, null);
@@ -1207,6 +1220,11 @@ final class SimulationRun {
         out.put("failureKind", kind);
         out.put("failureHttpStatus", httpStatus != null ? httpStatus : "rejected".equals(kind) ? 400 : 0);
         out.put("failureMessage", message);
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        if (op != null && op.has("errors")) {
+            // v1 error mapping (S130); v0 traces keep their shape.
+            out.put("failureCode", mappedErrorCode(op, httpStatus));
+        }
         steps.put(n.id(), out);
         details.put("routed", true);
         Transition route = next(n, Route.FAILED);

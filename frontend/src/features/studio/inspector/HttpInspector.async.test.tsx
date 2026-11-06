@@ -20,7 +20,7 @@ function LiveInspector({ nodeId }: { nodeId: string }) {
 
 /** The ServiceNow example with attachFile declared asynchronous: 202 + Location of the incident (CG-W02). */
 function definitionWithAsync() {
-  const copy = JSON.parse(JSON.stringify(serviceNow)) as typeof serviceNow & { operations: Record<string, Record<string, unknown>> }
+  const copy = JSON.parse(JSON.stringify(serviceNow)) as { operations: Record<string, Record<string, unknown> & { label: string; effectClass: string; testable: boolean }> }
   copy.operations.attachFile!.async = { acceptedStatuses: [202], statusFrom: { header: 'Location' }, statusOperation: 'getIncident', pollIntervalSeconds: 60 }
   return copy
 }

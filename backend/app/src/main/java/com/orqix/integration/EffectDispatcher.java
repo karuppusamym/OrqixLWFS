@@ -558,7 +558,7 @@ public class EffectDispatcher {
         return new HttpExecutor.CallResult(HttpExecutor.Outcome.SUCCEEDED, HttpExecutor.Observation.SUCCESS,
                 first.httpStatus(), null, first.detail() + "; " + pages + " page(s)", null, result,
                 first.remoteReference(), first.durationMs(), new HttpExecutor.Page(facts, null, List.copyOf(truncated)),
-                null);
+                null, null);
     }
 
     private static void trimLists(ObjectNode result, Map<String, String> mapping, int maxItems, List<String> truncated) {

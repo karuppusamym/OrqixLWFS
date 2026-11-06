@@ -103,6 +103,7 @@ public final class Stub {
     public static synchronized void reset() {
         GraphStub.reset();
         BankingStub.reset();
+        TrackingStub.reset();
         requireKey = true;
         ORDERS.clear();
         FAULTS.clear();
@@ -149,6 +150,9 @@ public final class Stub {
         }
         if (path.startsWith("/banking/")) {
             return BankingStub.handle(request);
+        }
+        if (path.startsWith("/tracking/")) {
+            return TrackingStub.handle(request);
         }
         if (path.equals("/mcp") || path.startsWith("/mcp?")) {
             return McpStub.handle(request);

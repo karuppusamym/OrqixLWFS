@@ -35,6 +35,7 @@ tags:
   - name: Workflows
   - name: Releases
   - name: Runs
+  - name: Waits
   - name: Tasks
   - name: Notifications
   - name: Connections
@@ -3823,6 +3824,115 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ------------------------------------------------------------------ Waits (docs/build/S129, CG-W01, CG-W03, CG-W08)
+  /workspaces/{workspaceId}/runs/{runId}/waits:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Waits]
+      operationId: listRunWaits
+      summary: What the request is waiting for, one entry per open wait (docs/build/S129)
+      description: |
+        Uniform across wait kinds (approval, timer, message, callback, poll, external job, child request, signal). A
+        "Keep checking until..." step or a safety-net check carries its checks; ended checks of the request are listed
+        separately. Values the step shows while waiting are included only for callers who may read the request data.
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200': { description: Open waits, content: { application/json: { schema: { $ref: '#/components/schemas/RunWaitList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/waits:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Waits]
+      operationId: searchWaits
+      summary: Open waits across the workspace, oldest first ("waiting on connection X for longer than Y")
+      x-orqix-permission: run.read
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] } }
+        - { name: connectionKey, in: query, required: false, schema: { type: string, maxLength: 64 } }
+        - { name: waitingLongerThan, in: query, required: false, description: 'ISO-8601 duration, for example PT1H or P2D', schema: { type: string, maxLength: 24 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200': { description: Matching waits, content: { application/json: { schema: { $ref: '#/components/schemas/WaitSearchResult' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/check-now:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: checkWaitNow
+      summary: Check now (at most once a minute; also restarts checks that stopped and need attention)
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.checked-now
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WaitActionRequest' } } } }
+      responses:
+        '200': { description: The check is due now, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/extend-deadline:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: extendWaitDeadline
+      summary: Extend the deadline (up to twice the authored time, never beyond 90 days from the start)
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.deadline-extended
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExtendWaitRequest' } } } }
+      responses:
+        '200': { description: The new deadline, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/stop:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Waits]
+      operationId: stopWaiting
+      summary: Stop waiting; a check-until step takes its timed-out path, a safety-net check simply stops
+      x-orqix-permission: run.operate
+      x-orqix-audit: poll.stopped
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WaitActionRequest' } } } }
+      responses:
+        '200': { description: Stopped, content: { application/json: { schema: { $ref: '#/components/schemas/PollCheck' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ------------------------------------------------------------------ end of Waits
 
   /workspaces/{workspaceId}/kafka-triggers:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -9484,6 +9594,93 @@ components:
         state: { type: string, const: resumed }
         resumedAt: { type: string, format: date-time }
         acceptedFields: { type: array, items: { type: string } }
+    # ---------------------------------------------------------------- Waits (docs/build/S129)
+    RunWait:
+      type: object
+      additionalProperties: false
+      required: [nodeId, kind, label, subject, since, nextCheckAt, dueAt, deadlineAt, attempts, correlationRef, connectionKey, check]
+      properties:
+        nodeId: { type: string }
+        kind: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] }
+        label: { type: string }
+        subject: { type: string, description: 'Plain language, for example "Order tracking to report that “Track the order” is done (state: pending)"' }
+        since: { type: string, format: date-time }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+        dueAt: { type: [string, 'null'], format: date-time }
+        deadlineAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0, description: Checks made so far (poll and safety-net checks) }
+        correlationRef: { type: [string, 'null'], description: Message name, signal or worker topic; never a request value }
+        connectionKey: { type: [string, 'null'] }
+        check: { oneOf: [{ $ref: '#/components/schemas/PollCheck' }, { type: 'null' }] }
+    PollCheck:
+      type: object
+      additionalProperties: false
+      required: [waitId, kind, state, checksDone, maxChecks, consecutiveErrors, startedAt, lastCheckedAt, lastHttpStatus,
+                 lastOutcome, deadlineAt, authoredDeadlineAt, extensionLimit, deadlineExtensions, shown, canOperate,
+                 checkNowAvailableAt, endedAt, endReason]
+      properties:
+        waitId: { type: string, format: uuid }
+        kind: { type: string, enum: [check, fallback], description: 'check: a "Keep checking until..." step; fallback: the safety-net check of a message wait' }
+        state: { type: string, enum: [waiting, checking, met, failed, timedOut, cancelled, attention] }
+        checksDone: { type: integer, minimum: 0 }
+        maxChecks: { type: integer, minimum: 1, maximum: 1000 }
+        consecutiveErrors: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time }
+        lastCheckedAt: { type: [string, 'null'], format: date-time }
+        lastHttpStatus: { type: [integer, 'null'] }
+        lastOutcome: { type: [string, 'null'], description: 'pending, done, failed or an error code such as HTTP_503' }
+        deadlineAt: { type: string, format: date-time }
+        authoredDeadlineAt: { type: string, format: date-time }
+        extensionLimit: { type: string, format: date-time }
+        deadlineExtensions: { type: integer, minimum: 0 }
+        shown: { type: [object, 'null'], maxProperties: 3, additionalProperties: { type: [string, number, boolean] }, description: Values shown while waiting; null without request-data access }
+        canOperate: { type: boolean }
+        checkNowAvailableAt: { type: [string, 'null'], format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+        endReason: { type: [string, 'null'] }
+    RunWaitList:
+      type: object
+      additionalProperties: false
+      required: [items, endedChecks]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RunWait' } }
+        endedChecks: { type: array, items: { $ref: '#/components/schemas/PollCheck' } }
+    WaitSearchItem:
+      type: object
+      additionalProperties: false
+      required: [runId, runReference, nodeId, kind, label, subject, since, nextCheckAt, deadlineAt, attempts, connectionKey]
+      properties:
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        kind: { type: string, enum: [approval, timer, message, callback, poll, externalJob, childRequest, signal] }
+        label: { type: string }
+        subject: { type: string }
+        since: { type: string, format: date-time }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+        deadlineAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0 }
+        connectionKey: { type: [string, 'null'] }
+    WaitSearchResult:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/WaitSearchItem' } }
+    WaitActionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ExtendWaitRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, extendBy]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        extendBy: { type: string, maxLength: 24, description: 'ISO-8601 duration, for example PT6H or P1D' }
+    # ---------------------------------------------------------------- end of Waits
     KafkaCluster:
       type: object
       additionalProperties: false
@@ -11083,6 +11280,17 @@ components:
               status: { type: integer, minimum: 200, maximum: 599, description: 'HTTP status of the mocked answer; default the first success status' }
               body: { type: [object, array], description: 'The full mocked response body, checked against the response schema of the operation' }
               delaySeconds: { type: integer, minimum: 0, maximum: 2592000, description: 'How long the answer takes; above the step time limit it is a timeout' }
+              checks:
+                type: array
+                minItems: 1
+                maxItems: 100
+                description: 'A step that keeps checking until done (docs/build/S129): the answers of its checks in order; the last one repeats'
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    result: { type: object, additionalProperties: true }
+                    failure: { type: string, enum: [unavailable, rejected] }
         workers:
           type: object
           description: By step ID of a Work by an external worker step. Default is a sample result.

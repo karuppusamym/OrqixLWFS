@@ -182,6 +182,14 @@ final class Conditions {
                     + " can also be reached when it is not. Use it only on the path after the approval.");
             return;
         }
+        if (producer instanceof Node.Http polled && polled.polls() && !FailureRules.isFailureOutput(r.key())
+                && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.NEXT, usedAt)) {
+            // S129: the mapped results are outputs only when the checks found the work done.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when the checks find the work done, and " + q(usedAt)
+                    + " can also be reached when they do not. Use it only on the path after the work is done.");
+            return;
+        }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
             boolean failureFact = FailureRules.isFailureOutput(r.key());
             if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,

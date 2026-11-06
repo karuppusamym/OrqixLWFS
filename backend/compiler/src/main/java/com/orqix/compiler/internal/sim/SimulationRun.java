@@ -744,6 +744,9 @@ final class SimulationRun {
     // ------------------------------------------------------------------ http
 
     private Transition http(Node.Http n) {
+        if (n.polls()) {
+            return polled(n);
+        }
         JsonNode s = scenario.path("calls").path(n.id());
         String failure = s.path("failure").asString(null);
         if (failure != null && !Set.of("rejected", "unavailable", "unknownOutcome", "timeout").contains(failure)) {
@@ -1026,6 +1029,168 @@ final class SimulationRun {
         }
         add(n, callText + " " + returns, d, out, t);
         return t;
+    }
+
+    /** Checks listed in the trace details; later ones are only counted. */
+    private static final int LISTED_CHECKS = 50;
+
+    /**
+     * A call that keeps checking until done (S129). The test may give a sequence of answers under
+     * {@code calls.<id>.checks} (each {@code {result}} or {@code {failure: "unavailable"|"rejected"}}); the last one
+     * repeats. Without a sequence the single answer ({@code result} or a sample) repeats. The checks follow the same
+     * jitter-free schedule as the runtime ({@link com.orqix.compiler.PollSchedule}) and report their simulated time.
+     */
+    private Transition polled(Node.Http n) {
+        Node.Poll p = n.poll();
+        JsonNode s = scenario.path("calls").path(n.id());
+        JsonNode checks = s.path("checks");
+        if (!checks.isMissingNode() && (!checks.isArray() || checks.isEmpty() || checks.size() > 100)) {
+            throw new IllegalArgumentException("calls." + n.id() + ".checks must list 1 to 100 answers");
+        }
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        Connections.Pinned pinned = connections.pinned(n.connectionRef());
+        String connName = pinned != null && pinned.status() == Connections.Status.OK
+                ? pinned.definition().path("name").asString(n.connectionRef()) : n.connectionRef();
+        com.orqix.compiler.PollSchedule schedule = schedule(p);
+        java.util.List<Long> offsets = schedule.offsets(Math.max(1, schedule.maxChecks()));
+        ObjectNode d = F.objectNode();
+        d.put("connection", n.connectionRef());
+        d.put("connectionName", connName);
+        d.put("operation", n.operation());
+        d.put("polling", true);
+        d.put("plannedChecks", offsets.size());
+        ArrayNode listed = d.putArray("checks");
+        String callText = Text.quote(n.label()) + " checks " + connName + " ("
+                + (op == null ? n.operation() : op.path("label").asString(n.operation())) + ")";
+        int errors = 0;
+        for (int i = 0; i < offsets.size(); i++) {
+            long at = offsets.get(i);
+            JsonNode answer = checks.isArray() ? checks.get(Math.min(i, checks.size() - 1)) : s;
+            String failure = answer.path("failure").asString(null);
+            ObjectNode entry = i < LISTED_CHECKS ? listed.addObject() : F.objectNode();
+            entry.put("check", i + 1);
+            entry.put("atSeconds", at);
+            Map<String, Object> out = failure == null ? mapped(n, answer, op) : null;
+            if (failure != null || out == null) {
+                String kind = failure == null ? "invalidResponse" : failure;
+                if (!Set.of("unavailable", "rejected", "invalidResponse").contains(kind)) {
+                    throw new IllegalArgumentException("calls." + n.id() + ".checks[" + i + "].failure must be"
+                            + " unavailable or rejected");
+                }
+                entry.put("outcome", kind);
+                if (!"unavailable".equals(kind)) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; at " + clock(at)
+                            + ("rejected".equals(kind) ? " the system refuses the request."
+                            : " the answer cannot be used.");
+                    String reason = "rejected".equals(kind) ? "EFFECT_REJECTED" : "RESPONSE_INVALID";
+                    if (next(n, Route.FAILED) != null) {
+                        return knownFailure(n, d, what, reason);
+                    }
+                    stallWith(n, what + " The request needs attention.", d, reason,
+                            "The checks stopped on an answer that cannot be used. Someone must fix the cause and retry.");
+                    return null;
+                }
+                errors++;
+                if (errors >= p.maxConsecutiveErrors()) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; the last "
+                            + Text.count(errors, "check") + " could not reach it.";
+                    if (p.errorsTimeOut()) {
+                        Transition t = next(n, Route.TIMED_OUT);
+                        add(n, what + " It gives up and takes the timed-out path.", d, null, t);
+                        return t;
+                    }
+                    stallWith(n, what + " The request needs attention until someone checks again.", d,
+                            "POLL_CHECKS_FAILING", "The checks failed " + errors + " times in a row.");
+                    return null;
+                }
+                continue;
+            }
+            errors = 0;
+            entry.set("values", DefaultWorkflowSimulator.json(out));
+            // The conditions read this answer as the step's own values; they become outputs only when done.
+            steps.put(n.id(), out);
+            boolean done = evaluate(p.until(), F.arrayNode());
+            boolean failed = !done && p.failWhen() != null && evaluate(p.failWhen(), F.arrayNode());
+            if (!done && !failed) {
+                entry.put("outcome", "pending");
+                steps.remove(n.id());
+                continue;
+            }
+            entry.put("outcome", done ? "done" : "failed");
+            d.put("checksMade", i + 1);
+            d.set("result", DefaultWorkflowSimulator.json(out));
+            String when = callText + " " + Text.count(i + 1, "time") + (i == 0 ? "" : " (" + pendingText(i) + ")")
+                    + ". At " + clock(at) + " the answer " + (done ? "says the work is done" : "says the work failed")
+                    + (out.isEmpty() ? "" : " and returns " + outputsText(out)) + ".";
+            if (done) {
+                Transition t = next(n, Route.NEXT);
+                add(n, when, d, out, t);
+                return t;
+            }
+            Map<String, Object> failure2 = new LinkedHashMap<>(out);
+            failure2.put("failureKind", "remoteFailed");
+            failure2.put("failureHttpStatus", 0);
+            failure2.put("failureMessage", "The other system reports that the work failed.");
+            steps.put(n.id(), failure2);
+            Transition t = next(n, Route.FAILED);
+            add(n, when + " The request takes the failed path.", d, failure2, t);
+            return t;
+        }
+        d.put("checksMade", offsets.size());
+        Transition t = next(n, Route.TIMED_OUT);
+        long deadline = offsets.isEmpty() ? 0 : offsets.get(offsets.size() - 1);
+        add(n, callText + " " + Text.count(offsets.size(), "time") + " until " + clock(deadline)
+                + "; the work is never done in this test, so it gives up and takes the timed-out path.", d, null, t);
+        return t;
+    }
+
+    /** @return the schedule the runtime would use for these settings */
+    static com.orqix.compiler.PollSchedule schedule(Node.Poll p) {
+        long every = com.orqix.compiler.PollSchedule.seconds(p.every());
+        long cap = com.orqix.compiler.PollSchedule.seconds(p.maxInterval());
+        long deadline = com.orqix.compiler.PollSchedule.seconds(p.giveUpAfter());
+        int worst = com.orqix.compiler.PollSchedule.worstCase(every, p.multiplier(), cap, deadline,
+                p.firstCheckImmediate(), p.finalCheckAtDeadline());
+        int max = Math.min(com.orqix.compiler.PollSchedule.CHECK_LIMIT, p.maxChecks() == null ? worst
+                : Math.min(worst, p.maxChecks()));
+        return new com.orqix.compiler.PollSchedule(every, p.multiplier(), cap, deadline, p.firstCheckImmediate(),
+                p.finalCheckAtDeadline(), max);
+    }
+
+    private static String pendingText(int pending) {
+        return pending == 1 ? "the first answer says not done yet" : "the first " + pending + " answers say not done yet";
+    }
+
+    /** @return elapsed simulated time as h:mm, or d days h:mm beyond a day */
+    private static String clock(long seconds) {
+        long days = seconds / 86_400;
+        long hours = seconds % 86_400 / 3600;
+        long minutes = seconds % 3600 / 60;
+        long secs = seconds % 60;
+        String hm = hours + ":" + (minutes < 10 ? "0" : "") + minutes + (secs == 0 ? "" : ":" + (secs < 10 ? "0" : "") + secs);
+        return days == 0 ? hm : Text.count(days, "day") + " " + hm;
+    }
+
+    /** @return the mapped values of one answer, or null when one is missing or not a single value */
+    private Map<String, Object> mapped(Node.Http n, JsonNode answer, JsonNode op) {
+        JsonNode response = answer.path("result");
+        if (!response.isObject()) {
+            response = op != null && op.path("responseSchema").isObject() ? sample(op.path("responseSchema"), "") : null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
+            JsonNode value = response == null ? null : pointer(response, e.getValue());
+            if (response == null) {
+                out.put(e.getKey(), "sample-" + e.getKey());
+            } else if (value == null || value.isNull() || value.isObject() || value.isArray()) {
+                return null;
+            } else {
+                out.put(e.getKey(), DefaultWorkflowSimulator.plain(value));
+            }
+        }
+        return out;
     }
 
     /** Only known rejections and unusable read-only answers take the authored failure route. */
@@ -1380,8 +1545,14 @@ final class SimulationRun {
         JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
         Integer delay = setting.isObject() ? Mocks.delay("messages." + n.id(), setting) : null;
         String choice = setting.isObject() ? setting.path("outcome").asString("arrives") : setting.asString("arrives");
-        if (!Set.of("arrives", "timeout").contains(choice)) {
-            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout");
+        if (!Set.of("arrives", "timeout").contains(choice) && !("fallback".equals(choice) && n.fallbackCheck() != null)) {
+            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout"
+                    + (n.fallbackCheck() != null ? ", or fallback for the safety-net check" : ""));
+        }
+        // S129: the safety-net check finds the work done before the message arrives; it completes the wait the same way.
+        boolean fallback = "fallback".equals(choice);
+        if (fallback) {
+            choice = "arrives";
         }
         if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
             throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
@@ -1443,9 +1614,18 @@ final class SimulationRun {
             d.put("arrived", true);
             d.set("payload", DefaultWorkflowSimulator.json(out));
             t = next(n, Route.NEXT);
-            sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
-                    + d.get("correlation").asString() + "."
-                    + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            if (fallback) {
+                d.put("resumedBy", "fallbackCheck");
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " does not come, but"
+                        + " the safety-net check every " + com.orqix.compiler.PollSchedule.describe(
+                                com.orqix.compiler.PollSchedule.seconds(n.fallbackCheck().every()))
+                        + " finds the work done, so the wait ends."
+                        + (out.isEmpty() ? "" : " The check returns " + outputsText(out) + ".");
+            } else {
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
+                        + d.get("correlation").asString() + "."
+                        + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            }
         }
         if (note != null) {
             d.put("note", note);

@@ -1,4 +1,5 @@
 import { isCalendarDate } from '@/lib/dates'
+import { describe as describePoll, offsets, scheduleOf, seconds as pollSeconds, type PollConfig } from '@/features/studio/model/pollSchedule'
 import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
 import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
@@ -17,9 +18,9 @@ import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue 
 
 export interface SimulationScenario {
   approvals?: Record<string, { outcome?: 'approve' | 'reject' | 'timeout'; reason?: string }>
-  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome' | 'timeout'; result?: Record<string, unknown>; status?: number; body?: unknown; delaySeconds?: number }>
+  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome' | 'timeout'; result?: Record<string, unknown>; status?: number; body?: unknown; delaySeconds?: number; checks?: Array<{ result?: Record<string, unknown>; failure?: 'unavailable' | 'rejected' }> }>
   children?: Record<string, { outcomes?: string[]; results?: Record<string, unknown> }>
-  messages?: Record<string, 'arrives' | 'timeout' | { outcome?: 'arrives' | 'timeout'; payload?: Record<string, unknown>; delaySeconds?: number }>
+  messages?: Record<string, 'arrives' | 'timeout' | { outcome?: 'arrives' | 'timeout' | 'fallback'; payload?: Record<string, unknown>; delaySeconds?: number }>
   workers?: Record<string, { result?: Record<string, unknown>; failure?: 'failed'; delaySeconds?: number }>
   adapters?: Record<string, { failure?: 'unavailable' | 'unknownOutcome'; rowCount?: number }>
   simulateChildren?: boolean
@@ -67,6 +68,16 @@ export const LIMITS =
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const quote = (t: string) => `"${t}"`
 const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`
+
+/** Elapsed simulated time as h:mm (and :ss), with days beyond a day; twin of SimulationRun.clock. */
+function clock(total: number): string {
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  const hm = `${hours}:${minutes < 10 ? '0' : ''}${minutes}${secs === 0 ? '' : `:${secs < 10 ? '0' : ''}${secs}`}`
+  return days === 0 ? hm : `${count(days, 'day')} ${hm}`
+}
 
 function group(plain: string): string {
   const negative = plain.startsWith('-')
@@ -619,6 +630,7 @@ class Run {
   // -------------------------------------------------------------------------------------------- http
 
   private http(n: WorkflowNode): Transition | null {
+    if (n.config.poll && typeof n.config.poll === 'object') return this.polled(n)
     const s = this.scenario.calls?.[n.id] ?? {}
     const failure = s.failure ?? null
     if (failure !== null && !['rejected', 'unavailable', 'unknownOutcome', 'timeout'].includes(failure)) throw new ScenarioError(`calls.${n.id}.failure must be rejected, unavailable, unknownOutcome or timeout`)
@@ -798,6 +810,107 @@ class Run {
     return t
   }
 
+  /**
+   * Twin of SimulationRun.polled (docs/build/S129): a call that keeps checking until done. The test may give a
+   * sequence of answers under calls.<id>.checks (the last one repeats); the checks follow the runtime's jitter-free
+   * schedule and report their simulated time.
+   */
+  private polled(n: WorkflowNode): Transition | null {
+    const p = n.config.poll as PollConfig
+    const s = this.scenario.calls?.[n.id] ?? {}
+    const checks = s.checks
+    if (checks !== undefined && (!Array.isArray(checks) || checks.length === 0 || checks.length > 100)) throw new ScenarioError(`calls.${n.id}.checks must list 1 to 100 answers`)
+    const connKey = String(n.config.connectionRef ?? '')
+    const operation = String(n.config.operation ?? '')
+    const conn = this.ctx.connection(connKey)
+    const op = conn?.operations[operation]
+    const connName = conn ? conn.name : connKey
+    const schedule = scheduleOf(p)
+    const at = schedule ? offsets(schedule, Math.max(1, schedule.maxChecks)) : [0]
+    const listed: Json[] = []
+    const d: Entry = { connection: connKey, connectionName: connName, operation, polling: true, plannedChecks: at.length, checks: listed }
+    const callText = `${quote(n.label)} checks ${connName} (${op ? (op.label ?? operation) : operation})`
+    const maxErrors = p.onCheckError?.maxConsecutive ?? 5
+    const resultMapping = (n.config.resultMapping ?? {}) as Record<string, string>
+    let errors = 0
+    for (let i = 0; i < at.length; i++) {
+      const when = at[i] as number
+      const answer = (checks ? checks[Math.min(i, checks.length - 1)] : s) as { result?: unknown; failure?: string }
+      const failure = answer.failure ?? null
+      const entry: Entry = { check: i + 1, atSeconds: when }
+      if (i < 50) listed.push(entry)
+      let out: Record<string, unknown> | null = null
+      if (failure === null) {
+        let response: unknown = answer.result && typeof answer.result === 'object' ? answer.result : null
+        if (response === null) response = op?.responseSchema && typeof op.responseSchema === 'object' ? sample(op.responseSchema, '') : null
+        out = {}
+        for (const key of Object.keys(resultMapping).sort()) {
+          if (response === null) {
+            out[key] = `sample-${key}`
+            continue
+          }
+          const value = pointer(response, resultMapping[key] as string)
+          if (value === undefined || value === null || typeof value === 'object') { out = null; break }
+          out[key] = value
+        }
+      }
+      if (failure !== null || out === null) {
+        const kind = failure ?? 'invalidResponse'
+        if (!['unavailable', 'rejected', 'invalidResponse'].includes(kind)) throw new ScenarioError(`calls.${n.id}.checks[${i}].failure must be unavailable or rejected`)
+        entry.outcome = kind
+        if (kind !== 'unavailable') {
+          d.checksMade = i + 1
+          const what = `${callText} ${count(i + 1, 'time')}; at ${clock(when)}${kind === 'rejected' ? ' the system refuses the request.' : ' the answer cannot be used.'}`
+          const reason = kind === 'rejected' ? 'EFFECT_REJECTED' : 'RESPONSE_INVALID'
+          if (this.next(n, 'failed') !== null) return this.knownFailure(n, d, what, reason, null)
+          this.stallWith(n, `${what} The request needs attention.`, d, reason, 'The checks stopped on an answer that cannot be used. Someone must fix the cause and retry.')
+          return null
+        }
+        errors++
+        if (errors >= maxErrors) {
+          d.checksMade = i + 1
+          const what = `${callText} ${count(i + 1, 'time')}; the last ${count(errors, 'check')} could not reach it.`
+          if (p.onCheckError?.then === 'timedOut') {
+            const t = this.next(n, 'timedOut')
+            this.add(n, `${what} It gives up and takes the timed-out path.`, d, null, t)
+            return t
+          }
+          this.stallWith(n, `${what} The request needs attention until someone checks again.`, d, 'POLL_CHECKS_FAILING', `The checks failed ${errors} times in a row.`)
+          return null
+        }
+        continue
+      }
+      errors = 0
+      entry.values = out as Json
+      this.steps.set(n.id, out)
+      const done = this.evaluate(p.until as Condition, [])
+      const failed = !done && p.failWhen !== undefined && this.evaluate(p.failWhen as Condition, [])
+      if (!done && !failed) {
+        entry.outcome = 'pending'
+        this.steps.delete(n.id)
+        continue
+      }
+      entry.outcome = done ? 'done' : 'failed'
+      d.checksMade = i + 1
+      d.result = out as Json
+      const sentence = `${callText} ${count(i + 1, 'time')}${i === 0 ? '' : ` (${i === 1 ? 'the first answer says not done yet' : `the first ${i} answers say not done yet`})`}. At ${clock(when)} the answer ${done ? 'says the work is done' : 'says the work failed'}${Object.keys(out).length === 0 ? '' : ` and returns ${outputsTextOf(out)}`}.`
+      if (done) {
+        const t = this.next(n, 'next')
+        this.add(n, sentence, d, out, t)
+        return t
+      }
+      const facts = { ...out, failureKind: 'remoteFailed', failureHttpStatus: 0, failureMessage: 'The other system reports that the work failed.' }
+      this.steps.set(n.id, facts)
+      const t = this.next(n, 'failed')
+      this.add(n, `${sentence} The request takes the failed path.`, d, facts, t)
+      return t
+    }
+    d.checksMade = at.length
+    const t = this.next(n, 'timedOut')
+    this.add(n, `${callText} ${count(at.length, 'time')} until ${clock(at[at.length - 1] ?? 0)}; the work is never done in this test, so it gives up and takes the timed-out path.`, d, null, t)
+    return t
+  }
+
   /** Twin of SimulationRun.knownFailure: a known rejection or unusable read-only answer takes the failure route. */
   private knownFailure(n: WorkflowNode, d: Entry, description: string, reason: string, httpStatus: number | null): Transition | null {
     const kind = reason === 'EFFECT_REJECTED' ? 'rejected' : 'invalidResponse'
@@ -936,7 +1049,11 @@ class Run {
     const setting = this.scenario.messages?.[n.id]
     const mock = setting !== null && typeof setting === 'object' ? setting : null
     let choice: string = mock ? (mock.outcome ?? 'arrives') : setting === undefined || setting === null ? 'arrives' : String(setting)
-    if (choice !== 'arrives' && choice !== 'timeout') throw new ScenarioError(`messages.${n.id} must be arrives or timeout`)
+    const safetyNet = n.config.fallbackCheck as { every?: string } | undefined
+    if (choice !== 'arrives' && choice !== 'timeout' && !(choice === 'fallback' && safetyNet)) throw new ScenarioError(`messages.${n.id} must be arrives or timeout${safetyNet ? ', or fallback for the safety-net check' : ''}`)
+    // S129: the safety-net check finds the work done before the message arrives; it completes the wait the same way.
+    const fallback = choice === 'fallback'
+    if (fallback) choice = 'arrives'
     const payloadMock = mock?.payload
     if (payloadMock !== undefined && (payloadMock === null || typeof payloadMock !== 'object' || Array.isArray(payloadMock))) throw new ScenarioError(`messages.${n.id}.payload must be an object`)
     const delay = mock ? mockDelay(`messages.${n.id}`, mock) : null
@@ -984,7 +1101,12 @@ class Run {
       d.arrived = true
       d.payload = { ...out } as Json
       t = this.next(n, 'next')
-      sentence = `${quote(n.label)}: the message ${quote(message)} arrives for ${correlation}.${Object.keys(out).length === 0 ? '' : ` In this test it carries ${outputsTextOf(out)}.`}`
+      if (fallback) {
+        d.resumedBy = 'fallbackCheck'
+        sentence = `${quote(n.label)}: the message ${quote(message)} does not come, but the safety-net check every ${describePoll(pollSeconds(safetyNet?.every))} finds the work done, so the wait ends.${Object.keys(out).length === 0 ? '' : ` The check returns ${outputsTextOf(out)}.`}`
+      } else {
+        sentence = `${quote(n.label)}: the message ${quote(message)} arrives for ${correlation}.${Object.keys(out).length === 0 ? '' : ` In this test it carries ${outputsTextOf(out)}.`}`
+      }
     }
     if (note !== null) {
       d.note = note

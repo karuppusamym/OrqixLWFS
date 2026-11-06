@@ -218,6 +218,10 @@ public class AuditWriter {
             Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
             // S98/S99 (EX10, IN05): ids, counts and codes only - never a token, its hash, a key or a payload value.
             Map.entry("callback.token-issued", Set.of("waitId", "runId", "nodeId", "validForSeconds")),
+            // S129: operator actions on checks; ids and the new deadline only, never shown values or the reason text.
+            Map.entry("poll.checked-now", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.deadline-extended", Set.of("waitId", "nodeId", "kind", "deadline")),
+            Map.entry("poll.stopped", Set.of("waitId", "nodeId", "kind")),
             Map.entry("callback.token-revoked", Set.of("waitId", "runId", "replaced")),
             Map.entry("callback.token-expired", Set.of("waitId", "runId")),
             Map.entry("callback.resumed", Set.of("waitId", "runId", "fieldCount", "channel")),

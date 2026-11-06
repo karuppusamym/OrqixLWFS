@@ -100,7 +100,14 @@ public sealed interface Node {
      */
     record Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
-                String compensates, boolean automaticUndo, String raiseOnFailure) implements Node {
+                String compensates, boolean automaticUndo, String raiseOnFailure, Poll poll) implements Node {
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates, boolean automaticUndo, String raiseOnFailure) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
+                    automaticUndo, raiseOnFailure, null);
+        }
+
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
             this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false,
@@ -124,6 +131,11 @@ public sealed interface Node {
         /** @return true for an automatic undo handler (S59): it has no paths and runs only from an Undo step */
         public boolean undoHandler() {
             return automaticUndo && compensates != null;
+        }
+
+        /** @return true when the step keeps checking until done (S129, {@code config.poll}) */
+        public boolean polls() {
+            return poll != null;
         }
 
         /**
@@ -300,8 +312,14 @@ public sealed interface Node {
      * token valid for that ISO-8601 duration.
      */
     record WaitForMessage(int index, String id, String label, String message, String correlationField,
-                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor)
+                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
+                          FallbackCheck fallbackCheck)
             implements Node {
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, callbackTokenValidFor, null);
+        }
 
         public WaitForMessage(int index, String id, String label, String message, String correlationField,
                 String timeoutAfter, java.util.List<PayloadField> payload) {
@@ -317,6 +335,25 @@ public sealed interface Node {
             return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
         }
     }
+
+    /**
+     * Keep checking until done (S129, CG-W01). Durations are ISO-8601 texts with seconds allowed; {@code multiplier}
+     * is 1 without backoff; {@code maxInterval} equals {@code every} without backoff. {@code maxChecks} is null when
+     * the designer left it to the computed worst case. {@code failWhen} may be null.
+     */
+    record Poll(boolean firstCheckImmediate, String every, java.math.BigDecimal multiplier, String maxInterval,
+                int jitterPercent, WorkflowDefinition.Condition until, WorkflowDefinition.Condition failWhen,
+                String giveUpAfter, Integer maxChecks, int maxConsecutiveErrors, boolean errorsTimeOut,
+                boolean finalCheckAtDeadline, java.util.List<String> showWhileWaiting,
+                tools.jackson.databind.JsonNode json) { }
+
+    /**
+     * Safety-net check of a message wait (S129, CG-W03): the same call settings as a "Call a system" step and a slow
+     * interval; when {@code until} holds the mapped fields complete the wait as its payload.
+     */
+    record FallbackCheck(String connectionRef, String operation, Map<String, String> inputMapping,
+                         Map<String, String> resultMapping, int timeoutSeconds, String every, int jitterPercent,
+                         WorkflowDefinition.Condition until, Integer maxChecks, tools.jackson.databind.JsonNode json) { }
 
     /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
     record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }

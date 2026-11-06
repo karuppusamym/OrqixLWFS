@@ -2918,6 +2918,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/waits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * What the request is waiting for, one entry per open wait (docs/build/S129)
+         * @description Uniform across wait kinds (approval, timer, message, callback, poll, external job, child request, signal). A
+         *     "Keep checking until..." step or a safety-net check carries its checks; ended checks of the request are listed
+         *     separately. Values the step shows while waiting are included only for callers who may read the request data.
+         */
+        get: operations["listRunWaits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/waits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Open waits across the workspace, oldest first ("waiting on connection X for longer than Y") */
+        get: operations["searchWaits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/check-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check now (at most once a minute; also restarts checks that stopped and need attention) */
+        post: operations["checkWaitNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/extend-deadline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extend the deadline (up to twice the authored time, never beyond 90 days from the start) */
+        post: operations["extendWaitDeadline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/waits/{waitId}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop waiting; a check-until step takes its timed-out path, a safety-net check simply stops */
+        post: operations["stopWaiting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/kafka-triggers": {
         parameters: {
             query?: never;
@@ -6800,6 +6907,99 @@ export interface components {
             resumedAt: string;
             acceptedFields: string[];
         };
+        RunWait: {
+            nodeId: string;
+            /** @enum {string} */
+            kind: "approval" | "timer" | "message" | "callback" | "poll" | "externalJob" | "childRequest" | "signal";
+            label: string;
+            /** @description Plain language, for example "Order tracking to report that “Track the order” is done (state: pending)" */
+            subject: string;
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            nextCheckAt: string | null;
+            /** Format: date-time */
+            dueAt: string | null;
+            /** Format: date-time */
+            deadlineAt: string | null;
+            /** @description Checks made so far (poll and safety-net checks) */
+            attempts: number;
+            /** @description Message name */
+            correlationRef: string | null;
+            connectionKey: string | null;
+            check: components["schemas"]["PollCheck"] | null;
+        };
+        PollCheck: {
+            /** Format: uuid */
+            waitId: string;
+            /**
+             * @description check: a "Keep checking until..." step; fallback: the safety-net check of a message wait
+             * @enum {string}
+             */
+            kind: "check" | "fallback";
+            /** @enum {string} */
+            state: "waiting" | "checking" | "met" | "failed" | "timedOut" | "cancelled" | "attention";
+            checksDone: number;
+            maxChecks: number;
+            consecutiveErrors: number;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            lastCheckedAt: string | null;
+            lastHttpStatus: number | null;
+            /** @description pending, done, failed or an error code such as HTTP_503 */
+            lastOutcome: string | null;
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            authoredDeadlineAt: string;
+            /** Format: date-time */
+            extensionLimit: string;
+            deadlineExtensions: number;
+            /** @description Values shown while waiting; null without request-data access */
+            shown: {
+                [key: string]: string | number | boolean;
+            } | null;
+            canOperate: boolean;
+            /** Format: date-time */
+            checkNowAvailableAt: string | null;
+            /** Format: date-time */
+            endedAt: string | null;
+            endReason: string | null;
+        };
+        RunWaitList: {
+            items: components["schemas"]["RunWait"][];
+            endedChecks: components["schemas"]["PollCheck"][];
+        };
+        WaitSearchItem: {
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            nodeId: string;
+            /** @enum {string} */
+            kind: "approval" | "timer" | "message" | "callback" | "poll" | "externalJob" | "childRequest" | "signal";
+            label: string;
+            subject: string;
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            nextCheckAt: string | null;
+            /** Format: date-time */
+            deadlineAt: string | null;
+            attempts: number;
+            connectionKey: string | null;
+        };
+        WaitSearchResult: {
+            items: components["schemas"]["WaitSearchItem"][];
+        };
+        WaitActionRequest: {
+            reason: string;
+        };
+        ExtendWaitRequest: {
+            reason: string;
+            /** @description ISO-8601 duration, for example PT6H or P1D */
+            extendBy: string;
+        };
         KafkaCluster: {
             name: string;
             allowedTopics: string[];
@@ -7937,6 +8137,14 @@ export interface components {
                     body?: Record<string, never> | unknown[];
                     /** @description How long the answer takes; above the step time limit it is a timeout */
                     delaySeconds?: number;
+                    /** @description A step that keeps checking until done (docs/build/S129): the answers of its checks in order; the last one repeats */
+                    checks?: {
+                        result?: {
+                            [key: string]: unknown;
+                        };
+                        /** @enum {string} */
+                        failure?: "unavailable" | "rejected";
+                    }[];
                 };
             };
             /** @description By step ID of a Work by an external worker step. Default is a sample result. */
@@ -10383,13 +10591,8 @@ export interface components {
         };
         /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
         errorCode: string;
-        messagePayloadField: {
-            name: string;
-            /** @enum {unknown} */
-            type: "string" | "number" | "integer" | "boolean" | "date";
-            title?: string;
-            required?: boolean;
-        };
+        /** @description ISO-8601 duration in days, hours, minutes and seconds (for example PT30S, PT15M, PT2H, P1D). Bounds are compiler rules (WF_POLL_INTERVAL, WF_POLL_BACKOFF, WF_POLL_DEADLINE). */
+        pollInterval: string;
         /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
         inCondition: {
             fieldRef: components["schemas"]["fieldRef"];
@@ -10415,6 +10618,69 @@ export interface components {
             all: components["schemas"]["decisionTerm"][];
         } | {
             any: components["schemas"]["decisionTerm"][];
+        };
+        pollSettings: {
+            /**
+             * @description immediate (default): the first check runs when the step starts; afterInterval: after 'every'.
+             * @enum {unknown}
+             */
+            firstCheck?: "immediate" | "afterInterval";
+            /** @description Interval before the second check, PT10S to P1D (WF_POLL_INTERVAL). */
+            every: components["schemas"]["pollInterval"];
+            backoff?: {
+                /** @description Each interval is the previous one times this, 1 to 4. */
+                multiplier: number;
+                /** @description Cap of the interval: at least 'every', at most P1D (WF_POLL_BACKOFF). */
+                maxInterval: components["schemas"]["pollInterval"];
+            };
+            /** @description Random spread of each interval, 0 to 30 percent; default 10. */
+            jitterPercent?: number;
+            /** @description True means the remote work is done (route next). Over this step's mapped result fields (/steps/<this step>/<field>) and request fields. */
+            until: components["schemas"]["decisionCondition"];
+            /** @description Optional: true means the remote work failed for good (route failed). Must not overlap 'until' (WF_POLL_OVERLAP). */
+            failWhen?: components["schemas"]["decisionCondition"];
+            /** @description Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE). */
+            giveUpAfter: components["schemas"]["pollInterval"];
+            /** @description Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case. */
+            maxChecks?: number;
+            onCheckError?: {
+                /** @description Consecutive failing checks (timeouts, 5xx, 429, unreachable) tolerated, 1 to 20; default 5. */
+                maxConsecutive: number;
+                /**
+                 * @description needsAttention (default): the request stops for an operator. timedOut: take the timedOut route.
+                 * @enum {unknown}
+                 */
+                then?: "needsAttention" | "timedOut";
+            };
+            /** @description One last check exactly at the deadline (default true). */
+            finalCheckAtDeadline?: boolean;
+            /** @description Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW). */
+            showWhileWaiting?: components["schemas"]["fieldKey"][];
+        };
+        messagePayloadField: {
+            name: string;
+            /** @enum {unknown} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            title?: string;
+            required?: boolean;
+        };
+        /** @description Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D. */
+        fallbackCheck: {
+            connectionRef: components["schemas"]["key"];
+            operation: string;
+            inputMapping: {
+                [key: string]: components["schemas"]["fieldRef"];
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+            timeoutSeconds: number;
+            /** @description Check interval, PT1M to P1D (WF_POLL_INTERVAL). */
+            every: components["schemas"]["pollInterval"];
+            /** @description True means the work is done; over the mapped fields as /steps/<this step>/<field> and request fields. */
+            until: components["schemas"]["decisionCondition"];
+            jitterPercent?: number;
+            maxChecks?: number;
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -10565,6 +10831,8 @@ export interface components {
                 compensation?: "manual" | "automatic";
                 /** @description Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it. */
                 raiseErrorOnFailure?: components["schemas"]["errorCode"];
+                /** @description Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set. */
+                poll?: components["schemas"]["pollSettings"];
             };
         } & components["schemas"]["nodeBase"];
         notificationNode: {
@@ -10676,6 +10944,8 @@ export interface components {
                 externalCallback?: {
                     tokenValidFor: components["schemas"]["duration"];
                 };
+                /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
+                fallbackCheck?: components["schemas"]["fallbackCheck"];
             };
         } & components["schemas"]["nodeBase"];
         endNode: {
@@ -11229,6 +11499,8 @@ export interface components {
                         compensation?: "manual" | "automatic";
                         /** @description Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it. */
                         raiseErrorOnFailure?: components["schemas"]["errorCode"];
+                        /** @description Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set. */
+                        poll?: components["schemas"]["pollSettings"];
                     };
                 } & components["schemas"]["nodeBase"];
                 notificationNode: {
@@ -11244,6 +11516,64 @@ export interface components {
                         message: string;
                     };
                 } & components["schemas"]["nodeBase"];
+                /** @description ISO-8601 duration in days, hours, minutes and seconds (for example PT30S, PT15M, PT2H, P1D). Bounds are compiler rules (WF_POLL_INTERVAL, WF_POLL_BACKOFF, WF_POLL_DEADLINE). */
+                pollInterval: string;
+                pollSettings: {
+                    /**
+                     * @description immediate (default): the first check runs when the step starts; afterInterval: after 'every'.
+                     * @enum {unknown}
+                     */
+                    firstCheck?: "immediate" | "afterInterval";
+                    /** @description Interval before the second check, PT10S to P1D (WF_POLL_INTERVAL). */
+                    every: components["schemas"]["pollInterval"];
+                    backoff?: {
+                        /** @description Each interval is the previous one times this, 1 to 4. */
+                        multiplier: number;
+                        /** @description Cap of the interval: at least 'every', at most P1D (WF_POLL_BACKOFF). */
+                        maxInterval: components["schemas"]["pollInterval"];
+                    };
+                    /** @description Random spread of each interval, 0 to 30 percent; default 10. */
+                    jitterPercent?: number;
+                    /** @description True means the remote work is done (route next). Over this step's mapped result fields (/steps/<this step>/<field>) and request fields. */
+                    until: components["schemas"]["decisionCondition"];
+                    /** @description Optional: true means the remote work failed for good (route failed). Must not overlap 'until' (WF_POLL_OVERLAP). */
+                    failWhen?: components["schemas"]["decisionCondition"];
+                    /** @description Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE). */
+                    giveUpAfter: components["schemas"]["pollInterval"];
+                    /** @description Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case. */
+                    maxChecks?: number;
+                    onCheckError?: {
+                        /** @description Consecutive failing checks (timeouts, 5xx, 429, unreachable) tolerated, 1 to 20; default 5. */
+                        maxConsecutive: number;
+                        /**
+                         * @description needsAttention (default): the request stops for an operator. timedOut: take the timedOut route.
+                         * @enum {unknown}
+                         */
+                        then?: "needsAttention" | "timedOut";
+                    };
+                    /** @description One last check exactly at the deadline (default true). */
+                    finalCheckAtDeadline?: boolean;
+                    /** @description Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW). */
+                    showWhileWaiting?: components["schemas"]["fieldKey"][];
+                };
+                /** @description Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D. */
+                fallbackCheck: {
+                    connectionRef: components["schemas"]["key"];
+                    operation: string;
+                    inputMapping: {
+                        [key: string]: components["schemas"]["fieldRef"];
+                    };
+                    resultMapping: {
+                        [key: string]: string;
+                    };
+                    timeoutSeconds: number;
+                    /** @description Check interval, PT1M to P1D (WF_POLL_INTERVAL). */
+                    every: components["schemas"]["pollInterval"];
+                    /** @description True means the work is done; over the mapped fields as /steps/<this step>/<field> and request fields. */
+                    until: components["schemas"]["decisionCondition"];
+                    jitterPercent?: number;
+                    maxChecks?: number;
+                };
                 /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
                 duration: string;
                 parallelSplitNode: {
@@ -11342,6 +11672,8 @@ export interface components {
                         externalCallback?: {
                             tokenValidFor: components["schemas"]["duration"];
                         };
+                        /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
+                        fallbackCheck?: components["schemas"]["fallbackCheck"];
                     };
                 } & components["schemas"]["nodeBase"];
                 messagePayloadField: {
@@ -16867,6 +17199,175 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listRunWaits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open waits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunWaitList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    searchWaits: {
+        parameters: {
+            query?: {
+                kind?: "approval" | "timer" | "message" | "callback" | "poll" | "externalJob" | "childRequest" | "signal";
+                connectionKey?: string;
+                /** @description ISO-8601 duration, for example PT1H or P2D */
+                waitingLongerThan?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching waits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitSearchResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    checkWaitNow: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The check is due now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PollCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    extendWaitDeadline: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtendWaitRequest"];
+            };
+        };
+        responses: {
+            /** @description The new deadline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PollCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    stopWaiting: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Stopped */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PollCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listKafkaTriggers: {

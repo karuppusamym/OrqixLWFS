@@ -49,6 +49,8 @@ public final class BpmnGenerator {
 
     /** Suffix of the error boundary event generated for a step that has a {@code failed} path (S32). */
     public static final String FAILED_BOUNDARY = "__failed";
+    /** S129: generated gateway after a call that keeps checking until done; routes on the outcome of the checks. */
+    public static final String POLL_ROUTE = "__pollRoute";
     /** ID of the one BPMN error definition used by every error boundary event (S32). */
     public static final String FAILED_ERROR = "error__stepFailed";
     /** Error code a delegate raises when a step fails for good and the workflow has a {@code failed} path. */
@@ -319,6 +321,7 @@ public final class BpmnGenerator {
                     x.attr("default", branchDefault.get(b.id()));
                 }
             }
+            case Node.Http h when h.polls() -> pollTask(x, map, d, h);
             case Node.Http h -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", h.id())
@@ -505,6 +508,14 @@ public final class BpmnGenerator {
                 if (m.callbackTokenValidFor() != null) {
                     // S98: only written when set, so BPMN of every other message wait is unchanged.
                     x.attr("callbackTokenValidFor", m.callbackTokenValidFor());
+                }
+                if (m.fallbackCheck() != null) {
+                    // S129: the safety-net check, as canonical JSON (only written when set).
+                    String version = Integer.toString(d.dependencies().stream()
+                            .filter(dep -> dep.key().equals(m.fallbackCheck().connectionRef())).findFirst()
+                            .orElseThrow().definitionVersion());
+                    x.attr("fallbackConnectionVersion", version)
+                            .attr("fallbackCheckBase64", base64Json(m.fallbackCheck().json()));
                 }
                 for (Node.PayloadField f : m.payload()) {
                     x.leaf("orqix", "field", ORQIX_NS)
@@ -884,7 +895,9 @@ public final class BpmnGenerator {
         map.transition(t.id(), t.id());
         Node from = nodes.get(t.from());
         String source = flowSource(from, t);
-        String expression = switch (t.on()) {
+        String expression = from instanceof Node.Http polled && polled.polls()
+                ? "${orqixRoute.polled(execution, '" + from.id() + "', '" + pollOutcome(t.on()) + "')}"
+                : switch (t.on()) {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
@@ -921,12 +934,67 @@ public final class BpmnGenerator {
     }
 
     /**
+     * A call that keeps checking until done (S129). Like an external worker step it is an asynchronous, triggerable
+     * service task: the delegate registers the wait and the poll scheduler triggers it with the outcome of the checks
+     * ({@code met}, {@code failed} or {@code timedOut}); a generated exclusive gateway then takes the matching path. The
+     * settings travel as canonical JSON so the BPMN round trip keeps them; the runtime reads them from the release.
+     */
+    private static void pollTask(XmlOut x, SourceMap map, WorkflowDefinition d, Node.Http h) {
+        x.open("", "serviceTask", BPMN_NS)
+                .attr("id", h.id())
+                .attr("name", h.label())
+                .attr("flowable", FLOWABLE_NS, "async", "true")
+                .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                .attr("flowable", FLOWABLE_NS, "triggerable", "true")
+                .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixPollTask}");
+        x.open("", "extensionElements", BPMN_NS);
+        x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+        String version = Integer.toString(d.dependencies().stream()
+                .filter(dep -> dep.key().equals(h.connectionRef())).findFirst().orElseThrow().definitionVersion());
+        x.open("orqix", "http", ORQIX_NS)
+                .attr("connection", h.connectionRef())
+                .attr("connectionVersion", version)
+                .attr("operation", h.operation())
+                .attr("timeoutSeconds", Integer.toString(h.timeoutSeconds()));
+        h.inputMapping().forEach((name, fieldRef) ->
+                x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+        h.resultMapping().forEach((name, pointer) ->
+                x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("pointer", pointer));
+        x.close();
+        x.leaf("orqix", "poll", ORQIX_NS).attr("configBase64", base64Json(h.poll().json()));
+        x.close();
+        x.close();
+        String gateway = h.id() + POLL_ROUTE;
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", h.id() + "__toPollRoute").attr("sourceRef", h.id())
+                .attr("targetRef", gateway);
+        map.node(h.id(), h.id() + "__toPollRoute");
+        x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", h.label() + ": outcome of the checks");
+        map.node(h.id(), gateway);
+    }
+
+    static String base64Json(tools.jackson.databind.JsonNode node) {
+        return java.util.Base64.getEncoder().encodeToString(com.orqix.compiler.internal.json.Jcs.canonicalize(node)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** @return the outcome a path of a polling call takes ({@code met}, {@code failed}, {@code timedOut}) */
+    private static String pollOutcome(Route on) {
+        return switch (on) {
+            case FAILED -> "failed";
+            case TIMED_OUT -> "timedOut";
+            default -> "met";
+        };
+    }
+
+    /**
      * Error boundary event for a step that has a {@code failed} path: the delegate raises {@link #FAILED_ERROR_CODE}
      * only for failures the designer chose to route (S32). Steps without that path get nothing, so existing workflows
      * generate exactly the same process as before.
      */
     private static void failureBoundary(XmlOut x, SourceMap map, WorkflowDefinition d, Node n) {
-        if (d.transitions().stream().noneMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
+        if (d.transitions().stream().noneMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))
+                || n instanceof Node.Http h && h.polls()) {
             return;
         }
         String id = n.id() + FAILED_BOUNDARY;
@@ -942,6 +1010,9 @@ public final class BpmnGenerator {
 
     /** BPMN element a canonical transition leaves from (approvals leave through their generated helpers). */
     private static String flowSource(Node from, Transition t) {
+        if (from instanceof Node.Http h && h.polls()) {
+            return from.id() + POLL_ROUTE;
+        }
         if (t.on() == Route.FAILED) {
             return from.id() + FAILED_BOUNDARY;
         }
@@ -991,7 +1062,9 @@ public final class BpmnGenerator {
                         centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                     }
                 }
-                if (d.transitions().stream().anyMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
+                if (n instanceof Node.Http h && h.polls()) {
+                    centre.put(n.id() + POLL_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
+                } else if (d.transitions().stream().anyMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
                     centre.put(n.id() + FAILED_BOUNDARY, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                 }
                 if (scopes.merged(n.id())) {
@@ -1018,6 +1091,10 @@ public final class BpmnGenerator {
                 if (scopes.merged(n.id())) {
                     shape(x, n.id() + SPLIT_MERGE, centre.get(n.id() + SPLIT_MERGE), 40, 40);
                     edge(x, n.id() + SPLIT_MERGE + "__out", centre.get(n.id() + SPLIT_MERGE), centre.get(n.id()));
+                }
+                if (centre.containsKey(n.id() + POLL_ROUTE)) {
+                    shape(x, n.id() + POLL_ROUTE, centre.get(n.id() + POLL_ROUTE), 40, 40);
+                    edge(x, n.id() + "__toPollRoute", centre.get(n.id()), centre.get(n.id() + POLL_ROUTE));
                 }
                 if (centre.containsKey(n.id() + FAILED_BOUNDARY)) {
                     shape(x, n.id() + FAILED_BOUNDARY, centre.get(n.id() + FAILED_BOUNDARY), 36, 36);

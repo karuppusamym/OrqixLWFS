@@ -85,6 +85,19 @@ public class OrqixRoute {
         return matches(execution, condition);
     }
 
+    /**
+     * A path out of a call that keeps checking until done (docs/build/S129): true when the poll scheduler triggered the
+     * step with this outcome ({@code met}, {@code failed} or {@code timedOut}). The node id and outcome come from the
+     * generated BPMN, never from user text.
+     */
+    public boolean polled(DelegateExecution execution, String nodeId, String outcome) {
+        Object value = execution.getVariable(com.orqix.runtime.internal.PollWaits.outcomeVariable(nodeId));
+        if (value == null) {
+            throw new IllegalStateException("Step " + nodeId + " continued without the outcome of its checks");
+        }
+        return outcome.equals(value);
+    }
+
     /** Prefix of the process variable that holds the step a section was left to (S59). */
     static final String EXIT_VARIABLE = "orqix_exit_";
 

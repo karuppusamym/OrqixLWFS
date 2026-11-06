@@ -26,7 +26,7 @@ final class FailureRules {
     static final List<String> FAILURE_OUTPUTS = List.of("failureKind", "failureHttpStatus", "failureMessage");
 
     /** Values of {@code failureKind}. */
-    static final Set<String> FAILURE_KINDS = Set.of("rejected", "invalidResponse");
+    static final Set<String> FAILURE_KINDS = Set.of("rejected", "invalidResponse", "remoteFailed");
 
     private FailureRules() {
     }

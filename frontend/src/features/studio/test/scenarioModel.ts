@@ -16,7 +16,8 @@ export type CallResult = 'works' | 'rejected' | 'unavailable' | 'unknownOutcome'
 /** What the designer chooses for each step that a person or another system would decide (business wording in the UI). */
 export interface TestSettings {
   approvals: Record<string, { outcome: 'approve' | 'reject' | 'timeout'; reason: string }>
-  calls: Record<string, { result: CallResult; answers: Record<string, string>; mock?: CallMock }>
+  /** `checks` (S129): the answers of a step that keeps checking, one per line (a value, a JSON body, or unavailable). */
+  calls: Record<string, { result: CallResult; answers: Record<string, string>; mock?: CallMock; checks?: string }>
   children: Record<string, { outcomes: string[] }>
   messages: Record<string, 'arrives' | 'timeout'>
   /** Payload values and delay of a message (STU03). */
@@ -46,6 +47,8 @@ export interface CallControl {
   timeoutSeconds: number
   /** Result fields the workflow keeps, with the pointer into the answer of the system. */
   results: Array<{ key: string; pointer: string }>
+  /** The step keeps checking until done (docs/build/S129): the test can give one answer per check. */
+  polls?: boolean
 }
 export interface PayloadControl {
   id: string
@@ -114,6 +117,7 @@ export function stepControls(def: Definition): StepControls {
         results: Object.keys(mapping)
           .sort()
           .map((key) => ({ key, pointer: String(mapping[key]) })),
+        ...(n.config.poll && typeof n.config.poll === 'object' ? { polls: true } : {}),
       })
     } else if (n.type === 'startWorkflow') {
       const repeat = n.config.repeat as { maxIterations?: number; untilOutcome?: string } | undefined
@@ -158,6 +162,35 @@ export function answerBody(results: CallControl['results'], answers: Record<stri
   return body
 }
 
+type CheckAnswer = { result?: Record<string, unknown>; failure?: 'unavailable' | 'rejected' }
+
+/**
+ * The answers of the checks of a step that keeps checking until done (S129), one per line: "unavailable" or "rejected",
+ * a JSON body, or a plain value of the first kept result field (for example pending, pending, shipped).
+ * @returns null when no line is given
+ */
+export function checkAnswers(c: CallControl, text: string): CheckAnswer[] | null {
+  const out: CheckAnswer[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    if (line === 'unavailable' || line === 'rejected') out.push({ failure: line })
+    else if (line.startsWith('{')) {
+      try {
+        const parsed: unknown = JSON.parse(line)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) out.push({ result: parsed as Record<string, unknown> })
+      } catch {
+        // a half-typed body is skipped until it parses
+      }
+    } else {
+      const first = c.results[0]
+      const body = first ? answerBody([first], { [first.key]: line }) : null
+      if (body) out.push({ result: body })
+    }
+  }
+  return out.length ? out.slice(0, 100) : null
+}
+
 /** The scenario the API takes: only what differs from the defaults, and only for steps that still exist. */
 export function toScenario(def: Definition, settings: TestSettings): SimulationScenario {
   const controls = stepControls(def)
@@ -174,6 +207,11 @@ export function toScenario(def: Definition, settings: TestSettings): SimulationS
   for (const c of controls.calls) {
     const s = settings.calls[c.id]
     if (!s) continue
+    const sequence = c.polls && s.result === 'works' ? checkAnswers(c, s.checks ?? '') : null
+    if (sequence) {
+      calls[c.id] = { checks: sequence }
+      continue
+    }
     const mock = mockOf(s.mock)
     if (s.result !== 'works') calls[c.id] = { failure: s.result, ...(mock.delaySeconds !== undefined ? { delaySeconds: mock.delaySeconds } : {}) }
     else if (mock.status !== undefined || mock.body !== undefined || mock.delaySeconds !== undefined) {

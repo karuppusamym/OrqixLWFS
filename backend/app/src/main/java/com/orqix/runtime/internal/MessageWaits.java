@@ -31,11 +31,14 @@ public class MessageWaits {
     private final Json json;
     private final Clock clock;
     private final CallbackService callbacks;
+    private final PollWaits polls;
 
     public MessageWaits(MessageStore store, RunStore runs, RunEvents events,
             @org.springframework.context.annotation.Lazy MessageDelivery delivery, Json json, Clock clock,
-            @org.springframework.context.annotation.Lazy CallbackService callbacks) {
+            @org.springframework.context.annotation.Lazy CallbackService callbacks,
+            @org.springframework.context.annotation.Lazy PollWaits polls) {
         this.callbacks = callbacks;
+        this.polls = polls;
         this.store = store;
         this.runs = runs;
         this.events = events;
@@ -53,6 +56,14 @@ public class MessageWaits {
     @Transactional(propagation = Propagation.MANDATORY)
     public void started(UUID workspaceId, UUID runId, String nodeId, String label, String message,
             String correlationKey, String engineExecutionId, Instant deadline) {
+        started(workspaceId, runId, nodeId, label, message, correlationKey, engineExecutionId, deadline, null);
+    }
+
+    /** @param resolver request values at this moment (for the inputs of a safety-net check, S129), or null */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void started(UUID workspaceId, UUID runId, String nodeId, String label, String message,
+            String correlationKey, String engineExecutionId, Instant deadline,
+            java.util.function.Function<String, tools.jackson.databind.JsonNode> resolver) {
         Instant now = clock.instant();
         UUID id = Ids.newId();
         if (store.insertSubscription(id, workspaceId, runId, nodeId, message, correlationKey, engineExecutionId, now,
@@ -84,6 +95,8 @@ public class MessageWaits {
         events.append(workspaceId, runId, "WAIT_STARTED", nodeId, null, data);
         // S98: a wait answered by an external system gets its callback row (no token yet) in the same transaction.
         callbacks.waitStarted(run, nodeId, id);
+        // S129: the wait page names what answers it, and a safety-net check starts with it.
+        polls.waitStarted(run, nodeId, resolver);
         afterCommit(workspaceId, id);
     }
 
@@ -106,6 +119,7 @@ public class MessageWaits {
             store.lock(workspaceId, subscription.id()).filter(s -> MessageStore.WAITING.equals(s.status()))
                     .ifPresent(s -> store.close(workspaceId, s.id(), MessageStore.TIMED_OUT, null, clock.instant()));
         }
+        polls.fallbackClosed(workspaceId, runId, nodeId, "timedOut");
         runs.mutate(workspaceId, runId, m -> {
             m.removeStep(nodeId);
             m.settle();
@@ -122,6 +136,7 @@ public class MessageWaits {
     @Transactional(propagation = Propagation.MANDATORY)
     public void ended(UUID workspaceId, UUID runId) {
         store.closeAllForRun(workspaceId, runId, clock.instant());
+        polls.runEnded(workspaceId, runId);
     }
 
     private void afterCommit(UUID workspaceId, UUID subscriptionId) {

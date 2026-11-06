@@ -420,7 +420,8 @@ final class WaitsAndStartsRules {
                     + kind.description() + "; a message is matched by a text or a whole number.");
             return;
         }
-        if (r.type().mayBeAbsent()) {
+        if (r.type().mayBeAbsent()
+                || r.producer() == null && !rc.definition().inputSchema().required().contains(r.key())) {
             rc.issues().blocker("WF_MESSAGE_CORRELATION_OPTIONAL", path, n.id(), null, fieldRef + " may be missing,"
                     + " so there may be nothing to match the message with. Make the field required.");
         }
@@ -434,9 +435,7 @@ final class WaitsAndStartsRules {
                         + " must be 1 to 200 characters long. Set its minimum and maximum length.");
             }
         }
-        if (n instanceof Node) {
-            Conditions.availability(rc, fieldRef, n, path, null);
-        }
+        Conditions.availability(rc, fieldRef, n, path, null);
     }
 
     private static void routes(RuleContext rc, Node.WaitForFirst w) {

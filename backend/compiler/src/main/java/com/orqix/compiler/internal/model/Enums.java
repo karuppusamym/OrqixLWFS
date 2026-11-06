@@ -33,6 +33,8 @@ public final class Enums {
         COMPENSATE("compensate", "Undo completed calls"),
         /** Send through a configured adapter (email, Teams, Kafka produce or database read; S73). */
         SEND_ADAPTER("sendAdapter", "Send through an adapter"),
+        /** Run an approved AI skill: classify, extract, score, recommend or summarize (CG-A01, S134). */
+        AI_TASK("aiTask", "AI task"),
         END("end", "Finish");
 
         private final String json;
@@ -65,7 +67,15 @@ public final class Enums {
     /** Transition {@code on} values. */
     public enum Route {
         NEXT("next"), APPROVED("approved"), REJECTED("rejected"), TIMED_OUT("timedOut"), FAILED("failed"), CONDITION("condition"),
-        DEFAULT("default");
+        DEFAULT("default"),
+        /** AI task (S134): the path for one label of a classify skill; the transition names it in {@code aiLabel}. */
+        AI_LABEL("aiLabel"),
+        /** AI task: the calibrated confidence is below the step's threshold. */
+        LOW_CONFIDENCE("lowConfidence"),
+        /** AI task: a person must look (suggest autonomy, policy, low field confidence, sampled review). */
+        NEEDS_REVIEW("needsReview"),
+        /** AI task: AI could not produce a valid answer (disabled, refused, failed, over budget, invalid twice). */
+        AI_UNAVAILABLE("aiUnavailable");
 
         private final String json;
 

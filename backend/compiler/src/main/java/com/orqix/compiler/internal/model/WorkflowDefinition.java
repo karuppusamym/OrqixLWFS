@@ -65,7 +65,11 @@ public record WorkflowDefinition(
 
     /** @param label may be null; @param condition non-null only for {@code on: condition} */
     public record Transition(int index, String id, String from, String to, Route on, String label,
-                             Condition condition) {
+                             Condition condition, String aiLabel) {
+        public Transition(int index, String id, String from, String to, Route on, String label, Condition condition) {
+            this(index, id, from, to, on, label, condition, null);
+        }
+
         public String path() {
             return "/transitions/" + index;
         }

@@ -162,6 +162,7 @@ final class BindingRules {
             case Node.GenerateDocument g -> refs.addAll(g.inputMapping().values());
             case Node.ExternalTask e -> refs.addAll(e.inputMapping().values());
             case Node.SendAdapter a -> refs.addAll(a.inputMapping().values());
+            case Node.AiTask ai -> refs.addAll(ai.inputMapping().values());
             case Node.StartWorkflow s -> {
                 refs.addAll(s.inputMapping().values());
                 if (s.forEach() != null) refs.add(s.forEach().itemsRef());

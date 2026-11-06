@@ -64,6 +64,8 @@ public final class BpmnReader {
             "^\\$\\{orqixRoute\\.(approved|rejected)\\(execution, '([^']*)'\\)\\}$");
     private static final Pattern POLL_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.polled\\(execution, '([^']*)', '(met|failed|timedOut)'\\)\\}$");
+    private static final Pattern AI_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.ai\\(execution, '([^']*)', '(next|lowConfidence|needsReview|aiUnavailable|label:[a-z][A-Za-z0-9]{0,39})'\\)\\}$");
     private static final Pattern CONDITION_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.condition\\(execution, '([^']*)'\\)\\}$");
     private static final Set<String> FLOW_ELEMENTS = Set.of("startEvent", "userTask", "serviceTask",
@@ -612,6 +614,7 @@ public final class BpmnReader {
             case "${orqixChildTask}" -> "startWorkflow";
             case "${orqixCompensationTask}" -> "compensate";
             case "${orqixAdapterTask}" -> "sendAdapter";
+            case "${orqixAiTask}" -> "aiTask";
             default -> null;
         };
         if (kind == null) {
@@ -629,6 +632,7 @@ public final class BpmnReader {
             case "notification" -> "notification";
             case "compensate" -> "compensation";
             case "sendAdapter" -> "adapter";
+            case "aiTask" -> "aiTask";
             default -> "child";
         };
         El x = ext == null ? null : ext.child(ORQIX_NS, extension);
@@ -662,6 +666,34 @@ public final class BpmnReader {
                         return null;
                     }
                     config.set("poll", settings);
+                }
+            }
+            case "aiTask" -> {
+                // S134: the pinned version is kept only when the designer pinned it; otherwise publishing pins again.
+                putText(config, "skillRef", x.attr("skill"));
+                if ("true".equals(x.attr("pinnedByDesigner"))) {
+                    Integer version = integer(id, "skillVersion", x.attr("skillVersion"));
+                    if (version != null) {
+                        config.put("skillVersion", version);
+                    }
+                }
+                putText(config, "mode", x.attr("mode"));
+                config.set("inputMapping", pairs(id, x, "input", "fieldRef"));
+                if (x.attr("autonomy") != null && !"suggest".equals(x.attr("autonomy"))) {
+                    config.put("autonomy", x.attr("autonomy"));
+                }
+                if (x.attr("minConfidence") != null
+                        && new java.math.BigDecimal(x.attr("minConfidence")).compareTo(new java.math.BigDecimal("0.8")) != 0) {
+                    config.put("minConfidence", new java.math.BigDecimal(x.attr("minConfidence")));
+                }
+                Integer sample = x.attr("reviewSamplePercent") == null ? null
+                        : integer(id, "reviewSamplePercent", x.attr("reviewSamplePercent"));
+                if (sample != null && sample != 10) {
+                    config.put("reviewSamplePercent", sample);
+                }
+                ObjectNode redaction = pairs(id, x, "redaction", "rule");
+                if (redaction != null && !redaction.isEmpty()) {
+                    config.set("redaction", redaction);
                 }
             }
             case "compensate" -> {
@@ -898,6 +930,7 @@ public final class BpmnReader {
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
             case BpmnGenerator.FAILED_BOUNDARY -> type.equals("http") || type.equals("startWorkflow");
             case BpmnGenerator.POLL_ROUTE, "__toPollRoute" -> type.equals("http");
+            case BpmnGenerator.AI_ROUTE, "__toAiRoute" -> type.equals("aiTask");
             case BpmnGenerator.MESSAGE_CATCH, "__toMessage", "__toTimeout" -> type.equals("waitForMessage");
             default -> false;
         };
@@ -945,6 +978,7 @@ public final class BpmnReader {
         String expression = expressionEl == null ? null : expressionEl.text();
         String from;
         String on;
+        String aiLabel = null;
         if (source.contains("__")) {
             int at = source.indexOf("__");
             from = source.substring(0, at);
@@ -977,6 +1011,16 @@ public final class BpmnReader {
                         case "met" -> "next";
                         default -> m.group(2);
                     };
+                }
+                case BpmnGenerator.AI_ROUTE -> {
+                    Matcher m = expression == null ? null : AI_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the AI task '" + from + "' must carry the generated AI route "
+                                + "condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = m.group(2).startsWith("label:") ? "aiLabel" : m.group(2);
+                    aiLabel = m.group(2).startsWith("label:") ? m.group(2).substring("label:".length()) : null;
                 }
                 case BpmnGenerator.MESSAGE_CATCH -> on = "next";
                 default -> {
@@ -1011,6 +1055,9 @@ public final class BpmnReader {
         t.put("from", from);
         t.put("to", target);
         t.put("on", on);
+        if (aiLabel != null) {
+            t.put("aiLabel", aiLabel);
+        }
         if (flow.attr("name") != null) {
             t.put("label", flow.attr("name"));
         }

@@ -49,6 +49,8 @@ public final class BpmnGenerator {
 
     /** Suffix of the error boundary event generated for a step that has a {@code failed} path (S32). */
     public static final String FAILED_BOUNDARY = "__failed";
+    /** S134: generated gateway after an AI task; routes on the route the AI task service chose. */
+    public static final String AI_ROUTE = "__aiRoute";
     /** S129: generated gateway after a call that keeps checking until done; routes on the outcome of the checks. */
     public static final String POLL_ROUTE = "__pollRoute";
     /** ID of the one BPMN error definition used by every error boundary event (S32). */
@@ -112,6 +114,13 @@ public final class BpmnGenerator {
      */
     public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
                                   Map<String, String> decisionResource, Map<String, WorkflowInfo> children) {
+        return generate(definition, compilerVersion, semanticHash, decisionResource, children, Map.of());
+    }
+
+    /** @param aiPins AI task node id to the skill version publishing pins (S134) */
+    public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
+                                  Map<String, String> decisionResource, Map<String, WorkflowInfo> children,
+                                  Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins) {
         Map<String, Node> nodes = new HashMap<>();
         definition.nodes().forEach(n -> nodes.put(n.id(), n));
         Map<String, String> branchDefault = new HashMap<>();
@@ -148,6 +157,7 @@ public final class BpmnGenerator {
             x.leaf("", "error", BPMN_NS).attr("id", FAILED_ERROR).attr("errorCode", FAILED_ERROR_CODE);
         }
         Scopes scopes = new Scopes(definition);
+        scopes.aiPins = aiPins == null ? Map.of() : aiPins;
         // Business errors and signals (S59): one definition per code or name, sorted. Signals reach only the steps of
         // the request that sends them (flowable:scope processInstance), never other requests.
         scopes.errorCodes().forEach(code ->
@@ -466,6 +476,7 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
             }
+            case Node.AiTask ai -> aiTask(x, map, d, ai, scopes.aiPins.get(ai.id()));
             case Node.Notification no -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", no.id())
@@ -784,6 +795,8 @@ public final class BpmnGenerator {
         private final Map<String, String> entries = new HashMap<>();
         private final Map<String, WorkflowDefinition.Subprocess> entryOf = new HashMap<>();
         private final java.util.Set<String> mergedSplits = new java.util.HashSet<>();
+        /** AI task node id to its pinned skill version (S134). */
+        Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins = Map.of();
 
         Scopes(WorkflowDefinition d) {
             this.d = d;
@@ -925,11 +938,13 @@ public final class BpmnGenerator {
         String source = flowSource(from, t);
         String expression = from instanceof Node.Http polled && polled.polls()
                 ? "${orqixRoute.polled(execution, '" + from.id() + "', '" + pollOutcome(t.on()) + "')}"
+                : from instanceof Node.AiTask
+                ? "${orqixRoute.ai(execution, '" + from.id() + "', '" + aiRoute(t) + "')}"
                 : switch (t.on()) {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
-            case NEXT, DEFAULT, TIMED_OUT, FAILED -> null;
+            case NEXT, DEFAULT, TIMED_OUT, FAILED, AI_LABEL, LOW_CONFIDENCE, NEEDS_REVIEW, AI_UNAVAILABLE -> null;
         };
         if (expression == null) {
             x.leaf("", "sequenceFlow", BPMN_NS);
@@ -1001,6 +1016,55 @@ public final class BpmnGenerator {
         map.node(h.id(), gateway);
     }
 
+    /** @return the route value of a path out of an AI task: {@code label:<key>} or the route name */
+    public static String aiRoute(Transition t) {
+        return t.on() == Route.AI_LABEL ? "label:" + t.aiLabel() : t.on().json();
+    }
+
+    /**
+     * An AI task (S134, CG-A01/A05). Asynchronous and triggerable like an external worker step: the delegate queues
+     * an AI job in the job transaction and returns; the AI task worker runs the guardrail pipeline under a renewable
+     * lease (up to 10 minutes) and triggers the step with the chosen route, which a generated exclusive gateway takes.
+     * The pinned skill version and its content hash travel in {@code orqix:aiTask}.
+     */
+    private static void aiTask(XmlOut x, SourceMap map, WorkflowDefinition d, Node.AiTask ai,
+            com.orqix.compiler.CompileContext.AiSkillVersion pin) {
+        x.open("", "serviceTask", BPMN_NS)
+                .attr("id", ai.id())
+                .attr("name", ai.label())
+                .attr("flowable", FLOWABLE_NS, "async", "true")
+                .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                .attr("flowable", FLOWABLE_NS, "triggerable", "true")
+                .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixAiTask}");
+        x.open("", "extensionElements", BPMN_NS);
+        x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+        int version = pin != null ? pin.version() : ai.skillVersion() == null ? 0 : ai.skillVersion();
+        x.open("orqix", "aiTask", ORQIX_NS).attr("skill", ai.skillRef()).attr("skillVersion", Integer.toString(version));
+        if (ai.skillVersion() != null) {
+            x.attr("pinnedByDesigner", "true");
+        }
+        if (pin != null && pin.contentHash() != null) {
+            x.attr("contentHash", pin.contentHash());
+        }
+        x.attr("mode", ai.mode()).attr("autonomy", ai.autonomy())
+                .attr("minConfidence", ai.minConfidence().toPlainString())
+                .attr("reviewSamplePercent", Integer.toString(ai.reviewSamplePercent()));
+        ai.inputMapping().forEach((name, fieldRef) ->
+                x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+        new java.util.TreeMap<>(ai.redaction()).forEach((name, rule) ->
+                x.leaf("orqix", "redaction", ORQIX_NS).attr("name", name).attr("rule", rule));
+        x.close();
+        x.close();
+        x.close();
+        String gateway = ai.id() + AI_ROUTE;
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", ai.id() + "__toAiRoute").attr("sourceRef", ai.id())
+                .attr("targetRef", gateway);
+        map.node(ai.id(), ai.id() + "__toAiRoute");
+        x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", ai.label() + ": AI route");
+        map.node(ai.id(), gateway);
+    }
+
     static String base64Json(tools.jackson.databind.JsonNode node) {
         return java.util.Base64.getEncoder().encodeToString(com.orqix.compiler.internal.json.Jcs.canonicalize(node)
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -1040,6 +1104,9 @@ public final class BpmnGenerator {
     private static String flowSource(Node from, Transition t) {
         if (from instanceof Node.Http h && h.polls()) {
             return from.id() + POLL_ROUTE;
+        }
+        if (from instanceof Node.AiTask) {
+            return from.id() + AI_ROUTE;
         }
         if (t.on() == Route.FAILED) {
             return from.id() + FAILED_BOUNDARY;
@@ -1090,6 +1157,9 @@ public final class BpmnGenerator {
                         centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                     }
                 }
+                if (n instanceof Node.AiTask) {
+                    centre.put(n.id() + AI_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
+                }
                 if (n instanceof Node.Http h && h.polls()) {
                     centre.put(n.id() + POLL_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
                 } else if (d.transitions().stream().anyMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
@@ -1123,6 +1193,10 @@ public final class BpmnGenerator {
                 if (centre.containsKey(n.id() + POLL_ROUTE)) {
                     shape(x, n.id() + POLL_ROUTE, centre.get(n.id() + POLL_ROUTE), 40, 40);
                     edge(x, n.id() + "__toPollRoute", centre.get(n.id()), centre.get(n.id() + POLL_ROUTE));
+                }
+                if (centre.containsKey(n.id() + AI_ROUTE)) {
+                    shape(x, n.id() + AI_ROUTE, centre.get(n.id() + AI_ROUTE), 40, 40);
+                    edge(x, n.id() + "__toAiRoute", centre.get(n.id()), centre.get(n.id() + AI_ROUTE));
                 }
                 if (centre.containsKey(n.id() + FAILED_BOUNDARY)) {
                     shape(x, n.id() + FAILED_BOUNDARY, centre.get(n.id() + FAILED_BOUNDARY), 36, 36);

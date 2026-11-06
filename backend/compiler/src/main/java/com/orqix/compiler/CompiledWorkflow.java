@@ -19,6 +19,7 @@ import java.util.Map;
  *                      compile time (S12)
  * @param callClosure   keys of every workflow this one starts, directly or through its children (sorted)
  * @param callHeight    0 when it starts no workflow, otherwise 1 + the largest call height of its children
+ * @param aiSkills      AI skill versions pinned by AI task steps (S134), with the evaluation run that passed the gate
  */
 public record CompiledWorkflow(
         String compilerVersion,
@@ -36,7 +37,21 @@ public record CompiledWorkflow(
         List<String> groups,
         List<ChildRef> children,
         List<String> callClosure,
-        int callHeight) {
+        int callHeight,
+        List<AiSkillRef> aiSkills) {
+
+    public CompiledWorkflow(String compilerVersion, String processId, String bpmnXml, Map<String, String> dmnResources,
+            String sourceMapJson, String sourceHash, String semanticHash, String bpmnHash, Map<String, String> dmnHashes,
+            List<ValidationIssue> warnings, List<DecisionRef> decisions, List<ConnectionRef> connections,
+            List<String> groups, List<ChildRef> children, List<String> callClosure, int callHeight) {
+        this(compilerVersion, processId, bpmnXml, dmnResources, sourceMapJson, sourceHash, semanticHash, bpmnHash,
+                dmnHashes, warnings, decisions, connections, groups, children, callClosure, callHeight, List.of());
+    }
+
+    /** An AI skill version pinned by an AI task step (S134); {@code evaluationRunId} is null in shadow mode. */
+    public record AiSkillRef(String nodeId, String skillKey, int version, String contentHash, String modelProfile,
+            String autonomy, String evaluationRunId) {
+    }
 
     public record DecisionRef(String key, int version) {
     }

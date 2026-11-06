@@ -220,6 +220,12 @@ public final class ModelReader {
                             .map(JsonNode::stringValue).toList() : List.of(),
                     text(c, "subject"), text(c, "body"), text(c, "title"), text(c, "text"), text(c, "topic"),
                     text(c, "key"), stringMap(c.get("inputMapping")));
+            case AI_TASK -> new Node.AiTask(index, id, label, c.get("skillRef").stringValue(),
+                    c.has("skillVersion") ? c.get("skillVersion").intValue() : null, c.get("mode").stringValue(),
+                    stringMap(c.get("inputMapping")), c.path("autonomy").asString(Node.AiTask.SUGGEST),
+                    c.has("minConfidence") ? c.get("minConfidence").decimalValue() : Node.AiTask.DEFAULT_MIN_CONFIDENCE,
+                    c.path("reviewSamplePercent").asInt(Node.AiTask.DEFAULT_REVIEW_PERCENT),
+                    c.has("redaction") ? stringMap(c.get("redaction")) : Map.of());
         };
     }
 
@@ -271,7 +277,8 @@ public final class ModelReader {
         JsonNode condition = t.get("condition");
         return new Transition(index, t.get("id").stringValue(), t.get("from").stringValue(),
                 t.get("to").stringValue(), on, label == null ? null : label.stringValue(),
-                condition == null ? null : readCondition(condition));
+                condition == null ? null : readCondition(condition),
+                t.has("aiLabel") ? t.get("aiLabel").stringValue() : null);
     }
 
     /**

@@ -118,6 +118,7 @@ public final class FieldTypes {
             case Node.WaitForMessage m -> messageOutput(m, key);
             case Node.ExternalTask e -> externalOutput(e, key);
             case Node.SendAdapter a -> adapterOutput(a, key);
+            case Node.AiTask ai -> aiOutput(ai, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -189,6 +190,83 @@ public final class FieldTypes {
         }
         return new Unknown("\"" + a.label() + "\" does not return \"" + key + "\". It returns: outcome"
                 + ("jdbc".equals(a.adapterKind()) ? ", rowCount." : "."));
+    }
+
+    /**
+     * Outputs of an AI task (S134): {@code status} and {@code skillVersion} always; the answer ({@code confidence},
+     * {@code modelUsed} and the mode's values) only when AI answered. Shadow-mode answers may never be used, so they
+     * are marked as possibly missing.
+     */
+    private Resolution aiOutput(Node.AiTask ai, String key) {
+        if ("status".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(new TreeSet<>(
+                    AiTaskRules.STATUSES)), false, null, null), ai, key);
+        }
+        if ("skillVersion".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ONE, null), ai, key);
+        }
+        CompileContext.AiSkillVersion v = AiTaskRules.pinned(workspace, ai);
+        if (v == null) {
+            return new Indeterminate();
+        }
+        boolean shadow = ai.shadow();
+        if ("confidence".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.NUMBER, null, shadow, BigDecimal.ZERO, BigDecimal.ONE), ai, key);
+        }
+        if ("modelUsed".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+        }
+        List<String> produced = new ArrayList<>(List.of("status", "skillVersion", "confidence", "modelUsed"));
+        switch (v.mode()) {
+            case "classify" -> {
+                produced.addAll(List.of("label", "reasons"));
+                if ("label".equals(key)) {
+                    Set<String> domain = new TreeSet<>();
+                    v.labels().forEach(l -> domain.add(l.key()));
+                    return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(domain), shadow,
+                            null, null), ai, key);
+                }
+            }
+            case "extract" -> {
+                produced.addAll(new TreeSet<>(v.fields().keySet()));
+                String type = v.fields().get(key);
+                if (type != null) {
+                    FieldKind kind = FieldKind.fromJson("date".equals(type) ? "string" : type, "date".equals(type)
+                            ? "date" : null);
+                    return new Resolved(new FieldType(kind, null, shadow || !v.requiredFields().contains(key), null,
+                            null), ai, key);
+                }
+            }
+            case "score" -> {
+                produced.addAll(List.of("score", "reasons"));
+                if ("score".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.NUMBER, null, shadow, v.scoreMin(), v.scoreMax()), ai,
+                            key);
+                }
+            }
+            case "recommend" -> {
+                produced.addAll(List.of("recommendation", "rationale"));
+                if ("recommendation".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(new TreeSet<>(
+                            v.outcomes())), shadow, null, null), ai, key);
+                }
+                if ("rationale".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+                }
+            }
+            default -> {
+                produced.add("summary");
+                if ("summary".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+                }
+            }
+        }
+        if ("reasons".equals(key) && ("classify".equals(v.mode()) || "score".equals(v.mode()))) {
+            return new Resolved(new FieldType(FieldKind.ARRAY, null, shadow, null, null, FieldType.of(FieldKind.STRING)),
+                    ai, key);
+        }
+        return new Unknown("\"" + ai.label() + "\" does not produce \"" + key + "\". It produces: "
+                + String.join(", ", produced) + ".");
     }
 
     /** Outputs of "Work by an external worker": the declared result fields (S43); a field that is not required may be missing. */

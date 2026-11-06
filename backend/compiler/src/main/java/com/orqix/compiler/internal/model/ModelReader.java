@@ -183,7 +183,8 @@ public final class ModelReader {
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),
                     stringMap(c.get("inputMapping")), payloadFields(c.get("result")),
-                    c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120);
+                    c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120,
+                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
             case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue(),

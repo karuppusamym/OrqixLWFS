@@ -161,7 +161,13 @@ public sealed interface Node {
      * receives (name to field reference, sorted by name) and {@code result} declares what it must return.
      */
     record ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
-                        java.util.List<PayloadField> result, int leaseSeconds) implements Node {
+                        java.util.List<PayloadField> result, int leaseSeconds, String raiseOnFailure) implements Node {
+
+        public ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
+                java.util.List<PayloadField> result, int leaseSeconds) {
+            this(index, id, label, topic, inputMapping, result, leaseSeconds, null);
+        }
+
         @Override
         public NodeKind kind() {
             return NodeKind.EXTERNAL_TASK;

@@ -5269,7 +5269,9 @@ paths:
       summary: Report that a leased job could not be done
       description: >-
         A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay)
-        until the attempt limit; otherwise the request needs attention and an operator decides.
+        until the attempt limit; otherwise the request needs attention and an operator decides. With `errorCode`
+        (a business error, docs/build/S132) the step takes its failed route or raises its section error when the
+        workflow declares one; 422 when `errorCode` comes with `retryable: true` or uses the ORQIX_ prefix.
       x-orqix-permission: job.work
       x-orqix-audit: externaljob.failed
       parameters:
@@ -5285,6 +5287,55 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # S132 (CG-C08 / CG-I04): secret-access audit. Counts only, never values.
+  /workspaces/{workspaceId}/secret-access:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Connections]
+      operationId: getSecretAccess
+      summary: How often each secret reference was resolved, by provider
+      description: >-
+        Sums the secret-access audit of this workspace over the last `days` UTC days (today included): resolutions
+        (cache hits included), cache hits, references the store did not have, and failures (provider off or
+        unreachable), with the connection bindings that use each reference. No value, hash or length of a secret is
+        recorded (docs/build/S132).
+      x-orqix-permission: connection.manage
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90, default: 7 } }
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [since, items]
+                properties:
+                  since: { type: string, format: date }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [secretRef, provider, connectionKeys, resolutions, cacheHits, notFound, failures]
+                      properties:
+                        secretRef: { type: string, maxLength: 400 }
+                        provider: { type: string, enum: [file, vault, aws-sm, azure-kv, gcp-sm] }
+                        connectionKeys: { type: array, items: { $ref: '#/components/schemas/Key' } }
+                        resolutions: { type: integer, minimum: 0 }
+                        cacheHits: { type: integer, minimum: 0 }
+                        notFound: { type: integer, minimum: 0 }
+                        failures: { type: integer, minimum: 0 }
+                        lastResolvedAt: { type: [string, 'null'], format: date-time }
+                        lastFailedAt: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/runs/{runId}/retry:
     parameters:
@@ -11377,7 +11428,9 @@ components:
             additionalProperties: false
             properties:
               result: { type: object, additionalProperties: true, description: 'The result fields (checked against the declared fields)' }
-              failure: { type: string, enum: [failed] }
+              failure: { type: string, enum: [failed, businessError], description: 'failed - every attempt fails; businessError - the worker reports errorCode (S132)' }
+              errorCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$', description: 'For businessError; default WORKER_ERROR' }
+              message: { type: string, maxLength: 500, description: 'For businessError' }
               delaySeconds: { type: integer, minimum: 0, maximum: 2592000 }
         adapters:
           type: object
@@ -12516,6 +12569,14 @@ components:
         message: { type: string, minLength: 1, maxLength: 500 }
         retryable: { type: boolean }
         retryAfterSeconds: { type: integer, minimum: 0, maximum: 86400 }
+        errorCode:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{1,39}$'
+          description: >-
+            A business error (docs/build/S132): the work was done and the answer is no. Final (send retryable
+            false); codes starting with ORQIX_ are reserved. The step takes its failed route (outputs failureKind
+            workerError, failureCode, failureMessage) or raises its section error when it is set to; otherwise the
+            request needs attention.
     SendBackOpen:
       type: object
       additionalProperties: false
@@ -12979,7 +13040,15 @@ components:
       properties:
         type: { type: string, enum: [none, bearerToken, apiKeyHeader, oauth2ClientCredentials, oauth2AuthorizationCode] }
         headerName: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$' }
-        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: 'Name of a mounted secret, never the secret value' }
+        secretRef:
+          type: string
+          maxLength: 400
+          pattern: '^([a-z0-9][a-z0-9-]{0,62}|(vault|aws-sm|azure-kv|gcp-sm):[A-Za-z0-9][A-Za-z0-9/_.+=@:-]{0,255}(#[A-Za-z0-9_.-]{1,128})?)$'
+          description: >-
+            Where the secret lives, never the secret value (docs/build/S132): a plain name is a mounted secret file;
+            `vault:<mount>/<path>#<key>` (HashiCorp Vault KV v2), `aws-sm:<secret id>#<json key>`,
+            `azure-kv:<vault>/<secret>[/<version>]#<json key>` and `gcp-sm:<project>/<secret>[/<version>]#<json key>`
+            name a secret in an external store; the `#key` part is optional.
     PutConnectionBindingRequest:
       type: object
       additionalProperties: false

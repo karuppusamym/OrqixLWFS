@@ -709,6 +709,8 @@ public final class BpmnReader {
                 if (lease != null && lease != 120) {
                     config.put("leaseSeconds", lease);
                 }
+                // S132 (CG-E10): a worker business error raises this error for the section's error route.
+                putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
             }
             case "notification" -> {
                 putText(config, "channel", x.attr("channel"));

@@ -311,13 +311,23 @@ public class ExternalJobService {
         if (claim.isReplay()) {
             return;
         }
+        String errorCode = request.errorCode();
+        if (errorCode != null && (Boolean.TRUE.equals(request.retryable()) || errorCode.startsWith("ORQIX_"))) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A business error is final and uses your own code.")
+                    .withFieldErrors(List.of(Boolean.TRUE.equals(request.retryable())
+                            ? new ApiException.FieldError("/retryable", "conflict", "Send retryable false with an errorCode.")
+                            : new ApiException.FieldError("/errorCode", "reserved", "Codes starting with ORQIX_ are reserved.")));
+        }
         Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence(), callbackId);
         RunStore.RunRow run = runs.lock(workspaceId, job.runId()).orElseThrow(ApiException::notFound);
         requireRunning(run);
         String message = truncate(request.message());
-        boolean retry = Boolean.TRUE.equals(request.retryable()) && job.attempt() < job.maxAttempts();
+        boolean retry = errorCode == null && Boolean.TRUE.equals(request.retryable()) && job.attempt() < job.maxAttempts();
         Instant now = clock.instant();
-        if (retry) {
+        String raised = errorCode == null ? null : routedError(workspaceId, run, job);
+        if (raised != null) {
+            routeBusinessError(workspaceId, run, job, errorCode, message, raised, now);
+        } else if (retry) {
             int delay = retryDelay(workspaceId, job, request.retryAfterSeconds());
             jdbc.sql("""
                     UPDATE external_job SET status = 'available', worker_id = NULL, lease_expires_at = NULL,
@@ -329,12 +339,99 @@ public class ExternalJobService {
             events.append(workspaceId, run.id(), "EXTERNAL_JOB_RETRY_SCHEDULED", job.nodeId(), null,
                     Map.of("topic", job.topic(), "attempt", job.attempt(), "message", message));
         } else {
-            exhaust(workspaceId, run, job, message, now);
+            if (errorCode != null) {
+                jdbc.sql("UPDATE external_job SET error_code = :code WHERE workspace_id = :ws AND id = :id")
+                        .param("code", errorCode).param("ws", workspaceId).param("id", jobId).update();
+            }
+            exhaust(workspaceId, run, job, errorCode == null ? message : truncate(errorCode + ": " + message), now);
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("topic", job.topic());
+        details.put("nodeId", job.nodeId());
+        details.put("attempt", job.attempt());
+        if (errorCode != null) {
+            details.put("errorCode", errorCode);
+            details.put("routed", raised != null);
         }
         audit.write(new AuditWriter.Entry(workspaceId, actor(caller), caller.subjectId(),
-                "externaljob.failed", "externalJob", jobId.toString(), AuditWriter.Outcome.SUCCESS,
-                Map.of("topic", job.topic(), "nodeId", job.nodeId(), "attempt", job.attempt())));
+                "externaljob.failed", "externalJob", jobId.toString(), AuditWriter.Outcome.SUCCESS, details));
         idempotency.complete(claim, "externalJob", jobId.toString(), 200);
+    }
+
+    /**
+     * @return the BPMN error a worker business error raises at this step: {@code ORQIX_STEP_FAILED} for the step's
+     *         own failed route, the step's {@code raiseErrorOnFailure} code for its section's error route, or null when
+     *         the workflow does not route it (the request then needs attention)
+     */
+    private String routedError(UUID workspaceId, RunStore.RunRow run, Job job) {
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
+        for (JsonNode t : release.definition().path("transitions")) {
+            if (job.nodeId().equals(t.path("from").asString(null)) && "failed".equals(t.path("on").asString(null))) {
+                return "ORQIX_STEP_FAILED";
+            }
+        }
+        JsonNode node = release.node(job.nodeId());
+        String raise = node == null ? null : node.path("config").path("raiseErrorOnFailure").asString(null);
+        return raise == null || raise.isBlank() ? null : raise;
+    }
+
+    /**
+     * Ends the job with the worker's business error and lets the engine take the failed route or the section error
+     * route. The failure facts ({@code failureKind}, {@code failureCode}, {@code failureMessage}) become the step's
+     * outputs on that route; nothing is retried.
+     */
+    private void routeBusinessError(UUID workspaceId, RunStore.RunRow run, Job job, String errorCode, String message,
+            String raised, Instant now) {
+        endJob(workspaceId, job.id(), "failed", truncate(errorCode + ": " + message), now);
+        jdbc.sql("UPDATE external_job SET error_code = :code WHERE workspace_id = :ws AND id = :id")
+                .param("code", errorCode).param("ws", workspaceId).param("id", job.id()).update();
+        runs.mutate(workspaceId, run.id(), m -> {
+            m.removeStep(job.nodeId());
+            m.settle();
+        });
+        boolean failurePath = "ORQIX_STEP_FAILED".equals(raised);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("topic", job.topic());
+        data.put("attempt", job.attempt());
+        data.put("errorCode", errorCode);
+        data.put("message", message);
+        data.put("routed", true);
+        if (!failurePath) {
+            data.put("raisedError", raised);
+        }
+        events.append(workspaceId, run.id(), "EXTERNAL_JOB_FAILED", job.nodeId(), null, data);
+        if (failurePath) {
+            events.append(workspaceId, run.id(), "STEP_FAILED", job.nodeId(), null,
+                    Map.of("outcome", "failed", "failureKind", "workerError", "errorCode", errorCode));
+        } else {
+            String label = releases.require(workspaceId, run.releaseId()).nodeLabel(job.nodeId());
+            events.append(workspaceId, run.id(), "ERROR_RAISED", job.nodeId(), null, Map.of("label",
+                    label == null ? job.nodeId() : label, "errorCode", raised, "source", "workerError",
+                    "workerErrorCode", errorCode));
+        }
+        ObjectNode facts = json.object();
+        facts.put("failureKind", "workerError").put("failureCode", errorCode).put("failureMessage", message);
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put(ProcessData.stepVariable(job.nodeId()), json.write(facts));
+        variables.put(com.orqix.runtime.engine.ExternalTaskDelegate.raiseVariable(job.nodeId()), raised);
+        try {
+            engine.resumeChild(run.engineProcessInstanceId(), job.nodeId(), variables);
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "The request is busy; try reporting the failure again shortly.")
+                    .withHeader("Retry-After", "2");
+        }
+    }
+
+    /** The engine cancelled the step (section time limit or error, request ended): no worker may finish its job. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void cancelOpen(UUID workspaceId, UUID runId, String nodeId) {
+        jdbc.sql("""
+                UPDATE external_job SET status = 'cancelled', worker_id = NULL, lease_expires_at = NULL,
+                       input = '{}'::jsonb, last_error = 'The step was stopped before the worker finished.', ended_at = :now
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status IN ('available', 'locked')
+                """)
+                .param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("node", nodeId)
+                .update();
     }
 
     // ------------------------------------------------------------------ recovery

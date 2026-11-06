@@ -39,6 +39,7 @@ The `prod` profile refuses to start when any required value is missing or unsafe
 | Bootstrap administrators | `ORQIX_IDENTITY_BOOTSTRAP_PLATFORM_ADMIN_GROUPS` | IdP group values that receive Platform Admin at startup — keep this group small |
 | Egress allowlist | `ORQIX_EGRESS_ALLOWED_HOSTS` (`host:port` list), `ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS` | Connection bindings to any other host are refused; `ORQIX_EGRESS_PLAIN_HTTP_HOSTS` must be empty in production |
 | Connection secrets | Files in `ORQIX_SECRETS_DIR` (default `/var/run/secrets/orqix`) | One file per `secretRef`, read on every call (rotation needs no restart) |
+| Secret stores (optional) | `ORQIX_VAULT_*`, `ORQIX_AWS_SECRETS_ENABLED`, `ORQIX_AZURE_KEYVAULT_ENABLED`, `ORQIX_GCP_SECRETS_ENABLED` | Off by default. A binding's `secretRef` may name a secret in HashiCorp Vault, AWS Secrets Manager, Azure Key Vault or Google Secret Manager; see [Secret providers](#secret-providers-and-secret-access-audit---5-november-2026) |
 | AI assistance (optional) | `OPENROUTER_API_KEY` | Read unprefixed on purpose. Empty means AI is off and Orqix runs rules-only. OpenShift: optional Secret `orqix-ai`, key `openrouter-api-key`. See section 7 |
 
 All other `orqix.*` settings have safe defaults ([S1 §5](build/S1-engineering-baseline.md#5-configuration-catalog)).
@@ -345,3 +346,34 @@ latency, 429 answers, token refresh failures, calls that waited, last error) and
 wait without using their attempts and one trial call decides. Tune with `orqix.integration.circuit.failure-threshold`,
 `window`, `cooldown` and `max-cooldown`. People with `connection.manage` can set a request limit a minute per binding;
 it is split across the running servers. Details: [S131](build/S131-retry-and-circuit-breaker.md).
+
+## Secret providers and secret-access audit - 5 November 2026
+
+Connection bindings name their credential with `secretRef`; the value never passes through the API. Besides mounted files (a plain name such as `crm-token`, one file in `ORQIX_SECRETS_DIR`), a reference can name a secret in an external store by its scheme ([S132](build/S132-secret-providers-and-worker-errors.md)):
+
+| Reference | Store | Example |
+|---|---|---|
+| `crm-token` | Mounted file (Kubernetes/OpenShift Secret volume) | `crm-token` |
+| `vault:<mount>/<path>#<key>` | HashiCorp Vault, KV version 2 | `vault:kv/apps/crm#token` |
+| `aws-sm:<secret id or ARN>#<json key>` | AWS Secrets Manager | `aws-sm:prod/crm#token` |
+| `azure-kv:<vault>/<secret>[/<version>]#<json key>` | Azure Key Vault | `azure-kv:orqix-prod/crm-token` |
+| `gcp-sm:<project>/<secret>[/<version>]#<json key>` | Google Secret Manager | `gcp-sm:my-project/crm-token` |
+
+The `#key` part is optional: with it, Orqix reads one field of a JSON secret; without it the whole value is used (a Vault secret with a single field gives that field). Store paths may not contain `..`, `//` or end with `/`.
+
+**Enabling a store** (all are off by default; a reference to a store that is off resolves to nothing and the connection is unavailable):
+
+- **Vault:** `ORQIX_VAULT_ENABLED=true`, `ORQIX_VAULT_ADDR=https://vault.example:8200`, optional `ORQIX_VAULT_NAMESPACE`. Authentication `ORQIX_VAULT_AUTH=token` reads `ORQIX_VAULT_TOKEN_FILE` (for example the sink file of a Vault Agent sidecar; the file is read again at each login so a renewed token is picked up). `ORQIX_VAULT_AUTH=kubernetes` logs in at `auth/<ORQIX_VAULT_K8S_MOUNT>/login` with role `ORQIX_VAULT_K8S_ROLE` and the pod's service-account token, keeps the Vault token for 80 % of its lease and logs in again on a 403. Grant the role read on the KV paths it needs (`path "kv/data/apps/*" { capabilities = ["read"] }`).
+- **AWS Secrets Manager:** `ORQIX_AWS_SECRETS_ENABLED=true` and `AWS_REGION`. Credentials come from the environment: EKS IAM roles for service accounts (`AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, set by EKS) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`. The role needs `secretsmanager:GetSecretValue` (and `kms:Decrypt` for a customer key). A VPC endpoint can be set with `orqix.secrets.aws.endpoint`.
+- **Azure Key Vault:** `ORQIX_AZURE_KEYVAULT_ENABLED=true`. With AKS workload identity (`AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, set by the webhook) Orqix exchanges the federated token; otherwise it uses the managed identity endpoint (`ORQIX_AZURE_CLIENT_ID` selects a user-assigned identity). Give the identity the *Key Vault Secrets User* role.
+- **Google Secret Manager:** `ORQIX_GCP_SECRETS_ENABLED=true`. Orqix uses the workload identity of the pod or VM through the metadata server. Give the service account *Secret Manager Secret Accessor* on the secrets.
+
+**Caching and rotation.** Values from a store are resolved when a call is dispatched and kept in memory for `ORQIX_SECRETS_CACHE_TTL` (default `30s`; `0s` turns the cache off), so a rotated secret is used within that time without restart. Mounted files are read on every call. Missing values and store failures are never cached. Store calls time out after `ORQIX_SECRETS_TIMEOUT` (default `5s`). Store addresses are operator configuration and are not checked against the connection egress allowlist; allow them in your network policy.
+
+**Secret-access audit.** Every resolution is counted per workspace, reference, store and UTC day: resolutions (cache hits included), cache hits, not found and failures, with the times of the last resolution and the last failure. `GET /workspaces/{id}/secret-access?days=7` (permission `connection.manage`, 1-90 days) lists them with the bindings that use each reference. Counts are written every 5 seconds; no value, hash or length of a secret is ever recorded, logged or exported. Logs name only the reference, the store and an HTTP status.
+
+**Scope.** Store references are accepted on connection bindings (including OAuth client-credential configuration stored as a JSON secret). Adapters, inbound triggers, Kafka clusters and outbound webhooks still name mounted files. Vault dynamic database credentials are not supported yet.
+
+## External worker business errors - 5 November 2026
+
+A worker can end a job with a business error: `POST /workspaces/{id}/external-jobs/{jobId}/fail` with `"errorCode": "SUPPLIER_BLOCKED"` and `"retryable": false` (the Python SDK raises `BusinessError` or calls `fail_with_error`). The step then takes its **Failed** route, where its outputs `failureKind` (`workerError`), `failureCode` and `failureMessage` are available, or, when the step is set to raise an error for its section, the section's error route. Without either the request needs attention as before, and the code is shown with the job's last error. Retryable failures and lost leases are unchanged. A business error with `retryable: true`, or a code starting with `ORQIX_`, is refused with 422. When the engine stops a worker step (a section's time limit, another step's error, the request ending), its open job is cancelled and a late completion gets 409.

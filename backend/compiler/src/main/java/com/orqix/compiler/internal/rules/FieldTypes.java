@@ -193,6 +193,11 @@ public final class FieldTypes {
 
     /** Outputs of "Work by an external worker": the declared result fields (S43); a field that is not required may be missing. */
     private Resolution externalOutput(Node.ExternalTask e, String key) {
+        if (FailureRules.isFailureOutput(e, key) && FailureRules.hasFailedRoute(graph, e)) {
+            return "failureKind".equals(key)
+                    ? new Resolved(new FieldType(FieldKind.STRING, FailureRules.EXTERNAL_FAILURE_KINDS, false, null, null), e, key)
+                    : new Resolved(FieldType.of(FieldKind.STRING), e, key);
+        }
         Node.PayloadField field = e.field(key);
         if (field == null) {
             String declared = e.result().isEmpty() ? "no values"

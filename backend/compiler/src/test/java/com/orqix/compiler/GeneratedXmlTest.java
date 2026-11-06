@@ -37,7 +37,7 @@ class GeneratedXmlTest {
     private static final Pattern ALLOWED = Pattern.compile(
             "\\$\\{orqixRoute\\.(approved|rejected|condition)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}"
-                    + "|\\$\\{orqixChildTask\\}|\\$\\{orqixCompensationTask\\}"
+                    + "|\\$\\{orqixChildTask\\}|\\$\\{orqixCompensationTask\\}|\\$\\{orqixExternalTask\\}"
                     + "|\\$\\{orqixRoute\\.(exited|markExit)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}',"
                     + " '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixWait\\.until\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}");

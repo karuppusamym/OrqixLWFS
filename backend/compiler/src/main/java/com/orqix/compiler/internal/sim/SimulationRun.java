@@ -1206,6 +1206,52 @@ final class SimulationRun {
         return "";
     }
 
+    /**
+     * A worker reports a business error (S132, CG-E10): the step's failed route with the failure facts, or its
+     * section's error route when the step raises an error on failure; otherwise the request needs attention.
+     */
+    private Transition workerBusinessError(Node.ExternalTask n, JsonNode setting, ObjectNode d, String intro) {
+        String code = setting.path("errorCode").asString("WORKER_ERROR");
+        if (!code.matches("^[A-Z][A-Z0-9_]{1,39}$") || code.startsWith("ORQIX_")) {
+            throw new IllegalArgumentException("workers." + n.id() + ".errorCode must be an error code such as ADDRESS_UNKNOWN");
+        }
+        String message = setting.path("message").asString("The worker reported a business error.");
+        d.put("mocked", true);
+        d.put("failure", "businessError");
+        d.put("errorCode", code);
+        String description = intro + " and reports the business error " + Text.quote(code) + ".";
+        Transition failed = next(n, Route.FAILED);
+        if (failed != null) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("failureKind", "workerError");
+            out.put("failureCode", code);
+            out.put("failureMessage", message);
+            steps.put(n.id(), out);
+            d.put("routed", true);
+            add(n, description + " The workflow takes its authored failure path.", d, out, failed);
+            return failed;
+        }
+        if (n.raiseOnFailure() != null) {
+            WorkflowDefinition.Subprocess scope = graph.scopeOf(n);
+            Node target = scope == null || scope.errorTo() == null ? null : graph.node(scope.errorTo());
+            d.put("raisedError", n.raiseOnFailure());
+            if (target == null) {
+                stallWith(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ", which nothing"
+                        + " catches.", d, "ERROR_NOT_CAUGHT", "The raised error is not caught.");
+                return null;
+            }
+            d.put("continuesAt", target.id());
+            add(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ": the section "
+                    + Text.quote(scope.label()) + " stops and the request continues at " + Text.quote(target.label())
+                    + ".", d, null, null);
+            jump = target;
+            return null;
+        }
+        String attention = "The step has no path for when it fails, so the request needs attention.";
+        stallWith(n, description + " " + attention, d, "RETRIES_EXHAUSTED", attention);
+        return null;
+    }
+
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
         return knownFailure(n, details, description, reason, null);
@@ -1438,8 +1484,8 @@ final class SimulationRun {
         JsonNode setting = scenario.path("workers").path(n.id());
         JsonNode given = setting.path("result");
         String failure = setting.path("failure").asString(null);
-        if (failure != null && !"failed".equals(failure)) {
-            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed");
+        if (failure != null && !"failed".equals(failure) && !"businessError".equals(failure)) {
+            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed or businessError");
         }
         Integer delay = setting.isObject() ? Mocks.delay("workers." + n.id(), setting) : null;
         ObjectNode d = F.objectNode();
@@ -1456,6 +1502,9 @@ final class SimulationRun {
                     + " until someone retries.";
             stallWith(n, intro + ". " + message, d, "RETRIES_EXHAUSTED", message);
             return null;
+        }
+        if ("businessError".equals(failure)) {
+            return workerBusinessError(n, setting, d, intro);
         }
         if (given.isObject()) {
             String problem = Mocks.fieldProblem(n.result(), given);

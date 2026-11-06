@@ -191,7 +191,7 @@ final class Conditions {
             return;
         }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,
                     usedAt)) {
                 rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()

@@ -336,3 +336,12 @@ Workspace administrators (`workspace.manage-access`) can download the whole work
 **Re-import.** A `releases/n/workflow.json` file can be imported into Orqix again: create a workflow with the same key, save the file as its draft and publish (the round trip is covered by an automated test). Another BPMN engine can open `process.bpmn20.xml`, but service steps are Flowable delegate expressions (`${orqix...}`) that need their own implementation there.
 
 **Limits.** With a workflow selection, shared forms, decision tables and connections are still exported in full and the audit log holds only entries about the selected workflows, their releases and runs. A workspace administrator who cannot also read workflows exports the whole workspace (picking single workflows needs `workflow.read`). Not exported: request file attachments, generated documents, case instances, application pages and views, and the engine's own `ACT_*` tables. At most 500 workflows can be selected in one request.
+
+## Connection health, circuit breaker and request limits - 5 November 2026
+
+Settings → Connections shows each connection's health for the last hour and day (calls, success rate, p50/p95
+latency, 429 answers, token refresh failures, calls that waited, last error) and operator notices above the list. After
+10 retryable failures in a row within 5 minutes a binding pauses calls for 1 minute (doubling to 15 minutes); requests
+wait without using their attempts and one trial call decides. Tune with `orqix.integration.circuit.failure-threshold`,
+`window`, `cooldown` and `max-cooldown`. People with `connection.manage` can set a request limit a minute per binding;
+it is split across the running servers. Details: [S131](build/S131-retry-and-circuit-breaker.md).

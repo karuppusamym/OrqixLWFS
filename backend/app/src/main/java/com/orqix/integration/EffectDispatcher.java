@@ -17,6 +17,7 @@ import com.orqix.compiler.ConnectionContracts;
 
 import com.orqix.integration.ConnectionDefinition.Operation;
 import com.orqix.integration.EffectJournal.BeginResult;
+import com.orqix.integration.health.CallGuard;
 import com.orqix.integration.internal.SecretStore;
 import com.orqix.shared.json.Json;
 
@@ -62,15 +63,32 @@ public class EffectDispatcher {
     /**
      * @param attentionReason S5 section 6.3 reason applied when this failure stops automatic progress
      * @param classification  retryable, permanent or unknown
+     * @param retryAfter      the server's {@code Retry-After} of a 429 or 503 (CG-W04, S131), else null
      */
     public record Failed(UUID effectId, int attempt, boolean retryable, String attentionReason, String errorCode,
             String classification, Integer httpStatus, String effectClass, String businessMessage, String failureCode,
-            String failureMessage) implements DispatchResult {
+            String failureMessage, Duration retryAfter) implements DispatchResult {
 
         public Failed(UUID effectId, int attempt, boolean retryable, String attentionReason, String errorCode,
                 String classification, Integer httpStatus, String effectClass, String businessMessage) {
             this(effectId, attempt, retryable, attentionReason, errorCode, classification, httpStatus, effectClass,
-                    businessMessage, null, null);
+                    businessMessage, null, null, null);
+        }
+
+        /** A mapped business failure of a v1 operation (S130). */
+        public Failed(UUID effectId, int attempt, boolean retryable, String attentionReason, String errorCode,
+                String classification, Integer httpStatus, String effectClass, String businessMessage,
+                String failureCode, String failureMessage) {
+            this(effectId, attempt, retryable, attentionReason, errorCode, classification, httpStatus, effectClass,
+                    businessMessage, failureCode, failureMessage, null);
+        }
+
+        /** A retryable failure carrying the server's {@code Retry-After} (S131). */
+        public Failed(UUID effectId, int attempt, boolean retryable, String attentionReason, String errorCode,
+                String classification, Integer httpStatus, String effectClass, String businessMessage,
+                Duration retryAfter) {
+            this(effectId, attempt, retryable, attentionReason, errorCode, classification, httpStatus, effectClass,
+                    businessMessage, null, null, retryAfter);
         }
     }
 
@@ -83,12 +101,14 @@ public class EffectDispatcher {
     private final Json json;
     private final JdbcClient jdbc;
     private final ObjectProvider<RequestFiles> files;
+    private final CallGuard guard;
 
     public EffectDispatcher(ConnectionService connections, EgressPolicy egress, SecretStore secrets,
             HttpExecutor executor, AgentExecutor agents, EffectJournal journal, Json json, JdbcClient jdbc,
-            ObjectProvider<RequestFiles> files) {
+            ObjectProvider<RequestFiles> files, CallGuard guard) {
         this.jdbc = jdbc;
         this.files = files;
+        this.guard = guard;
         this.connections = connections;
         this.egress = egress;
         this.secrets = secrets;
@@ -137,6 +157,9 @@ public class EffectDispatcher {
                 secretValue = secrets.credential(binding.get().authType(), binding.get().secretRef(), request.workspaceId()).orElse(null);
                 if (secretValue == null) {
                     policyDenial = "The credential for the connection is not available";
+                    if (binding.get().authType().startsWith("oauth2")) {
+                        guard.tokenFailure(request.workspaceId(), request.connectionKey(), request.operation());
+                    }
                 }
             }
             if (policyDenial == null && definition.isAgent() && agents.unavailableReason() != null) {
@@ -148,6 +171,11 @@ public class EffectDispatcher {
             }
         }
 
+        // CG-W04 (S131): an open circuit or a used-up request rate defers the call before anything is registered.
+        CallGuard.Ticket ticket = policyDenial == null && !definition.isAgent()
+                ? guard.before(request.workspaceId(), request.connectionKey(), request.operation(),
+                        request.timeoutSeconds())
+                : new CallGuard.Ticket(false);
         EffectJournal.EffectRequest effectRequest = new EffectJournal.EffectRequest(request.workspaceId(),
                 request.runId(), request.nodeId(), request.occurrence(), effectKey, request.connectionKey(),
                 request.connectionVersion(), request.operation(), effectClass, requestHash);
@@ -183,6 +211,7 @@ public class EffectDispatcher {
         }
         int attempt = effect.attempts();
         if (dnsFailure) {
+            guard.notResolved(request.workspaceId(), request.connectionKey(), request.operation(), ticket);
             journal.finish(request.workspaceId(), effect.id(), EffectJournal.RETRYABLE_FAILURE, null, "DNS_FAILURE",
                     "Host name did not resolve", null, null);
             return new Failed(effect.id(), attempt, true, "RETRIES_EXHAUSTED", "DNS_FAILURE", "retryable", null,
@@ -240,6 +269,7 @@ public class EffectDispatcher {
                 }
             }
         }
+        guard.after(request.workspaceId(), request.connectionKey(), request.operation(), ticket, call);
         switch (call.outcome()) {
             case SUCCEEDED -> {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.SUCCEEDED, call.httpStatus(), null,
@@ -251,7 +281,7 @@ public class EffectDispatcher {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.RETRYABLE_FAILURE, call.httpStatus(),
                         call.errorCode(), call.detail(), null, null);
                 return new Failed(effect.id(), attempt, true, "RETRIES_EXHAUSTED", call.errorCode(), "retryable",
-                        call.httpStatus(), effectClass, retriesMessage(name));
+                        call.httpStatus(), effectClass, retriesMessage(name), call.retryAfter());
             }
             case PERMANENT -> {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.PERMANENT_FAILURE, call.httpStatus(),

@@ -547,6 +547,43 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "stepRetry": {
+      "description": "This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*).",
+      "type": "object",
+      "properties": {
+        "maxAttempts": {
+          "description": "Total attempts, the first included.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "delay": {
+          "description": "Delay before the second attempt: hours, minutes and seconds, for example PT10S.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "multiplier": {
+          "description": "Each later delay is the previous one times this (1 keeps the delay constant).",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "maxDelay": {
+          "description": "Longest delay between attempts and the cap of Retry-After; at most PT6H. Unset means PT6H.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "honorRetryAfter": {
+          "description": "Use the Retry-After of a 429 or 503 response for the next attempt (default true).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "maxAttempts",
+        "delay"
+      ],
+      "additionalProperties": false
+    },
     "key": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
@@ -1299,6 +1336,9 @@
                 "type": "string",
                 "pattern": "^(/([^~/]|~[01])*)+$"
               }
+            },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
             },
             "timeoutSeconds": {
               "description": "Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long).",
@@ -2429,6 +2469,9 @@
                 "$ref": "#/$defs/messagePayloadField"
               }
             },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
+            },
             "leaseSeconds": {
               "description": "How long a worker holds a job before it must extend the lease or lose it.",
               "type": "integer",
@@ -2922,6 +2965,9 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
             },
             "inputMapping": {
               "description": "Request or earlier-step values used by this step, by name.",

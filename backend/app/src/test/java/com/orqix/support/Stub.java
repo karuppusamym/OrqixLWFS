@@ -28,10 +28,14 @@ import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 public final class Stub {
 
     public enum Mode {
-        NONE, DELAY, STATUS500, STATUS400, STATUS429, COMMIT_THEN_TIMEOUT, DROP_CONNECTION, INVALID_BODY
+        NONE, DELAY, STATUS500, STATUS400, STATUS429, STATUS503, COMMIT_THEN_TIMEOUT, DROP_CONNECTION, INVALID_BODY
     }
 
-    private record Fault(Mode mode, int delayMs) {
+    /** @param retryAfter Retry-After header of a 429 or 503 (S131), or null */
+    private record Fault(Mode mode, int delayMs, String retryAfter) {
+        Fault(Mode mode, int delayMs) {
+            this(mode, delayMs, null);
+        }
     }
 
     private record Order(String id, String body) {
@@ -119,6 +123,13 @@ public final class Stub {
         }
     }
 
+    /** Queues {@code times} 429 or 503 answers carrying {@code Retry-After: retryAfter} (CG-W04, S131). */
+    public static synchronized void faultWithRetryAfter(Mode mode, int times, String retryAfter) {
+        for (int i = 0; i < times; i++) {
+            FAULTS.addLast(new Fault(mode, 0, retryAfter));
+        }
+    }
+
     public static synchronized int orderCount() {
         return ORDERS.size();
     }
@@ -180,8 +191,14 @@ public final class Stub {
             case STATUS400 -> {
                 return json(400, "{\"error\":\"injected\"}");
             }
-            case STATUS429 -> {
-                return json(429, "{\"error\":\"injected\"}");
+            case STATUS429, STATUS503 -> {
+                ResponseDefinitionBuilder declined = new ResponseDefinitionBuilder()
+                        .withStatus(mode == Mode.STATUS429 ? 429 : 503).withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":\"injected\"}");
+                if (fault.retryAfter() != null) {
+                    declined.withHeader("Retry-After", fault.retryAfter());
+                }
+                return declined.build();
             }
             case DROP_CONNECTION -> {
                 return new ResponseDefinitionBuilder().withFault(com.github.tomakehurst.wiremock.http.Fault.CONNECTION_RESET_BY_PEER).build();

@@ -52,7 +52,7 @@ public final class ModelReader {
         }
         JsonNode exec = root.get("execution");
         Execution execution = new Execution(exec.get("maxConcurrentRuns").intValue(),
-                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue());
+                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue(), stepRetry(nodeArray));
         List<Dependency> dependencies = new ArrayList<>();
         JsonNode deps = root.get("dependencies").get("connections");
         for (int i = 0; i < deps.size(); i++) {
@@ -104,6 +104,24 @@ public final class ModelReader {
             }
         }
         return List.copyOf(list);
+    }
+
+    /** Step-level retry policies (CG-W04, S131) of http, externalTask and sendAdapter steps, by step id. */
+    private static Map<String, StepRetry> stepRetry(JsonNode nodeArray) {
+        Map<String, StepRetry> policies = new TreeMap<>();
+        for (int i = 0; i < nodeArray.size(); i++) {
+            JsonNode node = nodeArray.get(i);
+            JsonNode retry = node.path("config").path("retry");
+            if (!retry.isObject()) {
+                continue;
+            }
+            policies.put(node.get("id").stringValue(), new StepRetry("/nodes/" + i + "/config/retry",
+                    retry.get("maxAttempts").intValue(), retry.get("delay").stringValue(),
+                    retry.has("multiplier") ? retry.get("multiplier").decimalValue() : BigDecimal.ONE,
+                    retry.has("maxDelay") ? retry.get("maxDelay").stringValue() : null,
+                    retry.path("honorRetryAfter").asBoolean(true)));
+        }
+        return Collections.unmodifiableMap(policies);
     }
 
     private static String text(JsonNode object, String member) {

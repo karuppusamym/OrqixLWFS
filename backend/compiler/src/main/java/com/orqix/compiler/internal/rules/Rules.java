@@ -24,6 +24,7 @@ public final class Rules {
         PollRules.check(rc);
         DocumentRules.check(rc);
         ExternalRules.check(rc);
+        RetryRules.check(rc);
         AdapterStepRules.check(rc);
         AgentWriteToolRules.check(rc);
         MultiInstanceRules.check(rc);

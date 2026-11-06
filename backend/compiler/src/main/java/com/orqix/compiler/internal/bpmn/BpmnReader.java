@@ -721,7 +721,43 @@ public final class BpmnReader {
                 config.set("resultMapping", pairs(id, x, "result", "output"));
             }
         }
+        if (List.of("http", "externalTask", "sendAdapter").contains(kind)) {
+            stepRetry(id, ext.child(ORQIX_NS, "retry"), config);
+        }
         return kind;
+    }
+
+    /** {@code <orqix:retry>} back to {@code config.retry} (CG-W04, S131); the compiler checks the bounds. */
+    private void stepRetry(String id, El retry, ObjectNode config) {
+        if (retry == null) {
+            return;
+        }
+        ObjectNode policy = config.putObject("retry");
+        Integer attempts = integer(id, "maxAttempts", retry.attr("maxAttempts"));
+        if (attempts != null) {
+            policy.put("maxAttempts", attempts);
+        }
+        putText(policy, "delay", retry.attr("delay"));
+        // Defaults (multiplier 1, honorRetryAfter true) are read as omitted; BpmnDefaults keeps the draft's spelling.
+        String multiplier = retry.attr("multiplier");
+        if (multiplier != null) {
+            try {
+                BigDecimal value = new BigDecimal(multiplier);
+                if (value.compareTo(BigDecimal.ONE) != 0) {
+                    if (value.stripTrailingZeros().scale() <= 0) {
+                        policy.put("multiplier", value.intValueExact());
+                    } else {
+                        policy.put("multiplier", value);
+                    }
+                }
+            } catch (NumberFormatException | ArithmeticException e) {
+                unsupported(id, "The retry multiplier of '" + id + "' is not a number.");
+            }
+        }
+        putText(policy, "maxDelay", retry.attr("maxDelay"));
+        if ("false".equals(retry.attr("honorRetryAfter"))) {
+            policy.put("honorRetryAfter", false);
+        }
     }
 
     private String catchEvent(El el, El ext, ObjectNode config) {

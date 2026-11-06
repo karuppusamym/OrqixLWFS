@@ -253,7 +253,32 @@ public record WorkflowDefinition(
         }
     }
 
-    public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {
+    /**
+     * Workflow-wide execution limits. {@code stepRetry} holds the step-level retry policies (CG-W04, S131) by step id,
+     * sorted by id; a step without one uses {@code maxAttempts} and {@code retryDelaySeconds}.
+     */
+    public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds,
+                            Map<String, StepRetry> stepRetry) {
+        public Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {
+            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, Map.of());
+        }
+
+        /** @return the step's own policy, or null when it uses the workflow defaults */
+        public StepRetry retryOf(String stepId) {
+            return stepRetry.get(stepId);
+        }
+
+        /** Total attempts of the step: its own policy, else the workflow default. */
+        public int attemptsOf(String stepId) {
+            StepRetry r = retryOf(stepId);
+            return r == null ? maxAttempts : r.maxAttempts();
+        }
+
+        /** First delay of the step in seconds: its own policy, else the workflow default. */
+        public int delaySecondsOf(String stepId) {
+            StepRetry r = retryOf(stepId);
+            return r == null ? retryDelaySeconds : (int) Math.max(0, r.delaySeconds());
+        }
     }
 
     /** Declared connection dependency. */

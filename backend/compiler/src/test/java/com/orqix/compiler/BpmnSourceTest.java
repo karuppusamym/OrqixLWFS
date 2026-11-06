@@ -147,6 +147,8 @@ class BpmnSourceTest {
         assertThat(compiled).isGreaterThanOrEqualTo(20);
         assertThat(identical).contains("purchase-approval.json", "new-hire-onboarding.json",
                 "banking-kyc-onboarding.json", "vendor-onboarding-check.json", "document-review.json", "case:valid-base",
+                // CG-W04 (S131): a step retry policy, written in full and with its defaults left out.
+                "case:step-retry-valid", "case:step-retry-minimal-valid",
                 // S70: a written default (atTime 09:00) equals omission; payload titles are kept from the draft.
                 "start-date-onboarding.json", "order-payment-wait.json");
         // Behaviour the compiled BPMN does not carry: each is reported with its exact place in the document.
@@ -167,8 +169,14 @@ class BpmnSourceTest {
                 "approval.requiredSkills = []",
                 "externalTask.leaseSeconds = 120",
                 "externalTask.result[].required = false",
+                "externalTask.retry.honorRetryAfter = true",
+                "externalTask.retry.multiplier = 1",
                 "http.compensation = \"manual\"",
+                "http.retry.honorRetryAfter = true",
+                "http.retry.multiplier = 1",
                 "parallelSplit.mode = \"all\"",
+                "sendAdapter.retry.honorRetryAfter = true",
+                "sendAdapter.retry.multiplier = 1",
                 "startWorkflow.collectionMapping = {}",
                 // S77: a section or handler that does not stop the request.
                 "subprocesses[].interrupting = false",

@@ -3,7 +3,7 @@
   <message id="message__payment-received" name="payment-received"/>
   <process id="order-payment-wait" name="Hold an order until the payment arrives" isExecutable="true">
     <extensionElements>
-      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="7a48faa49074d1a0a111b22718b1d25633e9f0ed32728f43a82e22947526e227"/>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.3.0" semanticHash="7a48faa49074d1a0a111b22718b1d25633e9f0ed32728f43a82e22947526e227"/>
     </extensionElements>
     <startEvent id="start" name="Order placed"/>
     <eventBasedGateway id="waitPayment" name="Wait for the payment"/>

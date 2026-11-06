@@ -82,6 +82,29 @@ public final class BpmnGenerator {
     private BpmnGenerator() {
     }
 
+    /** The Flowable retry cycle of a step: its own attempts and first delay (CG-W04, S131), else the workflow's. */
+    private static String retryCycle(WorkflowDefinition d, String stepId) {
+        return RetryCycle.forAttempts(d.execution().attemptsOf(stepId), d.execution().delaySecondsOf(stepId));
+    }
+
+    /**
+     * {@code <orqix:retry>} for a step with its own retry policy (S131): the failed-job command reads it to compute
+     * the backoff and to honour {@code Retry-After}. Nothing is written for steps that use the workflow defaults, so
+     * their BPMN is unchanged.
+     */
+    private static void stepRetry(XmlOut x, WorkflowDefinition d, String stepId) {
+        com.orqix.compiler.internal.model.StepRetry r = d.execution().retryOf(stepId);
+        if (r == null) {
+            return;
+        }
+        x.leaf("orqix", "retry", ORQIX_NS).attr("maxAttempts", Integer.toString(r.maxAttempts()))
+                .attr("delay", r.delay()).attr("multiplier", r.multiplierText());
+        if (r.maxDelay() != null) {
+            x.attr("maxDelay", r.maxDelay());
+        }
+        x.attr("honorRetryAfter", Boolean.toString(r.honorRetryAfter()));
+    }
+
     /**
      * @param definition       a definition without blockers
      * @param decisionResource decision table key to DMN resource name
@@ -334,9 +357,8 @@ public final class BpmnGenerator {
                     x.attr("isForCompensation", "true");
                 }
                 x.open("", "extensionElements", BPMN_NS);
-                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
-                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()),
-                        false);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null, retryCycle(d, h.id()), false);
+                stepRetry(x, d, h.id());
                 String version = Integer.toString(d.dependencies().stream()
                         .filter(dep -> dep.key().equals(h.connectionRef())).findFirst().orElseThrow()
                         .definitionVersion());
@@ -387,12 +409,12 @@ public final class BpmnGenerator {
                         .attr("flowable", FLOWABLE_NS, "triggerable", "true")
                         .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixExternalTask}");
                 x.open("", "extensionElements", BPMN_NS);
-                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
-                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null, retryCycle(d, e.id()), false);
+                stepRetry(x, d, e.id());
                 x.open("orqix", "external", ORQIX_NS).attr("topic", e.topic())
                         .attr("leaseSeconds", Integer.toString(e.leaseSeconds()))
-                        .attr("maxAttempts", Integer.toString(d.execution().maxAttempts()))
-                        .attr("retryDelaySeconds", Integer.toString(d.execution().retryDelaySeconds()));
+                        .attr("maxAttempts", Integer.toString(d.execution().attemptsOf(e.id())))
+                        .attr("retryDelaySeconds", Integer.toString(d.execution().delaySecondsOf(e.id())));
                 e.inputMapping().forEach((name, fieldRef) ->
                         x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
                 for (Node.PayloadField f : e.result()) {
@@ -413,8 +435,8 @@ public final class BpmnGenerator {
                         .attr("flowable", FLOWABLE_NS, "exclusive", "true")
                         .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixAdapterTask}");
                 x.open("", "extensionElements", BPMN_NS);
-                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
-                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null, retryCycle(d, a.id()), false);
+                stepRetry(x, d, a.id());
                 x.open("orqix", "adapter", ORQIX_NS).attr("adapter", a.adapterRef()).attr("kind", a.adapterKind());
                 if (a.topic() != null) {
                     x.attr("topic", a.topic());

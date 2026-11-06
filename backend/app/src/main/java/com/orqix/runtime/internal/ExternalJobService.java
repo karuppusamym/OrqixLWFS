@@ -78,16 +78,28 @@ public class ExternalJobService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void publish(UUID workspaceId, UUID runId, String nodeId, String topic, JsonNode input, int leaseSeconds,
             int maxAttempts, int retryDelaySeconds) {
+        publish(workspaceId, runId, nodeId, topic, input, leaseSeconds, maxAttempts, retryDelaySeconds, null);
+    }
+
+    /** @param retry the step's own retry policy (CG-W04, S131), or null for the workflow's fixed delay */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void publish(UUID workspaceId, UUID runId, String nodeId, String topic, JsonNode input, int leaseSeconds,
+            int maxAttempts, int retryDelaySeconds, StepRetryPolicy retry) {
         Instant now = clock.instant();
         int inserted = jdbc.sql("""
                 INSERT INTO external_job (id, workspace_id, run_id, node_id, topic, input, status, attempt, max_attempts,
-                                          lease_seconds, retry_delay_seconds, fence, available_at, created_at)
-                VALUES (:id, :ws, :run, :node, :topic, CAST(:input AS jsonb), 'available', 0, :max, :lease, :delay, 0, :now, :now)
+                                          lease_seconds, retry_delay_seconds, fence, available_at, created_at,
+                                          retry_multiplier, retry_max_delay_seconds, honor_retry_after)
+                VALUES (:id, :ws, :run, :node, :topic, CAST(:input AS jsonb), 'available', 0, :max, :lease, :delay, 0, :now, :now,
+                        :multiplier, :maxDelay, :honor)
                 ON CONFLICT DO NOTHING
                 """)
                 .param("id", UUID.randomUUID()).param("ws", workspaceId).param("run", runId).param("node", nodeId)
                 .param("topic", topic).param("input", json.write(input)).param("max", maxAttempts)
-                .param("lease", leaseSeconds).param("delay", retryDelaySeconds).param("now", Sql.ts(now)).update();
+                .param("lease", leaseSeconds).param("delay", retryDelaySeconds).param("now", Sql.ts(now))
+                .param("multiplier", retry == null ? null : retry.multiplier())
+                .param("maxDelay", retry == null ? null : (int) retry.maxDelay().toSeconds())
+                .param("honor", retry == null || retry.honorRetryAfter()).update();
         if (inserted == 0) {
             return;
         }
@@ -306,7 +318,7 @@ public class ExternalJobService {
         boolean retry = Boolean.TRUE.equals(request.retryable()) && job.attempt() < job.maxAttempts();
         Instant now = clock.instant();
         if (retry) {
-            int delay = request.retryAfterSeconds() == null ? job.retryDelaySeconds() : request.retryAfterSeconds();
+            int delay = retryDelay(workspaceId, job, request.retryAfterSeconds());
             jdbc.sql("""
                     UPDATE external_job SET status = 'available', worker_id = NULL, lease_expires_at = NULL,
                            last_error = :error, available_at = :at
@@ -387,6 +399,31 @@ public class ExternalJobService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * Seconds until the next attempt after a worker's retryable failure: the step's own policy (CG-W04, S131) when the
+     * job has one, else the worker's {@code retryAfterSeconds} or the workflow's fixed delay as before.
+     */
+    private int retryDelay(UUID workspaceId, Job job, Integer retryAfterSeconds) {
+        StepRetryPolicy policy = jdbc.sql("""
+                SELECT retry_multiplier, retry_max_delay_seconds, honor_retry_after FROM external_job
+                WHERE workspace_id = :ws AND id = :id
+                """)
+                .param("ws", workspaceId).param("id", job.id())
+                .query((rs, n) -> rs.getBigDecimal("retry_multiplier") == null ? null
+                        : new StepRetryPolicy(job.maxAttempts(), java.time.Duration.ofSeconds(job.retryDelaySeconds()),
+                                rs.getBigDecimal("retry_multiplier"),
+                                java.time.Duration.ofSeconds(rs.getInt("retry_max_delay_seconds")),
+                                rs.getBoolean("honor_retry_after")))
+                .optional().orElse(null);
+        if (policy == null) {
+            return retryAfterSeconds == null ? job.retryDelaySeconds() : retryAfterSeconds;
+        }
+        java.time.Duration next = policy.nextDelay(Math.max(1, job.attempt()),
+                retryAfterSeconds == null ? null : java.time.Duration.ofSeconds(retryAfterSeconds),
+                java.util.concurrent.ThreadLocalRandom.current()::nextDouble);
+        return (int) Math.max(1, (next.toMillis() + 999) / 1000);
+    }
 
     private record Job(UUID id, UUID workspaceId, UUID runId, String nodeId, String topic, int attempt, int maxAttempts,
             int retryDelaySeconds, int fence, String status, String workerId) {

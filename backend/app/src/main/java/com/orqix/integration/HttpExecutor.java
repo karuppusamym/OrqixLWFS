@@ -67,25 +67,32 @@ public class HttpExecutor {
      * @param attentionReason S5 section 6.3 reason when the outcome stops automatic progress (null on success)
      * @param errorCode       short code, e.g. CONNECT_FAILED, TIMEOUT, HTTP_500, RESPONSE_INVALID
      * @param detail          redacted: status and error class only, never bodies, headers or credentials
+     * @param retryAfter      the {@code Retry-After} of a 429 or 503 (CG-W04, S131), else null
      */
     public record CallResult(Outcome outcome, Observation observation, Integer httpStatus, String errorCode,
             String detail, String attentionReason, ObjectNode result, String remoteReference, long durationMs,
-            Page page, String failureMessage) {
+            Page page, String failureMessage, Duration retryAfter) {
 
         public CallResult(Outcome outcome, Observation observation, Integer httpStatus, String errorCode,
                 String detail, String attentionReason, ObjectNode result, String remoteReference, long durationMs) {
             this(outcome, observation, httpStatus, errorCode, detail, attentionReason, result, remoteReference,
-                    durationMs, null, null);
+                    durationMs, null, null, null);
         }
 
         CallResult withPage(Page page) {
             return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
-                    remoteReference, durationMs, page, failureMessage);
+                    remoteReference, durationMs, page, failureMessage, retryAfter);
         }
 
         CallResult withFailureMessage(String message) {
             return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
-                    remoteReference, durationMs, page, message);
+                    remoteReference, durationMs, page, message, retryAfter);
+        }
+
+        /** The same result carrying the server's {@code Retry-After} (S131). */
+        public CallResult withRetryAfter(Duration value) {
+            return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
+                    remoteReference, durationMs, page, failureMessage, value);
         }
 
         public String classification() {
@@ -196,11 +203,11 @@ public class HttpExecutor {
         }
         if (status == 429) {
             return finish(started, Observation.DECLINED_429, operation.effectClass(), status, "RATE_LIMITED",
-                    "HTTP 429", null, null);
+                    "HTTP 429", null, null).withRetryAfter(retryAfter(response));
         }
         if (status == 408 || status >= 500) {
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), status, "HTTP_" + status,
-                    "HTTP " + status, null, null);
+                    "HTTP " + status, null, null).withRetryAfter(status == 503 ? retryAfter(response) : null);
         }
         if (status >= 400) {
             if (operation.v1()) {
@@ -323,6 +330,11 @@ public class HttpExecutor {
         String remoteReference = remoteReference(responseBody, result);
         return finish(started, Observation.SUCCESS, operation.effectClass(), status, null, "HTTP " + status, result,
                 remoteReference);
+    }
+
+    /** CG-W04 (S131): the server's {@code Retry-After}, seconds or an HTTP date; null when absent or not valid. */
+    private static Duration retryAfter(HttpResponse<?> response) {
+        return RetryAfter.parse(response.headers().firstValue("Retry-After").orElse(null), java.time.Instant.now());
     }
 
     /** S5 section 6.2 classification table. */

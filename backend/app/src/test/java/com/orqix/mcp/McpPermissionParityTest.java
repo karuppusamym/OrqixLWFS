@@ -87,9 +87,11 @@ class McpPermissionParityTest extends McpTestBase {
             // list_workflows: exactly the workflows the catalog offers the person to start.
             McpTestClient.Reply workflows = mcp.call("list_workflows", Map.of());
             Set<String> mcpIds = new HashSet<>();
+            boolean[] truncated = {false};
             structured(workflows).path("workspaces").forEach(ws -> {
                 if (ws.path("workspaceId").asString().equals(PURCHASING.toString())) {
                     ws.path("workflows").forEach(w -> mcpIds.add(w.path("workflowId").asString()));
+                    truncated[0] = ws.path("truncated").asBoolean();
                 }
             });
             Set<String> restIds = new HashSet<>();
@@ -102,7 +104,14 @@ class McpPermissionParityTest extends McpTestBase {
                     }
                 });
             }
-            assertThat(mcpIds).as(user + " list_workflows").isEqualTo(restIds);
+            if (truncated[0]) {
+                // The shared test database can hold more startable workflows than the tool lists (200): the tool
+                // must then say so and list only workflows the catalog also offers.
+                assertThat(mcpIds).as(user + " list_workflows (truncated)").hasSize(200);
+                assertThat(restIds).as(user + " list_workflows (truncated)").containsAll(mcpIds).hasSizeGreaterThan(200);
+            } else {
+                assertThat(mcpIds).as(user + " list_workflows").isEqualTo(restIds);
+            }
         }
     }
 

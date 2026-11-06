@@ -36,10 +36,24 @@ public abstract class PackageTestBase extends RuntimeTestBase {
         grant("workflow.start", ADMINS);
     }
 
+    /** Grants this test created; removed afterwards so workspace-wide grants never leak into other tests. */
+    private final java.util.List<String> createdGrants = new java.util.ArrayList<>();
+
+    @org.junit.jupiter.api.AfterEach
+    void revokePackageGrants() throws Exception {
+        for (String id : createdGrants) {
+            api("wade.admin").delete("/workspaces/{ws}/access/grants/{id}", PURCHASING, id);
+        }
+        createdGrants.clear();
+    }
+
     protected void grant(String permission, String group) throws Exception {
         Response r = api("wade.admin").post(Map.of("permission", permission, "principal",
                 Map.of("type", "idpGroup", "value", group)), "/workspaces/{ws}/access/grants", PURCHASING);
         assertThat(r.status()).as(r.toString()).isIn(201, 409);
+        if (r.status() == 201) {
+            createdGrants.add(r.body().path("id").asString());
+        }
     }
 
     /** The ServiceNow package's files, optionally renamed and edited (paths to UTF-8 text). */

@@ -115,7 +115,8 @@ public class McpTools {
         ArrayNode tools = json.mapper().createArrayNode();
         tools.add(tool("list_workflows", "List workflows you can start",
                 "Lists the workflows you may start now in the workspaces where the Orqix MCP server is switched on, with "
-                        + "the name of the start tool when the workflow is offered to assistants.",
+                        + "the name of the start tool when the workflow is offered to assistants. At most 200 per workspace; "
+                        + "truncated is true when there are more.",
                 schema(workspaceProperty()), true, false));
         tools.add(tool("search_requests", "Search requests",
                 "Finds requests (workflow runs). With run.read you search every request of the workspace; otherwise, or "
@@ -310,7 +311,14 @@ public class McpTools {
             ws.put("name", access.workspace().name());
             ws.put("isTest", access.workspace().isTest());
             ArrayNode items = ws.putArray("workflows");
-            for (ToolWorkflows.Startable w : workflows.startable(caller, access.workspaceId(), MAX_START_TOOLS)) {
+            // One more than shown, so the assistant is told when the list is cut instead of seeing a silent subset.
+            List<ToolWorkflows.Startable> startable = workflows.startable(caller, access.workspaceId(), MAX_START_TOOLS + 1);
+            boolean truncated = startable.size() > MAX_START_TOOLS;
+            ws.put("truncated", truncated);
+            if (truncated) {
+                ws.put("note", "Only the first " + MAX_START_TOOLS + " workflows you may start are listed.");
+            }
+            for (ToolWorkflows.Startable w : startable.subList(0, Math.min(startable.size(), MAX_START_TOOLS))) {
                 ObjectNode item = items.addObject();
                 item.put("workflowId", w.id().toString());
                 item.put("key", w.key());

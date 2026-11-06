@@ -9955,10 +9955,10 @@ export interface components {
             key: components["schemas"]["Key"];
             name: string;
             /**
-             * @description http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
+             * @description http (default), agent (an AI task over MCP servers, docs/build/S13-agents-mcp.md) or mcpServer (a registered tool server, docs/build/S135-agent-tools.md)
              * @enum {string}
              */
-            kind?: "http" | "agent" | "microsoftGraph";
+            kind?: "http" | "agent" | "microsoftGraph" | "mcpServer";
             latestVersion: number;
             versions: number[];
             binding: {

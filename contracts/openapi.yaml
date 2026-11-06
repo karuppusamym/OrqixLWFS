@@ -13486,8 +13486,8 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [http, agent, microsoftGraph]
-          description: http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
+          enum: [http, agent, microsoftGraph, mcpServer]
+          description: http (default), agent (an AI task over MCP servers, docs/build/S13-agents-mcp.md) or mcpServer (a registered tool server, docs/build/S135-agent-tools.md)
         latestVersion: { type: integer }
         versions: { type: array, items: { type: integer } }
         binding:

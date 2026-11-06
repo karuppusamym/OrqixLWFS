@@ -211,7 +211,7 @@ export class Checker {
           if (!loose(each) && !orderable(each)) throw new ExpressionError('EXPR_TYPE', a[a.length - 1]!.pos, `${n} needs numbers, texts or dates, not ${describeType(each)}.`)
           return loose(each) ? 'any' : each
         }
-        let result = first
+        let result: ExprType = first
         for (let i = 1; i < a.length; i++) {
           const t = this.check(a[i]!)
           const joined = join(result, t)

@@ -2,6 +2,7 @@ import { isCalendarDate } from '../dates'
 import { patternMatches } from './pattern'
 import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
 import { fieldsForInput } from './visibility'
+import { brokenRules } from './computed'
 
 /**
  * Interpretive validator for the approved form-schema subset.
@@ -29,11 +30,14 @@ export type IssueKeyword =
   | 'minItems'
   | 'maxItems'
   | 'hidden'
+  | 'rule'
 
 export interface JsonIssue {
   /** JSON Pointer relative to the input object, e.g. "/amount". */
   pointer: string
   keyword: IssueKeyword
+  /** The rule's own message (keyword rule, S137). */
+  message?: string
 }
 
 /** ajv's `multipleOfPrecision: 2` check: |round(d) - d| > 1e-2 means "not a multiple". */
@@ -145,7 +149,9 @@ export function validateJsonForm(schema: FormSchema, ui: FormUi, data: unknown):
   const visible = new Set(fields.map(field => field.key))
   const hidden = Object.keys(schema.properties).filter(key => !visible.has(key) && key in input)
   const checked = Object.fromEntries(Object.entries(input).filter(([key]) => !(key in schema.properties) || visible.has(key)))
-  return [...hidden.map(key => ({ pointer: `/${escapePointer(key)}`, keyword: 'hidden' as const })), ...validateJsonInput({ ...schema, properties: Object.fromEntries(fields.map(field => [field.key, field.schema])), required: fields.filter(field => field.required).map(field => field.key) }, checked)]
+  // CG-F04 (S137): cross-field rules, as the server checks them.
+  const rules = brokenRules(schema, ui, input).flatMap(b => (b.fields.length ? b.fields : ['']).map(f => ({ pointer: f ? `/${escapePointer(f)}` : '', keyword: 'rule' as const, message: b.message })))
+  return [...hidden.map(key => ({ pointer: `/${escapePointer(key)}`, keyword: 'hidden' as const })), ...validateJsonInput({ ...schema, properties: Object.fromEntries(fields.map(field => [field.key, field.schema])), required: fields.filter(field => field.required).map(field => field.key) }, checked), ...rules]
 }
 
 /** The JSON Schema document ajv would receive for the same subset (used by parity tests and docs). */

@@ -4,7 +4,10 @@ import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { RESERVED_CAPTURE_KEYS, captureOf, changeable } from '@/features/studio/model/stepForms'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { conditionTerms, isAtomicCondition, isRangeValue, type AtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { check as checkExpr, describeType, type ExprType } from '@/lib/expr'
+import { declaredType } from '@/lib/expr/calculate'
+import { studioScope } from '@/features/studio/model/expressionScope'
+import { conditionTerms, isAtomicCondition, isExpressionCondition, isRangeValue, type AtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -290,6 +293,22 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         else if (!(ctx.publishedWorkflows ?? []).includes(ref)) issues.push(issue('WF_CHILD_NOT_PUBLISHED', 'blocker', `"${ref}" is not a published workflow of this workspace.`, nodePath(n, '/config/workflowRef'), n.id))
         break
       }
+      case 'calculate': {
+        // S137: every output is type checked against what is known here and the outputs above it.
+        const outputs = (Array.isArray(c.outputs) ? c.outputs : []) as Array<{ key: string; expression: string; type: string; scale?: number; rounding?: string }>
+        const locals: Record<string, ExprType> = {}
+        outputs.forEach((o, oi) => {
+          const base = nodePath(n, `/config/outputs/${oi}`)
+          if (o.key in locals) issues.push(issue('WF_CALCULATE_OUTPUT_DUPLICATE', 'blocker', `"${n.label}" has two outputs named "${o.key}".`, `${base}/key`, n.id))
+          const numeric = o.type === 'number' || o.type === 'integer'
+          if (!numeric && (o.scale !== undefined || o.rounding !== undefined)) issues.push(issue('WF_CALCULATE_ROUNDING', 'blocker', `Only a number output can be rounded; "${o.key}" is ${describeType(declaredType(o.type))}.`, base, n.id))
+          const t = checkExpression(def, n, o.expression, `${base}/expression`, issues, null, undefined, locals)
+          const wanted = declaredType(o.type)
+          if (t !== null && t !== wanted && t !== 'null' && t !== 'any') issues.push(issue('WF_CALCULATE_TYPE', 'blocker', `The output "${o.key}" is declared as ${describeType(wanted)}, but its expression gives ${describeType(t)}.`, `${base}/expression`, n.id))
+          locals[o.key] = wanted
+        })
+        break
+      }
       case 'decision': {
         const ref = c.decisionRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a rule table.`, nodePath(n, '/config/decisionRef'), n.id))
@@ -347,7 +366,11 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
 
   // Routes and conditions -------------------------------------------------------------------------------
   for (const n of def.nodes.filter((x) => x.type === 'branch')) {
-    const conds = outgoing(def, n.id).filter((t) => t.on === 'condition' && t.condition)
+    const all = outgoing(def, n.id).filter((t) => t.on === 'condition' && t.condition)
+    // S137: expression conditions cannot be proven exclusive; the paths are tried in order (a warning, as the compiler says).
+    const withExpressions = all.some((t) => isExpressionCondition(t.condition))
+    if (withExpressions) issues.push(issue('WF_BRANCH_EXPRESSION_ORDER', 'warning', `"${n.label}" has conditions written as expressions, which cannot be checked for overlap. Its paths are tried in the order they are listed and the first whose condition is true is taken.`, nodePath(n), n.id))
+    const conds = withExpressions ? [] : all
     const fields = new Set(conds.map((t) => t.condition?.fieldRef))
     if (fields.size > 1) issues.push(issue('WF_BRANCH_MIXED_FIELDS', 'blocker', `All conditions of "${n.label}" must test the same value.`, nodePath(n), n.id))
     for (const t of outgoing(def, n.id).filter((x) => x.on === 'condition')) {
@@ -492,7 +515,31 @@ function checkRef(def: Definition, at: WorkflowNode, ref: string, path: string, 
   }
 }
 
+/** An Orqix expression (S137) checked like the compiler does: syntax, types and the type it must give. */
+function checkExpression(def: Definition, at: WorkflowNode | null, source: string, path: string, issues: Issue[], expected: ExprType | null, transitionId?: string, locals: Record<string, ExprType> = {}): ExprType | null {
+  if (/[$#]\{/.test(source)) {
+    issues.push(issue('WF_EXPRESSION_INVALID', 'blocker', 'An expression cannot contain the characters ${ or #{, even inside text.', path, at?.id, transitionId))
+    return null
+  }
+  const result = checkExpr(source, studioScope(def, at?.id ?? null, undefined, locals).scope)
+  if (!result.ok) {
+    issues.push(issue('WF_EXPRESSION_INVALID', 'blocker', `${result.error.message} (at character ${result.error.position + 1})`, path, at?.id, transitionId))
+    return null
+  }
+  const t = result.expression.type
+  if (expected && t !== expected && t !== 'null' && t !== 'any') {
+    issues.push(issue('WF_EXPRESSION_TYPE', 'blocker', `This expression must give ${describeType(expected)}, but it gives ${describeType(t)}.`, path, at?.id, transitionId))
+    return null
+  }
+  return t
+}
+
 function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: string, issues: Issue[], transitionId?: string): void {
+  if (isExpressionCondition(c)) {
+    if (path.startsWith('/decisions/')) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'A decision row cannot be an expression.', path, at.id, transitionId))
+    else checkExpression(def, at, c.expression, `${path}/expression`, issues, 'boolean', transitionId)
+    return
+  }
   if (!isAtomicCondition(c)) {
     const group = 'all' in c ? 'all' : 'any'
     for (const [index, term] of (c[group] ?? []).entries()) {

@@ -4,7 +4,7 @@
  */
 import type { ViewDefinition } from '@/features/views/model'
 
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'calculate' | 'end'
 /** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
 export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
@@ -24,6 +24,16 @@ export interface AtomicCondition {
   fieldRef: string
   operator: Operator
   value: ConditionValue
+  expression?: never
+}
+/** A condition written as an Orqix expression (CG-X01, docs/build/S137). */
+export interface ExpressionCondition {
+  expression: string
+  fieldRef?: never
+  operator?: never
+  value?: never
+  all?: never
+  any?: never
 }
 export function isRangeValue(v: unknown): v is RangeValue {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && typeof (v as RangeValue).from === 'number' && typeof (v as RangeValue).to === 'number'
@@ -31,11 +41,15 @@ export function isRangeValue(v: unknown): v is RangeValue {
 export function isSetOperator(op: Operator): op is 'in' | 'between' {
   return op === 'in' || op === 'between'
 }
-export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never }
+export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never; expression?: never } | ExpressionCondition
 export function isAtomicCondition(c: Condition): c is AtomicCondition {
   return typeof c.fieldRef === 'string' && typeof c.operator === 'string' && 'value' in c
 }
-export function conditionTerms(c: Condition): AtomicCondition[] { return 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
+export function isExpressionCondition(c: Condition | undefined | null): c is ExpressionCondition {
+  return !!c && typeof (c as ExpressionCondition).expression === 'string'
+}
+/** The comparisons of a condition; none for an expression condition (S137). */
+export function conditionTerms(c: Condition): AtomicCondition[] { return isExpressionCondition(c) ? [] : 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
 
 export interface WorkflowNode {
   id: string
@@ -142,6 +156,10 @@ export interface InputUiDoc {
   visibleWhen?: Record<string, Condition>
   requiredWhen?: Record<string, Condition>
   layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
+  /** CG-F04 (S137): fields an expression computes from the other answers. */
+  computed?: Record<string, string>
+  /** CG-F04 (S137): cross-field rules, broken when the check is false. */
+  rules?: Array<{ id: string; check: string; message: string; fields?: string[] }>
 }
 
 export interface Position {

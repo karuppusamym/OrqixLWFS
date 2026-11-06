@@ -13,6 +13,7 @@ import { disabledFeaturesOf } from './features'
 import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
+import { applyComputed } from '@/lib/form/computed'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
@@ -1367,6 +1368,8 @@ export function createHandlers(): HttpHandler[] {
         if (input.expectedReleaseId && input.expectedReleaseId !== rel.id) return problem(409, 'RELEASE_NOT_ACTIVE', 'The form was updated')
         const schema = parseFormSchema(rel.definition.inputSchema)
         const fields = buildFields(schema, {})
+        // CG-F04 (S137): the server recomputes computed fields and replaces what was sent.
+        input.input = applyComputed(schema, parseFormUi(rel.definition.inputUi), input.input ?? {}, clock.iso())
         const issues = validateJsonForm(schema, parseFormUi(rel.definition.inputUi), input.input ?? {})
         const horizon = issues.length === 0 ? waitHorizonErrors(rel.definition, input.input ?? {}, clock.now()) : []
         if (issues.length > 0 || horizon.length > 0) {
@@ -1374,7 +1377,7 @@ export function createHandlers(): HttpHandler[] {
             fieldErrors: [...issues.map((i) => ({
               pointer: `/input${i.pointer}`,
               code: i.keyword,
-              message: `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
+              message: i.message ?? `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
             })), ...horizon],
           })
         }

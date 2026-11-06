@@ -91,6 +91,12 @@ public class AiEvaluations {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         policy.require(access, Permission.AI_EVALUATE, "startAiEvaluation", true);
         AiSkills.Version v = skills.version(workspaceId, key, version).orElseThrow(ApiException::notFound);
+        ProviderRegistry.Resolved profile;
+        try {
+            profile = providers.resolve(v.modelProfile(), skills.policy(workspaceId).residency());
+        } catch (ProviderRegistry.ProfileRefusedException e) {
+            throw new ApiException(ProblemCode.AI_MODEL_NOT_ALLOWED, e.getMessage());
+        }
         String suiteKey = body != null && body.path("suiteKey").isString() ? body.path("suiteKey").asString()
                 : v.document().path("evaluation").path("suite").asString(null);
         if (suiteKey == null) {
@@ -109,12 +115,6 @@ public class AiEvaluations {
         if (!problems.isEmpty()) {
             throw invalid("/suiteKey", "The suite does not fit this skill version: " + problems.get(0).pointer() + " "
                     + problems.get(0).message());
-        }
-        ProviderRegistry.Resolved profile;
-        try {
-            profile = providers.resolve(v.modelProfile(), skills.policy(workspaceId).residency());
-        } catch (ProviderRegistry.ProfileRefusedException e) {
-            throw new ApiException(ProblemCode.AI_MODEL_NOT_ALLOWED, e.getMessage());
         }
         if (jdbc.sql("SELECT count(*) FROM ai_eval_run WHERE skill_version_id = :v AND status = 'running'")
                 .param("v", v.id()).query(Integer.class).single() > 0) {

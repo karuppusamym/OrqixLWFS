@@ -60,6 +60,12 @@ public interface AiTaskPort {
      */
     boolean recordOutcome(UUID workspaceId, UUID runId, UUID decisionId, HumanOutcome outcome);
 
+    /**
+     * Control facts of an evaluation run for the release evidence pack (status, profile, suite, cases, accuracy,
+     * finish time); null when the run does not exist in the workspace.
+     */
+    JsonNode evaluationEvidence(UUID workspaceId, UUID evaluationRunId);
+
     /** A lease on the job that is renewed while the pipeline works. */
     interface Lease {
         /** @return false when the lease was lost (another worker owns the job, the step was stopped) */

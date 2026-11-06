@@ -44,6 +44,7 @@ tags:
   - name: Agent write tools
   - name: Access
   - name: AI
+  - name: AiSkills
   - name: Migration
   - name: Conversation
   - name: Insights
@@ -7016,6 +7017,734 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  # ---- AiSkills (docs/build/S134): AI skills, evaluations, shadow mode, promotions, policy, decisions ----
+  /workspaces/{workspaceId}/ai-skills:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiSkills
+      summary: 'AI skills of the workspace with their versions (S134)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AiSkills]
+      operationId: createAiSkill
+      summary: 'Create an AI skill with its first draft version'
+      description: |
+        The document follows contracts/ai-skill-v1.schema.json (kind skill); 422 VALIDATION_FAILED lists the problems.
+        409 DUPLICATE_KEY when the key exists.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkill' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiSkill
+      summary: 'One AI skill with every version and document'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkill' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    post:
+      tags: [AiSkills]
+      operationId: createAiSkillVersion
+      summary: 'Add a draft version (approved versions never change)'
+      description: |
+        409 AI_SKILL_STATE_CONFLICT while another version is in draft or submitted.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    put:
+      tags: [AiSkills]
+      operationId: updateAiSkillVersion
+      summary: 'Replace the document of a draft or submitted version (returns it to draft)'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillDocumentRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/submit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: submitAiSkillVersion
+      summary: 'Submit a draft for approval'
+      description: |
+        The model profile must be usable (422 otherwise).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.submitted
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/approve:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: approveAiSkillVersion
+      summary: 'Approve a submitted version (four eyes)'
+      description: |
+        Grant-only ai.approve-skill, checked fresh; never the author (403 SELF_APPROVAL_DENIED); reason required.
+        Earlier approved versions stay approved for the releases that pinned them.
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.skill.version.approved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiReasonRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/retire:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: retireAiSkillVersion
+      summary: 'Retire a version: AI tasks pinned to it go to aiUnavailable (kill switch)'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.skill.version.retired
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillVersion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/evaluations:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: startAiEvaluation
+      summary: 'Run an evaluation suite on the version and its model profile (async)'
+      description: |
+        Answers 202 at once with status running; poll getAiEvaluation. A passing run within 30 days on the pinned
+        profile is the publish gate of AI tasks (WF_AI_EVALUATION_REQUIRED).
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.evaluation.started
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvaluationStartRequest' }
+      responses:
+        '202':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvaluations
+      summary: 'Evaluation runs of a version, newest first'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluationList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-evaluations/{evaluationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiEvaluation
+      summary: 'One evaluation run with metrics and calibration'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-suites:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvalSuites
+      summary: 'Evaluation suites (shared test assets)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuiteList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-suites/{suiteKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: suiteKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: getAiEvalSuite
+      summary: 'One evaluation suite with its cases'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AiSkills]
+      operationId: saveAiEvalSuite
+      summary: 'Create or replace an evaluation suite'
+      description: |
+        Cases are synthetic or deliberately redacted; nothing imports production data.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.eval-suite.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvalSuiteSaveRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/shadow:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [AiSkills]
+      operationId: getAiShadowDashboard
+      summary: 'Agreement with human outcomes: confusion matrix, precision, recall, cost, latency'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiShadowDashboard' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/promotions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: requestAiSkillPromotion
+      summary: 'Ask to raise the autonomy ceiling one step (suggest, autoWithReview, auto)'
+      description: |
+        Needs the skill minimum of compared shadow cases (default 200) with agreement at or above its target
+        (default 0.9); otherwise 422.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.promotion.requested
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillPromotionRequest' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/promotions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+    get:
+      tags: [AiSkills]
+      operationId: listAiSkillPromotions
+      summary: 'Promotions of a skill, newest first'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotionList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-skill-promotions/{promotionId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: promotionId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: decideAiSkillPromotion
+      summary: 'Approve or reject a promotion (four eyes)'
+      description: |
+        Never the person who asked for it (403 SELF_APPROVAL_DENIED); reason required.
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.promotion.decided
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiSkillPromotionDecision' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSkillPromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/drift-check:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: checkAiSkillDrift
+      summary: 'Run the drift check now (also weekly)'
+      description: |
+        Compares agreement over the last 7 days with the promotion baseline; a drop beyond the skill threshold with
+        at least 20 cases falls back to suggest.
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.skill.drift-fallback
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDriftCheck' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/clear-drift:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: skillKey
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Key' }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [AiSkills]
+      operationId: clearAiSkillDrift
+      summary: 'Let a version decide automatically again after a drift fallback'
+      x-orqix-permission: ai.approve-skill
+      x-orqix-audit: ai.skill.drift-cleared
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiReasonRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiShadowDashboard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-review-queue:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiReviewQueue
+      summary: 'Automatic AI decisions sampled for review that nobody reviewed yet'
+      x-orqix-permission: ai.evaluate | run.operate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiReviewQueue' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-candidates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: listAiEvalCandidates
+      summary: 'Overrides waiting to become evaluation cases'
+      x-orqix-permission: ai.evaluate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalCandidateList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-eval-candidates/{candidateId}/review:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: candidateId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: reviewAiEvalCandidate
+      summary: 'Accept a candidate into a suite (redacted or synthetic input) or discard it'
+      x-orqix-permission: ai.evaluate
+      x-orqix-audit: ai.eval-candidate.reviewed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiEvalCandidateReview' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiEvalCandidateReviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [AiSkills]
+      operationId: getAiPolicy
+      summary: 'Workspace AI policy: residency, retention, low-risk labels, classification actions'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill | workspace.manage-access
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiPolicy' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AiSkills]
+      operationId: updateAiPolicy
+      summary: 'Update the workspace AI policy'
+      description: |
+        expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT). A regulated workspace never sends sensitive
+        fields, and adverse outcomes always need a person there.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: ai.policy.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiPolicyUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-decisions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [AiSkills]
+      operationId: listRunAiDecisions
+      summary: 'AI decision records of a run (S134 section 7.8)'
+      description: |
+        Input values appear only when retained by the workspace policy and the caller may see the run data.
+      x-orqix-permission: run.read | initiator | participant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDecisionList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-decisions/{decisionId}/outcome:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: decisionId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [AiSkills]
+      operationId: recordAiDecisionOutcome
+      summary: 'Record that a person accepted or overrode an AI decision'
+      description: |
+        An override names the final label or outcome and a reason; it becomes a candidate evaluation case.
+      x-orqix-permission: participant | run.operate | ai.evaluate
+      x-orqix-audit: ai.decision.outcome-recorded
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiDecisionOutcomeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDecision' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end AiSkills ----
+
   /workspaces/{workspaceId}/ai/status:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -11475,6 +12204,20 @@ components:
               errorCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$', description: 'For businessError; default WORKER_ERROR' }
               message: { type: string, maxLength: 500, description: 'For businessError' }
               delaySeconds: { type: integer, minimum: 0, maximum: 2592000 }
+        ai:
+          type: object
+          description: By step ID of an AI task (docs/build/S134). No model is called; without settings a classify task answers its first label with confidence 0.95.
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              unavailable: { type: boolean, description: 'Take the path for when AI is unavailable' }
+              label: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              fields: { type: object, description: 'Extracted values (extract)' }
+              score: { type: number }
+              recommendation: { type: string }
+              summary: { type: string, maxLength: 8000 }
         adapters:
           type: object
           description: By step ID of a Send through an adapter step. Default is delivered to the local stub.
@@ -11728,7 +12471,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -12321,7 +13064,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error], description: 'error only on a section error route (S59).' }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object
@@ -12344,7 +13087,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -13247,6 +13990,341 @@ components:
         label: { type: string }
         model: { type: string, description: 'OpenRouter model id' }
         variablePrice: { type: boolean, description: 'True for routers such as typesafe/jev-router whose price depends on the routed model' }
+    # ---- AiSkills schemas (docs/build/S134) ----
+    AiSkillDocumentRequest:
+      type: object
+      required: [document]
+      properties:
+        document: { type: object, description: 'contracts/ai-skill-v1.schema.json, kind skill' }
+    AiReasonRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillVersion:
+      type: object
+      required: [skillKey, version, status, mode, modelProfile, contentHash, authorId, submittedAt, approverId, approvedAt, autonomyCeiling, driftFallback, driftReason, evaluationGate, createdAt, updatedAt]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, submitted, approved, retired] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        modelProfile: { type: string }
+        contentHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        authorId: { $ref: '#/components/schemas/Uuid' }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approverId: { type: [string, 'null'], format: uuid }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        autonomyCeiling: { type: string, enum: [suggest, autoWithReview, auto] }
+        driftFallback: { type: boolean }
+        driftReason: { type: [string, 'null'] }
+        evaluationGate:
+          type: object
+          required: [passing, runId]
+          properties:
+            passing: { type: boolean, description: 'A passing run on the version profile within 30 days exists' }
+            runId: { type: [string, 'null'], format: uuid }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        document: { type: object }
+    AiSkill:
+      type: object
+      required: [key, name, ownerId, createdAt, approvedVersion, mode, versions]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        ownerId: { $ref: '#/components/schemas/Uuid' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        approvedVersion: { type: [integer, 'null'] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        versions: { type: array, items: { $ref: '#/components/schemas/AiSkillVersion' } }
+    AiSkillList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiSkill' } }
+    AiEvalSuite:
+      type: object
+      required: [key, skillKey, name, caseCount, revision, contentHash, updatedAt]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        name: { type: string }
+        caseCount: { type: integer, minimum: 1 }
+        revision: { type: integer, minimum: 1 }
+        contentHash: { type: string }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        document: { type: object, description: 'contracts/ai-skill-v1.schema.json, kind evaluationSuite' }
+    AiEvalSuiteList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiEvalSuite' } }
+    AiEvalSuiteSaveRequest:
+      type: object
+      required: [document]
+      properties:
+        document: { type: object }
+    AiEvaluationStartRequest:
+      type: object
+      properties:
+        suiteKey: { $ref: '#/components/schemas/Key' }
+    AiEvaluation:
+      type: object
+      required: [id, skillKey, version, suiteKey, suiteHash, modelProfile, status, caseCount, metrics, calibration, failure, startedBy, startedAt, finishedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        suiteKey: { $ref: '#/components/schemas/Key' }
+        suiteHash: { type: string }
+        modelProfile: { type: string }
+        status: { type: string, enum: [running, passed, failed, error] }
+        caseCount: { type: integer }
+        metrics:
+          description: accuracy, perLabel precision/recall, confusion, costPerCaseUsd, p95LatencyMs, thresholds trade-off, failures
+          type: [object, 'null']
+        calibration:
+          description: Ten buckets of raw confidence with the observed accuracy of each
+          type: [array, 'null']
+          items:
+            type: object
+            required: [from, to, cases, correct, accuracy]
+            properties:
+              from: { type: number }
+              to: { type: number }
+              cases: { type: integer }
+              correct: { type: integer }
+              accuracy: { type: number }
+        failure: { type: [string, 'null'] }
+        startedBy: { $ref: '#/components/schemas/Uuid' }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    AiEvaluationList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiEvaluation' } }
+    AiShadowDashboard:
+      type: object
+      required: [skillKey, version, decisions, shadowDecisions, compared, agreed, agreement, statuses, confusion, perLabel, costPerCaseUsd, p95LatencyMs, minShadowCases, targetAgreement, autonomyCeiling, driftFallback]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        decisions: { type: integer }
+        shadowDecisions: { type: integer }
+        compared: { type: integer, description: 'Decisions with a recorded human outcome' }
+        agreed: { type: integer }
+        agreement: { type: number }
+        statuses: { type: object, additionalProperties: { type: integer } }
+        confusion: { type: object, description: 'AI value to human value to count', additionalProperties: { type: object, additionalProperties: { type: integer } } }
+        perLabel:
+          type: object
+          additionalProperties:
+            type: object
+            required: [precision, recall, support]
+            properties:
+              precision: { type: number }
+              recall: { type: number }
+              support: { type: integer }
+        costPerCaseUsd: { type: number }
+        p95LatencyMs: { type: integer }
+        minShadowCases: { type: integer }
+        targetAgreement: { type: number }
+        autonomyCeiling: { type: string, enum: [suggest, autoWithReview, auto] }
+        driftFallback: { type: boolean }
+    AiSkillPromotionRequest:
+      type: object
+      required: [toAutonomy, reason]
+      properties:
+        toAutonomy: { type: string, enum: [autoWithReview, auto] }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillPromotionDecision:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AiSkillPromotion:
+      type: object
+      required: [id, skillKey, version, fromAutonomy, toAutonomy, status, requestedBy, requestedAt, reason, evidence, decidedBy, decidedAt, decisionReason]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        fromAutonomy: { type: string, enum: [suggest, autoWithReview, auto] }
+        toAutonomy: { type: string, enum: [autoWithReview, auto] }
+        status: { type: string, enum: [pending, approved, rejected, withdrawn] }
+        requestedBy: { $ref: '#/components/schemas/Uuid' }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        reason: { type: string }
+        evidence: { $ref: '#/components/schemas/AiShadowDashboard' }
+        decidedBy: { type: [string, 'null'], format: uuid }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionReason: { type: [string, 'null'] }
+    AiSkillPromotionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiSkillPromotion' } }
+    AiDriftCheck:
+      type: object
+      required: [skillKey, version, cases, agreement, baseline, maxAgreementDrop, drifted, fellBackToSuggest]
+      properties:
+        skillKey: { $ref: '#/components/schemas/Key' }
+        version: { type: integer }
+        cases: { type: integer }
+        agreement: { type: number }
+        baseline: { type: number }
+        maxAgreementDrop: { type: number }
+        drifted: { type: boolean }
+        fellBackToSuggest: { type: boolean }
+    AiReviewQueue:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [decisionId, runId, nodeId, skillKey, skillVersion, status, aiValue, confidence, createdAt]
+            properties:
+              decisionId: { $ref: '#/components/schemas/Uuid' }
+              runId: { $ref: '#/components/schemas/Uuid' }
+              nodeId: { type: string }
+              skillKey: { $ref: '#/components/schemas/Key' }
+              skillVersion: { type: integer }
+              status: { type: string }
+              aiValue: { type: [string, 'null'] }
+              confidence: { type: [number, 'null'] }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiEvalCandidateList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, skillKey, decisionId, input, expected, createdAt]
+            properties:
+              id: { $ref: '#/components/schemas/Uuid' }
+              skillKey: { $ref: '#/components/schemas/Key' }
+              decisionId: { $ref: '#/components/schemas/Uuid' }
+              input: { type: [object, 'null'], description: 'Only when the decision retained values' }
+              expected: { type: object }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiEvalCandidateReview:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [accept, discard] }
+        suiteKey: { $ref: '#/components/schemas/Key' }
+        caseId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$' }
+        input: { type: object, description: 'Redacted or synthetic case input' }
+        expected: { type: object }
+    AiEvalCandidateReviewResult:
+      type: object
+      required: [id, status]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [accepted, discarded] }
+    AiPolicy:
+      type: object
+      required: [regulated, residency, inputRetention, retentionDays, lowRiskLabels, allowAutoWithReview, classificationActions, version, updatedAt, endpoints]
+      properties:
+        regulated: { type: boolean }
+        residency: { type: array, items: { type: string } }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        lowRiskLabels: { type: array, items: { type: string, description: 'skillKey:label' } }
+        allowAutoWithReview: { type: boolean }
+        classificationActions: { type: object, additionalProperties: { type: string, enum: [send, mask, hash, drop] } }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        endpoints:
+          type: array
+          items:
+            type: object
+            required: [id, kind, residency]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [openaiCompatible, anthropic, bedrock, azureOpenai, vertex] }
+              residency: { type: array, items: { type: string } }
+    AiPolicyUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        regulated: { type: boolean }
+        residency: { type: array, maxItems: 200, items: { type: string } }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        lowRiskLabels: { type: array, maxItems: 200, items: { type: string } }
+        allowAutoWithReview: { type: boolean }
+        classificationActions: { type: object, additionalProperties: { type: string, enum: [send, mask, hash, drop] } }
+    AiDecision:
+      type: object
+      required: [id, nodeId, occurrence, skillKey, skillVersion, skillHash, mode, autonomy, effectiveAutonomy, profile, provider, modelUsed, promptHash, inputFields, inputDigest, inputRetention, inputValues, status, output, rawConfidence, confidence, threshold, route, guardrails, unavailableReason, reviewSampled, human, cost, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        occurrence: { type: integer }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        skillVersion: { type: integer }
+        skillHash: { type: [string, 'null'] }
+        mode: { type: string, enum: [classify, extract, score, recommend, summarize] }
+        autonomy: { type: string, enum: [shadow, suggest, autoWithReview, auto] }
+        effectiveAutonomy: { type: string, enum: [shadow, suggest, autoWithReview, auto] }
+        profile: { type: [string, 'null'] }
+        provider: { type: [string, 'null'] }
+        modelUsed: { type: [string, 'null'] }
+        promptHash: { type: [string, 'null'] }
+        inputFields: { type: array, items: { type: string } }
+        inputDigest: { type: string }
+        inputRetention: { type: string, enum: [digest, redactedValues, fullValues] }
+        inputValues: { type: [object, 'null'] }
+        status: { type: string, enum: [decided, lowConfidence, needsReview, unavailable, shadow] }
+        output: { type: [object, 'null'] }
+        rawConfidence: { type: [number, 'null'] }
+        confidence: { type: [number, 'null'] }
+        threshold: { type: [number, 'null'] }
+        route: { type: string }
+        guardrails: { type: object }
+        unavailableReason: { type: [string, 'null'] }
+        reviewSampled: { type: boolean }
+        human:
+          type: object
+          required: [outcome, value, reason, decidedBy, decidedAt]
+          properties:
+            outcome: { type: [string, 'null'], enum: [accepted, overridden, null] }
+            value: { type: [string, 'null'] }
+            reason: { type: [string, 'null'] }
+            decidedBy: { type: [string, 'null'], format: uuid }
+            decidedAt: { type: [string, 'null'], format: date-time }
+        cost:
+          type: object
+          required: [inputTokens, outputTokens, costUsd, latencyMs]
+          properties:
+            inputTokens: { type: [integer, 'null'] }
+            outputTokens: { type: [integer, 'null'] }
+            costUsd: { type: [number, 'null'] }
+            latencyMs: { type: integer }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AiDecisionList:
+      type: object
+      required: [valuesVisible, items]
+      properties:
+        valuesVisible: { type: boolean }
+        items: { type: array, items: { $ref: '#/components/schemas/AiDecision' } }
+    AiDecisionOutcomeRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [accepted, overridden] }
+        value: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,39}$' }
+        reason: { type: string, maxLength: 1000 }
+    # ---- end AiSkills schemas ----
     AiStatus:
       type: object
       required: [enabled, profiles]

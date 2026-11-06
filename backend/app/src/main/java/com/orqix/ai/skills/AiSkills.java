@@ -354,7 +354,10 @@ public class AiSkills {
 
     @Transactional(readOnly = true)
     public ObjectNode getPolicy(Caller caller, UUID workspaceId) {
-        readable(caller, workspaceId, "getAiPolicy");
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        if (!access.has(Permission.WORKSPACE_MANAGE_ACCESS)) {
+            readable(caller, workspaceId, "getAiPolicy");
+        }
         return policyView(policy(workspaceId));
     }
 

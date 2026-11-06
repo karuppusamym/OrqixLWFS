@@ -103,6 +103,16 @@ class AiTaskCompilerTest {
     }
 
     @Test
+    void aShadowTaskContinuesStraightToItsNextStep() throws Exception {
+        CompiledWorkflow compiled = Compilers.workflowCompiler().compile(workflow("shadow").toString(),
+                context(version(1, "approved", null, "suggest")));
+        assertThat(compiled.bpmnXml()).contains("autonomy=\"shadow\"").doesNotContain("triage__aiRoute",
+                "orqixRoute.ai(");
+        assertThat(BpmnSource.export(workflow("shadow").toString(), compiled).differences()).isEmpty();
+        assertThat(compiled.aiSkills().get(0).evaluationRunId()).isNull();
+    }
+
+    @Test
     void theSkillMustBeApprovedEvaluatedAndPromotedForTheAutonomy() {
         assertThat(codes(workflow("auto"), SimulatorFixtures.context().workspace(), Severity.BLOCKER))
                 .contains("WF_AI_SKILL_UNKNOWN");

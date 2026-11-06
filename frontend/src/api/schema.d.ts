@@ -5289,6 +5289,517 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/ai-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** AI skills of the workspace with their versions (S134) */
+        get: operations["listAiSkills"];
+        put?: never;
+        /**
+         * Create an AI skill with its first draft version
+         * @description The document follows contracts/ai-skill-v1.schema.json (kind skill); 422 VALIDATION_FAILED lists the problems.
+         *     409 DUPLICATE_KEY when the key exists.
+         */
+        post: operations["createAiSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        /** One AI skill with every version and document */
+        get: operations["getAiSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a draft version (approved versions never change)
+         * @description 409 AI_SKILL_STATE_CONFLICT while another version is in draft or submitted.
+         */
+        post: operations["createAiSkillVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace the document of a draft or submitted version (returns it to draft) */
+        put: operations["updateAiSkillVersion"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a draft for approval
+         * @description The model profile must be usable (422 otherwise).
+         */
+        post: operations["submitAiSkillVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a submitted version (four eyes)
+         * @description Grant-only ai.approve-skill, checked fresh; never the author (403 SELF_APPROVAL_DENIED); reason required.
+         *     Earlier approved versions stay approved for the releases that pinned them.
+         */
+        post: operations["approveAiSkillVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire a version: AI tasks pinned to it go to aiUnavailable (kill switch) */
+        post: operations["retireAiSkillVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /** Evaluation runs of a version, newest first */
+        get: operations["listAiEvaluations"];
+        put?: never;
+        /**
+         * Run an evaluation suite on the version and its model profile (async)
+         * @description Answers 202 at once with status running; poll getAiEvaluation. A passing run within 30 days on the pinned
+         *     profile is the publish gate of AI tasks (WF_AI_EVALUATION_REQUIRED).
+         */
+        post: operations["startAiEvaluation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-evaluations/{evaluationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                evaluationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** One evaluation run with metrics and calibration */
+        get: operations["getAiEvaluation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-eval-suites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Evaluation suites (shared test assets) */
+        get: operations["listAiEvalSuites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-eval-suites/{suiteKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                suiteKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        /** One evaluation suite with its cases */
+        get: operations["getAiEvalSuite"];
+        /**
+         * Create or replace an evaluation suite
+         * @description Cases are synthetic or deliberately redacted; nothing imports production data.
+         */
+        put: operations["saveAiEvalSuite"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/shadow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /** Agreement with human outcomes: confusion matrix, precision, recall, cost, latency */
+        get: operations["getAiShadowDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask to raise the autonomy ceiling one step (suggest, autoWithReview, auto)
+         * @description Needs the skill minimum of compared shadow cases (default 200) with agreement at or above its target
+         *     (default 0.9); otherwise 422.
+         */
+        post: operations["requestAiSkillPromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        /** Promotions of a skill, newest first */
+        get: operations["listAiSkillPromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skill-promotions/{promotionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promotionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or reject a promotion (four eyes)
+         * @description Never the person who asked for it (403 SELF_APPROVAL_DENIED); reason required.
+         */
+        post: operations["decideAiSkillPromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/drift-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run the drift check now (also weekly)
+         * @description Compares agreement over the last 7 days with the promotion baseline; a drop beyond the skill threshold with
+         *     at least 20 cases falls back to suggest.
+         */
+        post: operations["checkAiSkillDrift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-skills/{skillKey}/versions/{version}/clear-drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Let a version decide automatically again after a drift fallback */
+        post: operations["clearAiSkillDrift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Automatic AI decisions sampled for review that nobody reviewed yet */
+        get: operations["listAiReviewQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-eval-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Overrides waiting to become evaluation cases */
+        get: operations["listAiEvalCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-eval-candidates/{candidateId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                candidateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a candidate into a suite (redacted or synthetic input) or discard it */
+        post: operations["reviewAiEvalCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Workspace AI policy: residency, retention, low-risk labels, classification actions */
+        get: operations["getAiPolicy"];
+        /**
+         * Update the workspace AI policy
+         * @description expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT). A regulated workspace never sends sensitive
+         *     fields, and adverse outcomes always need a person there.
+         */
+        put: operations["updateAiPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * AI decision records of a run (S134 section 7.8)
+         * @description Input values appear only when retained by the workspace policy and the caller may see the run data.
+         */
+        get: operations["listRunAiDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-decisions/{decisionId}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                decisionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that a person accepted or overrode an AI decision
+         * @description An override names the final label or outcome and a reason; it becomes a candidate evaluation case.
+         */
+        post: operations["recordAiDecisionOutcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/ai/status": {
         parameters: {
             query?: never;
@@ -7470,7 +7981,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "ai.approve-skill" | "ai.evaluate";
         AgentWriteSubject: {
             id: components["schemas"]["Uuid"];
             displayName: string;
@@ -7610,7 +8121,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -8297,6 +8808,20 @@ export interface components {
                     delaySeconds?: number;
                 };
             };
+            /** @description By step ID of an AI task (docs/build/S134). No model is called; without settings a classify task answers its first label with confidence 0.95. */
+            ai?: {
+                [key: string]: {
+                    /** @description Take the path for when AI is unavailable */
+                    unavailable?: boolean;
+                    label?: string;
+                    confidence?: number;
+                    /** @description Extracted values (extract) */
+                    fields?: Record<string, never>;
+                    score?: number;
+                    recommendation?: string;
+                    summary?: string;
+                };
+            };
             /** @description By step ID of a Send through an adapter step. Default is delivered to the local stub. */
             adapters?: {
                 [key: string]: {
@@ -8525,7 +9050,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -8986,10 +9511,10 @@ export interface components {
             from: string;
             to: string;
             /**
-             * @description error only on a section error route (S59).
+             * @description error only on a section error route (S59); the ai routes leave AI tasks (S134).
              * @enum {string}
              */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
             /** @description The designer's route label. Conditions are never included. */
             label?: string | null;
         };
@@ -9010,7 +9535,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -9699,7 +10224,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "ai.approve-skill" | "ai.evaluate";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -9723,6 +10248,313 @@ export interface components {
             model: string;
             /** @description True for routers such as typesafe/jev-router whose price depends on the routed model */
             variablePrice: boolean;
+        };
+        AiSkillDocumentRequest: {
+            /** @description contracts/ai-skill-v1.schema.json, kind skill */
+            document: Record<string, never>;
+        };
+        AiReasonRequest: {
+            reason: string;
+        };
+        AiSkillVersion: {
+            skillKey: components["schemas"]["Key"];
+            version: number;
+            /** @enum {string} */
+            status: "draft" | "submitted" | "approved" | "retired";
+            /** @enum {string} */
+            mode: "classify" | "extract" | "score" | "recommend" | "summarize";
+            modelProfile: string;
+            contentHash: string;
+            authorId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            submittedAt: string | null;
+            /** Format: uuid */
+            approverId: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** @enum {string} */
+            autonomyCeiling: "suggest" | "autoWithReview" | "auto";
+            driftFallback: boolean;
+            driftReason: string | null;
+            evaluationGate: {
+                /** @description A passing run on the version profile within 30 days exists */
+                passing: boolean;
+                /** Format: uuid */
+                runId: string | null;
+            };
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+            document?: Record<string, never>;
+        };
+        AiSkill: {
+            key: components["schemas"]["Key"];
+            name: string;
+            ownerId: components["schemas"]["Uuid"];
+            createdAt: components["schemas"]["Timestamp"];
+            approvedVersion: number | null;
+            /** @enum {string} */
+            mode: "classify" | "extract" | "score" | "recommend" | "summarize";
+            versions: components["schemas"]["AiSkillVersion"][];
+        };
+        AiSkillList: {
+            items: components["schemas"]["AiSkill"][];
+        };
+        AiEvalSuite: {
+            key: components["schemas"]["Key"];
+            skillKey: components["schemas"]["Key"];
+            name: string;
+            caseCount: number;
+            revision: number;
+            contentHash: string;
+            updatedAt: components["schemas"]["Timestamp"];
+            /** @description contracts/ai-skill-v1.schema.json, kind evaluationSuite */
+            document?: Record<string, never>;
+        };
+        AiEvalSuiteList: {
+            items: components["schemas"]["AiEvalSuite"][];
+        };
+        AiEvalSuiteSaveRequest: {
+            document: Record<string, never>;
+        };
+        AiEvaluationStartRequest: {
+            suiteKey?: components["schemas"]["Key"];
+        };
+        AiEvaluation: {
+            id: components["schemas"]["Uuid"];
+            skillKey: components["schemas"]["Key"];
+            version: number;
+            suiteKey: components["schemas"]["Key"];
+            suiteHash: string;
+            modelProfile: string;
+            /** @enum {string} */
+            status: "running" | "passed" | "failed" | "error";
+            caseCount: number;
+            /** @description accuracy, perLabel precision/recall, confusion, costPerCaseUsd, p95LatencyMs, thresholds trade-off, failures */
+            metrics: Record<string, never> | null;
+            /** @description Ten buckets of raw confidence with the observed accuracy of each */
+            calibration: {
+                from: number;
+                to: number;
+                cases: number;
+                correct: number;
+                accuracy: number;
+            }[] | null;
+            failure: string | null;
+            startedBy: components["schemas"]["Uuid"];
+            startedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            finishedAt: string | null;
+        };
+        AiEvaluationList: {
+            items: components["schemas"]["AiEvaluation"][];
+        };
+        AiShadowDashboard: {
+            skillKey: components["schemas"]["Key"];
+            version: number;
+            decisions: number;
+            shadowDecisions: number;
+            /** @description Decisions with a recorded human outcome */
+            compared: number;
+            agreed: number;
+            agreement: number;
+            statuses: {
+                [key: string]: number;
+            };
+            /** @description AI value to human value to count */
+            confusion: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            perLabel: {
+                [key: string]: {
+                    precision: number;
+                    recall: number;
+                    support: number;
+                };
+            };
+            costPerCaseUsd: number;
+            p95LatencyMs: number;
+            minShadowCases: number;
+            targetAgreement: number;
+            /** @enum {string} */
+            autonomyCeiling: "suggest" | "autoWithReview" | "auto";
+            driftFallback: boolean;
+        };
+        AiSkillPromotionRequest: {
+            /** @enum {string} */
+            toAutonomy: "autoWithReview" | "auto";
+            reason: string;
+        };
+        AiSkillPromotionDecision: {
+            /** @enum {string} */
+            decision: "approve" | "reject";
+            reason: string;
+        };
+        AiSkillPromotion: {
+            id: components["schemas"]["Uuid"];
+            skillKey: components["schemas"]["Key"];
+            version: number;
+            /** @enum {string} */
+            fromAutonomy: "suggest" | "autoWithReview" | "auto";
+            /** @enum {string} */
+            toAutonomy: "autoWithReview" | "auto";
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "withdrawn";
+            requestedBy: components["schemas"]["Uuid"];
+            requestedAt: components["schemas"]["Timestamp"];
+            reason: string;
+            evidence: components["schemas"]["AiShadowDashboard"];
+            /** Format: uuid */
+            decidedBy: string | null;
+            /** Format: date-time */
+            decidedAt: string | null;
+            decisionReason: string | null;
+        };
+        AiSkillPromotionList: {
+            items: components["schemas"]["AiSkillPromotion"][];
+        };
+        AiDriftCheck: {
+            skillKey: components["schemas"]["Key"];
+            version: number;
+            cases: number;
+            agreement: number;
+            baseline: number;
+            maxAgreementDrop: number;
+            drifted: boolean;
+            fellBackToSuggest: boolean;
+        };
+        AiReviewQueue: {
+            items: {
+                decisionId: components["schemas"]["Uuid"];
+                runId: components["schemas"]["Uuid"];
+                nodeId: string;
+                skillKey: components["schemas"]["Key"];
+                skillVersion: number;
+                status: string;
+                aiValue: string | null;
+                confidence: number | null;
+                createdAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AiEvalCandidateList: {
+            items: {
+                id: components["schemas"]["Uuid"];
+                skillKey: components["schemas"]["Key"];
+                decisionId: components["schemas"]["Uuid"];
+                /** @description Only when the decision retained values */
+                input: Record<string, never> | null;
+                expected: Record<string, never>;
+                createdAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AiEvalCandidateReview: {
+            /** @enum {string} */
+            decision: "accept" | "discard";
+            suiteKey?: components["schemas"]["Key"];
+            caseId?: string;
+            /** @description Redacted or synthetic case input */
+            input?: Record<string, never>;
+            expected?: Record<string, never>;
+        };
+        AiEvalCandidateReviewResult: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "accepted" | "discarded";
+        };
+        AiPolicy: {
+            regulated: boolean;
+            residency: string[];
+            /** @enum {string} */
+            inputRetention: "digest" | "redactedValues" | "fullValues";
+            retentionDays: number;
+            lowRiskLabels: string[];
+            allowAutoWithReview: boolean;
+            classificationActions: {
+                [key: string]: "send" | "mask" | "hash" | "drop";
+            };
+            version: number;
+            /** Format: date-time */
+            updatedAt: string | null;
+            endpoints: {
+                id: string;
+                /** @enum {string} */
+                kind: "openaiCompatible" | "anthropic" | "bedrock" | "azureOpenai" | "vertex";
+                residency: string[];
+            }[];
+        };
+        AiPolicyUpdate: {
+            expectedVersion: number;
+            regulated?: boolean;
+            residency?: string[];
+            /** @enum {string} */
+            inputRetention?: "digest" | "redactedValues" | "fullValues";
+            retentionDays?: number;
+            lowRiskLabels?: string[];
+            allowAutoWithReview?: boolean;
+            classificationActions?: {
+                [key: string]: "send" | "mask" | "hash" | "drop";
+            };
+        };
+        AiDecision: {
+            id: components["schemas"]["Uuid"];
+            nodeId: string;
+            occurrence: number;
+            skillKey: components["schemas"]["Key"];
+            skillVersion: number;
+            skillHash: string | null;
+            /** @enum {string} */
+            mode: "classify" | "extract" | "score" | "recommend" | "summarize";
+            /** @enum {string} */
+            autonomy: "shadow" | "suggest" | "autoWithReview" | "auto";
+            /** @enum {string} */
+            effectiveAutonomy: "shadow" | "suggest" | "autoWithReview" | "auto";
+            profile: string | null;
+            provider: string | null;
+            modelUsed: string | null;
+            promptHash: string | null;
+            inputFields: string[];
+            inputDigest: string;
+            /** @enum {string} */
+            inputRetention: "digest" | "redactedValues" | "fullValues";
+            inputValues: Record<string, never> | null;
+            /** @enum {string} */
+            status: "decided" | "lowConfidence" | "needsReview" | "unavailable" | "shadow";
+            output: Record<string, never> | null;
+            rawConfidence: number | null;
+            confidence: number | null;
+            threshold: number | null;
+            route: string;
+            guardrails: Record<string, never>;
+            unavailableReason: string | null;
+            reviewSampled: boolean;
+            human: {
+                /** @enum {string|null} */
+                outcome: "accepted" | "overridden" | null;
+                value: string | null;
+                reason: string | null;
+                /** Format: uuid */
+                decidedBy: string | null;
+                /** Format: date-time */
+                decidedAt: string | null;
+            };
+            cost: {
+                inputTokens: number | null;
+                outputTokens: number | null;
+                costUsd: number | null;
+                latencyMs: number;
+            };
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        AiDecisionList: {
+            valuesVisible: boolean;
+            items: components["schemas"]["AiDecision"][];
+        };
+        AiDecisionOutcomeRequest: {
+            /** @enum {string} */
+            outcome: "accepted" | "overridden";
+            value?: string;
+            reason?: string;
         };
         AiStatus: {
             enabled: boolean;
@@ -11294,16 +12126,53 @@ export interface components {
                 };
             };
         } & components["schemas"]["nodeBase"];
+        aiTaskNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "aiTask";
+            /** @description AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode. */
+            config?: {
+                /** @description Key of the shared AI skill. */
+                skillRef: components["schemas"]["key"];
+                /** @description Approved version to pin; publishing pins the latest approved version when absent. */
+                skillVersion?: number;
+                /**
+                 * @description Must equal the skill's mode.
+                 * @enum {unknown}
+                 */
+                mode: "classify" | "extract" | "score" | "recommend" | "summarize";
+                /** @description Skill input name to request or earlier-step value. Only mapped values are sent. */
+                inputMapping: {
+                    [key: string]: components["schemas"]["fieldRef"];
+                };
+                /**
+                 * @description shadow: runs beside the existing decision and never routes; suggest (default): a person decides; autoWithReview: AI routes and a sample is reviewed afterwards; auto: AI routes within the threshold, only for labels the workspace policy marks low-risk.
+                 * @enum {unknown}
+                 */
+                autonomy?: "shadow" | "suggest" | "autoWithReview" | "auto";
+                /** @description Calibrated confidence below which the step takes lowConfidence (classify) or needsReview (extract). Default 0.8. */
+                minConfidence?: number;
+                /** @description autoWithReview only: share of automatic decisions queued for after-the-fact review (default 10). */
+                reviewSamplePercent?: number;
+                /** @description Per input: how the value is minimized before it is sent, on top of the field classification policy. */
+                redaction?: {
+                    [key: string]: "maskCardNumbersAndEmails" | "maskDigits" | "hash" | "drop";
+                };
+            };
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
             to: components["schemas"]["id"];
             /** @enum {unknown} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+            /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
+            aiLabel?: string;
             /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
             label?: string;
             condition?: components["schemas"]["condition"];
-        };
+        } & unknown;
         /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
         decisionTable: {
             key: components["schemas"]["key"];
@@ -11426,7 +12295,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"] | components["schemas"]["aiTaskNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -11945,11 +12814,13 @@ export interface components {
                     from: components["schemas"]["id"];
                     to: components["schemas"]["id"];
                     /** @enum {unknown} */
-                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
+                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "aiLabel" | "lowConfidence" | "needsReview" | "aiUnavailable";
+                    /** @description AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel. */
+                    aiLabel?: string;
                     /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
                     label?: string;
                     condition?: components["schemas"]["condition"];
-                };
+                } & unknown;
                 decisionCondition: components["schemas"]["decisionTerm"] | {
                     all: components["schemas"]["decisionTerm"][];
                 } | {
@@ -12164,6 +13035,41 @@ export interface components {
                     type?: "compensate";
                     /** @description Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues. */
                     config?: Record<string, never>;
+                } & components["schemas"]["nodeBase"];
+                aiTaskNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "aiTask";
+                    /** @description AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode. */
+                    config?: {
+                        /** @description Key of the shared AI skill. */
+                        skillRef: components["schemas"]["key"];
+                        /** @description Approved version to pin; publishing pins the latest approved version when absent. */
+                        skillVersion?: number;
+                        /**
+                         * @description Must equal the skill's mode.
+                         * @enum {unknown}
+                         */
+                        mode: "classify" | "extract" | "score" | "recommend" | "summarize";
+                        /** @description Skill input name to request or earlier-step value. Only mapped values are sent. */
+                        inputMapping: {
+                            [key: string]: components["schemas"]["fieldRef"];
+                        };
+                        /**
+                         * @description shadow: runs beside the existing decision and never routes; suggest (default): a person decides; autoWithReview: AI routes and a sample is reviewed afterwards; auto: AI routes within the threshold, only for labels the workspace policy marks low-risk.
+                         * @enum {unknown}
+                         */
+                        autonomy?: "shadow" | "suggest" | "autoWithReview" | "auto";
+                        /** @description Calibrated confidence below which the step takes lowConfidence (classify) or needsReview (extract). Default 0.8. */
+                        minConfidence?: number;
+                        /** @description autoWithReview only: share of automatic decisions queued for after-the-fact review (default 10). */
+                        reviewSamplePercent?: number;
+                        /** @description Per input: how the value is minimized before it is sent, on top of the field classification policy. */
+                        redaction?: {
+                            [key: string]: "maskCardNumbersAndEmails" | "maskDigits" | "hash" | "drop";
+                        };
+                    };
                 } & components["schemas"]["nodeBase"];
                 generateDocumentNode: {
                     id?: unknown;
@@ -21539,7 +22445,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "ai.approve-skill" | "ai.evaluate";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
@@ -21648,6 +22554,805 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listAiSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAiSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSkillDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkill"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkill"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAiSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSkillDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updateAiSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSkillDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    submitAiSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    approveAiSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    retireAiSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAiEvaluations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvaluationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    startAiEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiEvaluationStartRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvaluation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                evaluationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvaluation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAiEvalSuites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvalSuiteList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAiEvalSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                suiteKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvalSuite"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveAiEvalSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                suiteKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiEvalSuiteSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvalSuite"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiShadowDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiShadowDashboard"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    requestAiSkillPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSkillPromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillPromotion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAiSkillPromotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillPromotionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    decideAiSkillPromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promotionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSkillPromotionDecision"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSkillPromotion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    checkAiSkillDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDriftCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    clearAiSkillDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                skillKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiShadowDashboard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAiReviewQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReviewQueue"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAiEvalCandidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvalCandidateList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    reviewAiEvalCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                candidateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiEvalCandidateReview"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiEvalCandidateReviewResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPolicy"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAiPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPolicyUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRunAiDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDecisionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordAiDecisionOutcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                decisionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiDecisionOutcomeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getAiStatus: {

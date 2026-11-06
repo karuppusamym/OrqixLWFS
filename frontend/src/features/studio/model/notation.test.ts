@@ -32,6 +32,7 @@ describe('BPMN notation mapping (STU01)', () => {
       http: ['serviceTask', 'service task'],
       notification: ['sendTask', 'send task'],
       sendAdapter: ['sendTask', 'send task'],
+      aiTask: ['serviceTask', 'service task with a route gateway'],
       generateDocument: ['documentTask', 'service task'],
       externalTask: ['externalServiceTask', 'external service task'],
       wait: ['timerCatchEvent', 'intermediate timer catch event'],

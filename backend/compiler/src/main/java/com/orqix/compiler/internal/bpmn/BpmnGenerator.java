@@ -938,7 +938,7 @@ public final class BpmnGenerator {
         String source = flowSource(from, t);
         String expression = from instanceof Node.Http polled && polled.polls()
                 ? "${orqixRoute.polled(execution, '" + from.id() + "', '" + pollOutcome(t.on()) + "')}"
-                : from instanceof Node.AiTask
+                : from instanceof Node.AiTask ai && !ai.shadow()
                 ? "${orqixRoute.ai(execution, '" + from.id() + "', '" + aiRoute(t) + "')}"
                 : switch (t.on()) {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
@@ -1057,6 +1057,9 @@ public final class BpmnGenerator {
         x.close();
         x.close();
         x.close();
+        if (ai.shadow()) {
+            return; // one path, no choice: the task continues straight to its next step
+        }
         String gateway = ai.id() + AI_ROUTE;
         x.leaf("", "sequenceFlow", BPMN_NS).attr("id", ai.id() + "__toAiRoute").attr("sourceRef", ai.id())
                 .attr("targetRef", gateway);
@@ -1105,7 +1108,7 @@ public final class BpmnGenerator {
         if (from instanceof Node.Http h && h.polls()) {
             return from.id() + POLL_ROUTE;
         }
-        if (from instanceof Node.AiTask) {
+        if (from instanceof Node.AiTask ai && !ai.shadow()) {
             return from.id() + AI_ROUTE;
         }
         if (t.on() == Route.FAILED) {
@@ -1157,7 +1160,7 @@ public final class BpmnGenerator {
                         centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                     }
                 }
-                if (n instanceof Node.AiTask) {
+                if (n instanceof Node.AiTask ai && !ai.shadow()) {
                     centre.put(n.id() + AI_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
                 }
                 if (n instanceof Node.Http h && h.polls()) {

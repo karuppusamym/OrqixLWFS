@@ -4,11 +4,11 @@
  */
 import type { ViewDefinition } from '@/features/views/model'
 
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'end'
 /** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
 export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable'
 export type Literal = string | number | boolean
 
 /** Bounds of `between`; each bound is included unless it says false. */
@@ -51,6 +51,8 @@ export interface Transition {
   on: RouteKind
   label?: string
   condition?: Condition
+  /** AI task routes only (docs/build/S134): the skill label this path is for, when `on` is aiLabel. */
+  aiLabel?: string
 }
 
 /** Inclusive UTC date window (YYYY-MM-DD) in which a row applies, judged by the request's submission date (S41). */

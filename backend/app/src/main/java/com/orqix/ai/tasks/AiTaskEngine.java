@@ -694,6 +694,25 @@ public class AiTaskEngine implements AiTaskPort {
     }
 
     @Override
+    public JsonNode evaluationEvidence(UUID workspaceId, UUID evaluationRunId) {
+        return jdbc.sql("""
+                SELECT r.id, r.status, r.model_profile, e.key AS suite_key, r.suite_hash, r.case_count,
+                       r.metrics ->> 'accuracy' AS accuracy, r.finished_at
+                FROM ai_eval_run r JOIN ai_eval_suite e ON e.id = r.suite_id
+                WHERE r.workspace_id = :ws AND r.id = :id
+                """).param("ws", workspaceId).param("id", evaluationRunId).query((rs, n) -> {
+            ObjectNode o = json.object();
+            o.put("evaluationRunId", Sql.uuid(rs, "id").toString()).put("status", rs.getString("status"))
+                    .put("modelProfile", rs.getString("model_profile")).put("suite", rs.getString("suite_key"))
+                    .put("suiteHash", rs.getString("suite_hash")).put("cases", rs.getInt("case_count"))
+                    .put("accuracy", rs.getString("accuracy"));
+            Instant finished = Sql.instant(rs, "finished_at");
+            o.put("finishedAt", finished == null ? null : finished.toString());
+            return (JsonNode) o;
+        }).optional().orElse(null);
+    }
+
+    @Override
     public void endTurns(UUID workspaceId, UUID jobId) {
         vault.delete(jobId);
     }

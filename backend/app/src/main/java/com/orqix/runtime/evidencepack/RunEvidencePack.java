@@ -50,6 +50,7 @@ public class RunEvidencePack {
     private static final int LIMIT = 10_000;
 
     private final JdbcClient jdbc;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks;
     private final PolicyService policy;
     private final RunAccess runAccess;
     private final ReleaseQueries releases;
@@ -61,7 +62,8 @@ public class RunEvidencePack {
 
     public RunEvidencePack(JdbcClient jdbc, PolicyService policy, RunAccess runAccess,
             ReleaseQueries releases, SubjectService subjects, EvidenceRenderer renderer, AuditWriter audit, Json json,
-            Clock clock) {
+            Clock clock, org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks) {
+        this.aiTasks = aiTasks;
         this.jdbc = jdbc;
         this.policy = policy;
         this.runAccess = runAccess;
@@ -206,6 +208,35 @@ public class RunEvidencePack {
                 }).list();
         bound(effects.size(), "effects");
 
+        // S134 (CG-A03): AI decisions, control facts only (no input values, extracted values or summaries).
+        ArrayNode aiDecisions = pack.putArray("aiDecisions");
+        com.orqix.integration.AiTaskPort ai = aiTasks.getIfAvailable();
+        if (ai != null) {
+            for (com.orqix.integration.AiTaskPort.DecisionView d : ai.decisions(ws, run.id(), false)) {
+                ObjectNode item = aiDecisions.addObject().put("decisionId", d.id().toString())
+                        .put("step", label(release, d.nodeId())).put("occurrence", d.occurrence())
+                        .put("skill", d.skillKey() + " v" + d.skillVersion()).put("skillHash", d.skillHash())
+                        .put("autonomy", d.autonomy()).put("effectiveAutonomy", d.effectiveAutonomy())
+                        .put("model", d.modelUsed()).put("profile", d.profile()).put("promptHash", d.promptHash())
+                        .put("inputFields", String.join(", ", d.inputFields())).put("inputDigest", d.inputDigest())
+                        .put("status", d.status()).put("route", d.route())
+                        .put("confidence", d.confidence() == null ? null : d.confidence().toPlainString())
+                        .put("threshold", d.threshold() == null ? null : d.threshold().toPlainString())
+                        .put("reviewSampled", d.reviewSampled()).put("humanOutcome", d.humanOutcome())
+                        .put("humanBy", d.humanBy() == null ? null : person(people, d.humanBy()))
+                        .put("costUsd", d.costUsd() == null ? null : d.costUsd().toPlainString())
+                        .put("latencyMs", d.latencyMs()).put("unavailableReason", d.unavailableReason());
+                if (d.output() != null && d.output().has("label")) {
+                    item.put("aiValue", d.output().path("label").asString());
+                } else if (d.output() != null && d.output().has("recommendation")) {
+                    item.put("aiValue", d.output().path("recommendation").asString());
+                } else if (d.output() != null && d.output().has("score")) {
+                    item.put("aiValue", d.output().path("score").asString());
+                }
+                item.set("guardrails", d.guardrails());
+            }
+        }
+
         ArrayNode corrections = pack.putArray("corrections");
         jdbc.sql("""
                 SELECT occurred_at, actor_type, actor_subject_id, action, resource_type, resource_id, outcome,
@@ -246,7 +277,7 @@ public class RunEvidencePack {
         ObjectNode summary = pack.putObject("summary");
         summary.put("humanSteps", steps.size()).put("decisions", count(steps, "decision"))
                 .put("slaBreaches", breaches.size()).put("corrections", corrections.size())
-                .put("effects", effects.size()).put("effectsNeedingReview", effects.findValues("outcome").stream()
+                .put("effects", effects.size()).put("aiDecisions", aiDecisions.size()).put("effectsNeedingReview", effects.findValues("outcome").stream()
                         .filter(v -> "unknown".equals(v.asString()) || "permanentFailure".equals(v.asString())).count())
                 .put("events", timeline.size());
 
@@ -257,6 +288,7 @@ public class RunEvidencePack {
         resolve(steps, names, "assignee", "decidedBy");
         resolve(effects, names, "resolvedBy");
         resolve(corrections, names, "actor");
+        resolve(aiDecisions, names, "humanBy");
         resolve(timeline, names, "actor");
         pack.put("payloadPolicy", PAYLOAD_POLICY);
         return ReleaseEvidencePack.seal(json, pack);
@@ -342,6 +374,11 @@ public class RunEvidencePack {
                 pack.path("effects"), "No integration calls.", "step", "Step", "connection", "Connection", "operation",
                 "Operation", "outcome", "Outcome", "attempts", "Attempts", "lastHttpStatus", "Last HTTP", "remoteReference",
                 "Remote reference", "resolution", "Reconciled as", "resolvedBy", "Reconciled by", "updatedAt", "Updated"));
+        sections.add(EvidenceDocument.table("AI decisions", "Each AI task: pinned skill version, model, input digest"
+                + " (no values), result, confidence and threshold, route, and the person who accepted or overrode it.",
+                pack.path("aiDecisions"), "No AI decisions.", "step", "Step", "skill", "Skill", "model", "Model",
+                "status", "Status", "aiValue", "AI result", "confidence", "Confidence", "route", "Route",
+                "humanOutcome", "Human", "inputDigest", "Input digest"));
         sections.add(EvidenceDocument.table("Timeline", null, pack.path("timeline"), "No events.", "sequence", "#", "at",
                 "When", "type", "Event", "step", "Step", "actor", "Actor"));
         return new EvidenceDocument(title, "Workspace " + pack.path("workspace").path("name").asString() + ". "

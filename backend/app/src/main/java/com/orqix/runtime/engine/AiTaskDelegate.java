@@ -55,7 +55,8 @@ public class AiTaskDelegate implements JavaDelegate, TriggerableJavaDelegate, Fl
         });
         String nodeId = execution.getCurrentActivityId();
         boolean needsReview = false;
-        FlowElement gateway = OrqixModel.flowElement(execution.getProcessDefinitionId(), nodeId + "__aiRoute");
+        // Shadow tasks have no route gateway: they continue straight to their next step.
+        FlowElement gateway = OrqixModel.model(execution.getProcessDefinitionId()).getFlowElement(nodeId + "__aiRoute");
         if (gateway instanceof org.flowable.bpmn.model.FlowNode node) {
             for (SequenceFlow flow : node.getOutgoingFlows()) {
                 if (flow.getConditionExpression() != null && flow.getConditionExpression().contains("'needsReview'")) {

@@ -774,3 +774,43 @@ export async function exportRunEvidencePack(ws: string, runId: string, format: E
   )
   return evidenceFile(data, response, `run-evidence-pack.${format}`)
 }
+
+// S141 (CG-T01): actionable task settings, chat identities, deliveries and signed action links.
+export const getTaskActionSettings = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/settings', { params: { path: { workspaceId: ws } } }))
+
+export const updateTaskActionSettings = (ws: string, body: S['UpdateTaskActionSettings']) =>
+  call(api.PUT('/workspaces/{workspaceId}/task-actions/settings', { params: { path: { workspaceId: ws } }, body }))
+
+export const listChatIdentities = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/identities', { params: { path: { workspaceId: ws } } }))
+
+export const linkChatIdentity = (ws: string, body: S['LinkChatIdentity']) =>
+  call(api.PUT('/workspaces/{workspaceId}/task-actions/identities', { params: { path: { workspaceId: ws } }, body }))
+
+export const unlinkChatIdentity = (ws: string, platform: 'teams' | 'slack', platformUserId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/task-actions/identities/{platform}/{platformUserId}', {
+    params: { path: { workspaceId: ws, platform, platformUserId } },
+  }))
+
+export const listTaskActionMessages = (ws: string, limit = 50) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/messages', { params: { path: { workspaceId: ws }, query: { limit } } }))
+
+export const getTaskActionLink = (token: string) =>
+  call(api.GET('/task-action-links/{token}', { params: { path: { token } } }))
+
+export const useTaskActionLink = (token: string, body: S['UseTaskActionLink']) =>
+  call(api.POST('/task-action-links/{token}', { params: { path: { token } }, body }))
+
+// S141 (CG-S03): workspace step templates.
+export const listStepTemplates = (ws: string, q?: string, includeArchived = false) =>
+  call(api.GET('/workspaces/{workspaceId}/step-templates', { params: { path: { workspaceId: ws }, query: { q: q || undefined, includeArchived } } }))
+
+export const createStepTemplate = (ws: string, body: S['CreateStepTemplate']) =>
+  call(api.POST('/workspaces/{workspaceId}/step-templates', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateStepTemplate = (ws: string, key: string, body: S['UpdateStepTemplate']) =>
+  call(api.PUT('/workspaces/{workspaceId}/step-templates/{key}', { params: { path: { workspaceId: ws, key } }, body }))
+
+export const addStepTemplateVersion = (ws: string, key: string, body: S['AddStepTemplateVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/step-templates/{key}/versions', { params: { path: { workspaceId: ws, key } }, body }))

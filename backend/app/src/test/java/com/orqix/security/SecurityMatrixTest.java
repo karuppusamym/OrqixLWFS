@@ -74,7 +74,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 for (String user : FOREIGN_PRINCIPALS) {
                     int status = call(user, op.getKey(), template, operationId, ids);
                     calls++;
-                    int expected = template.startsWith("/workspaces/") ? 404
+                    // S141: a signed action link is its own credential; any link a foreign caller can make up is 404.
+                    int expected = template.startsWith("/workspaces/") || template.startsWith("/task-action-links/") ? 404
                             : template.startsWith("/admin/") ? 403 : 200;
                     if (status != expected) {
                         failures.add(operationId + " as " + user + " -> " + status + " (expected " + expected + ")");
@@ -433,6 +434,17 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
             case "assignWorklistView" -> Map.of("expectedRevision",0);
+            // S141: well-formed bodies, so a 404 cannot be explained by validation.
+            case "updateTaskActionSettings" -> Map.of("enabled", true, "linkHours", 24, "expectedVersion", 0,
+                    "channels", List.of());
+            case "linkChatIdentity" -> Map.of("platform", "slack", "platformUserId", "U-FOREIGN",
+                    "subjectId", UUID.randomUUID().toString());
+            case "useTaskActionLink" -> Map.of("action", "approve", "expectedVersion", 1, "confirm", true);
+            case "createStepTemplate" -> Map.of("key", "foreign-template", "name", "Foreign",
+                    "step", Map.of("type", "approval", "label", "Foreign", "config", Map.of()));
+            case "updateStepTemplate" -> Map.of("expectedVersion", 1, "name", "Foreign", "shared", false, "status", "active");
+            case "addStepTemplateVersion" -> Map.of("expectedVersion", 1,
+                    "step", Map.of("type", "approval", "label", "Foreign", "config", Map.of()));
             case "createWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
                     "secretRef", "webhook-foreign", "events", List.of("request.started"));
             case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
@@ -615,7 +627,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

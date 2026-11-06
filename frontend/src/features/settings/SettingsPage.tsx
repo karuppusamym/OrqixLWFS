@@ -16,6 +16,7 @@ import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 import { ConnectorPackagesPanel } from './ConnectorPackagesPanel'
 import { FeaturesPanel } from './FeaturesPanel'
 import { McpServerPanel } from './McpServerPanel'
+import { TaskActionsPanel } from './TaskActionsPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -67,6 +68,7 @@ export function SettingsPage() {
               <Bot className="size-4" aria-hidden="true" /> AI assistants
             </TabsTrigger>
           ) : null}
+          {showAccess ? <TabsTrigger value="task-actions">Actionable tasks</TabsTrigger> : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
@@ -117,6 +119,7 @@ export function SettingsPage() {
             <McpServerPanel />
           </TabsContent>
         ) : null}
+        {showAccess ? <TabsContent value="task-actions"><TaskActionsPanel /></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="migration">
             <MigrationPolicyPanel />

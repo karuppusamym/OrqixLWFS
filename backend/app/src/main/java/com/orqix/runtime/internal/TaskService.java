@@ -591,6 +591,48 @@ public class TaskService {
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
+    /**
+     * CG-T04/CG-T01 (S141): the person rebuilt from the groups stored at their latest login, exactly as delegation and
+     * dispatch see them. Empty for an unknown or disabled person.
+     */
+    java.util.Optional<Caller> storedCaller(UUID subjectId) {
+        SubjectService.Subject subject = subjects.find(subjectId).orElse(null);
+        if (subject == null || subject.disabled()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new Caller(subjectId, subject.displayName(), subject.email(), subject.issuer(),
+                subject.externalSubject(), subjects.storedGroups(subjectId), false));
+    }
+
+    /** Known, enabled people who can see the workspace and belong to the group (stored groups), at most {@code max}. */
+    List<SubjectService.Subject> groupMembers(UUID workspaceId, String groupKey, int max) {
+        List<SubjectService.Subject> members = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (members.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            WorkspaceAccess access = policy.freshAccess(other, workspaceId).filter(WorkspaceAccess::visible).orElse(null);
+            if (access != null && policy.groupKeys(workspaceId, subject.id(), other.groups()).contains(groupKey)) {
+                members.add(subject);
+            }
+        }
+        return members;
+    }
+
+    /** Known, enabled people holding {@code run.operate} in the workspace, at most {@code max}. */
+    List<SubjectService.Subject> operators(UUID workspaceId, int max) {
+        List<SubjectService.Subject> found = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (found.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            if (policy.freshAccess(other, workspaceId).filter(a -> a.visible() && a.has(Permission.RUN_OPERATE)).isPresent()) {
+                found.add(subject);
+            }
+        }
+        return found;
+    }
+
     RuntimeDtos.TaskDetail detail(VisibleTask visible) {
         TaskStore.TaskRow task = visible.task();
         RunStore.RunRow run = visible.run();

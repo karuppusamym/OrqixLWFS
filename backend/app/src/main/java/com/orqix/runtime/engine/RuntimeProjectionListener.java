@@ -73,13 +73,19 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private final Clock clock;
     private final com.orqix.runtime.internal.RunStages stages;
     private final com.orqix.runtime.internal.TaskDispatcher dispatcher;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions;
 
     public RuntimeProjectionListener(Json json, RunStore runs, TaskStore tasks, RunEvents events,
             ReleaseQueries releases, RuntimeMetrics metrics, @org.springframework.context.annotation.Lazy ChildRuns children,
             @org.springframework.context.annotation.Lazy MessageWaits messageWaits, Clock clock,
             @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages,
-            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher) {
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions) {
         this.dispatcher = dispatcher;
+        this.escalations = escalations;
+        this.taskActions = taskActions;
         this.stages = stages;
         this.json = json;
         this.runs = runs;
@@ -245,10 +251,12 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             data.put("itemCount", item.count());
         }
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
-        if (item != null && item.proposed() != null && propose(task, element.getId(), workspaceId, runId, item)) {
-            return;
+        if (item == null || item.proposed() == null || !propose(task, element.getId(), workspaceId, runId, item)) {
+            dispatch(task, element.getId(), workspaceId, runId);
         }
-        dispatch(task, element.getId(), workspaceId, runId);
+        // S141: the escalation levels of the step's policy (CG-T04) and the actionable messages (CG-T01).
+        escalations.ifAvailable(e -> e.plan(workspaceId, runId, task.getId(), element.getId(), now));
+        taskActions.ifAvailable(a -> a.enqueueOnCreate(workspaceId, task.getId()));
     }
 
     /**

@@ -99,6 +99,8 @@ export const routes: RouteObject[] = [
       },
     ],
   },
+  // S141 (CG-T01): the signed action link of an actionable task email; no workspace shell and no sign-in.
+  { path: '/act/:token', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/tasks/TaskActionLinkPage')).TaskActionLinkPage }) },
   { path: '/forbidden', element: <ForbiddenPage />, errorElement: <RouteErrorPage /> },
   { path: '/not-found', element: <NotFoundPage /> },
   { path: '*', element: <NotFoundPage /> },

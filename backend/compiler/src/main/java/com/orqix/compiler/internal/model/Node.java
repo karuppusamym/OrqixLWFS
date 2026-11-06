@@ -40,10 +40,12 @@ public sealed interface Node {
                     java.util.List<String> separateFrom, java.util.List<String> correctable,
                     Integer approvers, Integer dueAfterMinutes, PerItem perItem,
                     java.util.Map<String, String> fieldAccess,
-                    com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture) implements Node {
+                    com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture,
+                    /** CG-T04 (S141): the raw escalation policy, or null. */
+                    tools.jackson.databind.JsonNode escalationPolicy) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null,null);
         }
 
         /**

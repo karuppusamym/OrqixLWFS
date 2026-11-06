@@ -54,6 +54,7 @@ tags:
   - name: Cases
   - name: Views
   - name: McpServer
+  - name: TaskActions
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -7382,6 +7383,370 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # ---------------------------------------------------------------- S141: TaskActions (CG-T01, CG-T04, CG-S03)
+  /workspaces/{workspaceId}/task-actions/settings:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [TaskActions]
+      operationId: getTaskActionSettings
+      summary: Actionable task settings of this workspace (CG-T01, S141)
+      description: |
+        Whether new approval tasks send actionable messages (email with a signed link, Teams and Slack cards), how
+        long a link is valid, and the channels. Off until switched on (version 0 means never saved). Delivery goes to
+        the local stub transports in this build.
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskActionSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [TaskActions]
+      operationId: updateTaskActionSettings
+      summary: Switch actionable tasks on or off and set the channels (S141)
+      description: |
+        Replaces the channel list. Email needs a sender and 1-20 exact recipient domains (no wildcards; checked again
+        at every send). Teams and Slack need only the reference of the secret that signs their interactions (Teams
+        outgoing-webhook HMAC key, Slack signing secret); never a secret value. `expectedVersion` is 0 for the first save.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: task.action-settings-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTaskActionSettings' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskActionSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/task-actions/identities:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [TaskActions]
+      operationId: listChatIdentities
+      summary: Teams and Slack users mapped to Orqix people (S141)
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The mappings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatIdentityList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [TaskActions]
+      operationId: linkChatIdentity
+      summary: Map a Teams (AAD object id) or Slack user to an Orqix person (S141)
+      description: One platform user per person and one person per platform user; a new mapping replaces both old ones.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: task.chat-identity-linked
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkChatIdentity' }
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatIdentity' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/task-actions/identities/{platform}/{platformUserId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: platform, in: path, required: true, schema: { type: string, enum: [teams, slack] } }
+      - { name: platformUserId, in: path, required: true, schema: { type: string, maxLength: 128 } }
+    delete:
+      tags: [TaskActions]
+      operationId: unlinkChatIdentity
+      summary: Remove a chat identity mapping (S141)
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: task.chat-identity-unlinked
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/task-actions/messages:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [TaskActions]
+      operationId: listTaskActionMessages
+      summary: Latest actionable messages, newest first (S141)
+      description: Who, which channel, why, and whether it was sent or skipped (with the reason code). Never content.
+      x-orqix-permission: workspace.manage-access
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: The messages
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskActionMessageList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/task-actions/slack/interactions:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [TaskActions]
+      operationId: receiveSlackInteraction
+      summary: Slack interactivity request URL (no session or token; Slack signature)
+      description: |
+        Authenticated by `X-Slack-Signature: v0=<hex HMAC-SHA256(signing secret, "v0:" + timestamp + ":" + rawBody)>`
+        with `X-Slack-Request-Timestamp` within 5 minutes. The Slack user must be mapped to an Orqix person; the press
+        then runs as that person through the task service (claim at once; approve or reject first answers with a
+        5-minute confirmation, which the person's Confirm press executes once). The answer is a Slack message.
+      security: []
+      x-orqix-permission: chatSignature
+      x-orqix-audit: task.action-used
+      parameters:
+        - { name: X-Slack-Request-Timestamp, in: header, required: true, schema: { type: string } }
+        - { name: X-Slack-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                payload: { type: string, description: 'Block Kit interaction payload (JSON)' }
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: The message shown to the person (ephemeral)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatInteractionReply' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/task-actions/teams/interactions:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [TaskActions]
+      operationId: receiveTeamsInteraction
+      summary: Teams outgoing-webhook URL for card submits (no session or token; Teams HMAC)
+      description: |
+        Authenticated by `Authorization: HMAC <base64 HMAC-SHA256(base64-decoded secret, rawBody)>`. The activity's
+        `from.aadObjectId` must be mapped to an Orqix person; `value` carries `orqixAction` (claim, approve, reject,
+        confirm, cancel), `taskId`, `version`, `confirmationId` and `reason`. Same rules as Slack.
+      security: []
+      x-orqix-permission: chatSignature
+      x-orqix-audit: task.action-used
+      parameters:
+        - { name: Authorization, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: The reply activity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatInteractionReply' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /task-action-links/{token}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string, maxLength: 200 } }
+    get:
+      tags: [TaskActions]
+      operationId: getTaskActionLink
+      summary: The confirmation page of a signed action link (no session; the link is the credential)
+      description: |
+        A link is signed, expires (workspace setting, at most 7 days) and is bound to one task and one person. It shows
+        the task's label, workflow, request reference and due date and what the person may do now; never request
+        values. Unknown, tampered, expired or revoked links and tasks the person can no longer see are 404.
+      security: []
+      x-orqix-permission: taskActionLink
+      responses:
+        '200':
+          description: What the person may do
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskActionLink' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [TaskActions]
+      operationId: useTaskActionLink
+      summary: Execute the confirmed action of a signed link as its person
+      description: |
+        `confirm` must be true. Runs through the task service as the person (claiming first when the task waits in
+        their queue), so eligibility, separation of duties, self-approval, versions and idempotency are those of the
+        task API. A link decides at most once; posting the same decision again replays it.
+      security: []
+      x-orqix-permission: taskActionLink
+      x-orqix-audit: task.action-used
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UseTaskActionLink' }
+      responses:
+        '200':
+          description: Done or replayed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskActionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/step-templates:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [TaskActions]
+      operationId: listStepTemplates
+      summary: Workspace step templates, own and shared from the organization (CG-S03, S141)
+      description: |
+        Latest versions of this workspace's templates and the active templates other workspaces of the organization
+        share. `q` matches name, description, step type and operation (for example the connection and operation of a
+        Call a system step).
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: The templates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepTemplateList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [TaskActions]
+      operationId: createStepTemplate
+      summary: Save a configured step as a template (S141)
+      description: |
+        Keeps the step's type, label, description and config (no id, position or routes), checked against the
+        workflow schema. References are checked where the template is used. Start and end steps are refused.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.step-template-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStepTemplate' }
+      responses:
+        '201':
+          description: Created as version 1
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/step-templates/{key}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: key, in: path, required: true, schema: { type: string, maxLength: 64 } }
+    get:
+      tags: [TaskActions]
+      operationId: getStepTemplate
+      summary: One of this workspace's templates with its version history (S141)
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: The template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepTemplateDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [TaskActions]
+      operationId: updateStepTemplate
+      summary: Rename, share or archive a template (S141)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.step-template-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStepTemplate' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/step-templates/{key}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: key, in: path, required: true, schema: { type: string, maxLength: 64 } }
+    post:
+      tags: [TaskActions]
+      operationId: addStepTemplateVersion
+      summary: Save a new immutable version of a template (S141)
+      description: The step type stays the same. Earlier versions are kept; readers get the latest.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.step-template-versioned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddStepTemplateVersion' }
+      responses:
+        '201':
+          description: The new version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---------------------------------------------------------------- end of S141 TaskActions paths
+
   /workspaces/{workspaceId}/mcp-server:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -12188,6 +12553,217 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceFeatureState' }
+    # -------------------------------------------------------------- S141: TaskActions schemas
+    TaskActionChannel:
+      type: object
+      additionalProperties: false
+      required: [channel, enabled, config]
+      properties:
+        channel: { type: string, enum: [email, teams, slack] }
+        enabled: { type: boolean }
+        config: { type: object, additionalProperties: true, description: 'email: sender, recipientDomains; teams and slack: empty' }
+        secretRef: { type: [string, 'null'], description: 'teams and slack: the secret that signs interactions' }
+    TaskActionSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, linkHours, version, channels]
+      properties:
+        enabled: { type: boolean }
+        linkHours: { type: integer, minimum: 1, maximum: 168 }
+        version: { type: integer, minimum: 0, description: '0 until first saved' }
+        channels: { type: array, items: { $ref: '#/components/schemas/TaskActionChannel' } }
+        updatedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    UpdateTaskActionSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, linkHours, expectedVersion, channels]
+      properties:
+        enabled: { type: boolean }
+        linkHours: { type: integer, minimum: 1, maximum: 168 }
+        expectedVersion: { type: integer, minimum: 0 }
+        channels:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [channel, enabled]
+            properties:
+              channel: { type: string, enum: [email, teams, slack] }
+              enabled: { type: boolean }
+              config: { type: object, additionalProperties: true }
+              secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+    ChatIdentity:
+      type: object
+      additionalProperties: false
+      required: [platform, platformUserId, person, linkedBy, linkedAt]
+      properties:
+        platform: { type: string, enum: [teams, slack] }
+        platformUserId: { type: string }
+        person: { $ref: '#/components/schemas/SubjectRef' }
+        linkedBy: { $ref: '#/components/schemas/SubjectRef' }
+        linkedAt: { $ref: '#/components/schemas/Timestamp' }
+    ChatIdentityList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ChatIdentity' } }
+    LinkChatIdentity:
+      type: object
+      additionalProperties: false
+      required: [platform, platformUserId, subjectId]
+      properties:
+        platform: { type: string, enum: [teams, slack] }
+        platformUserId: { type: string, maxLength: 128, pattern: '^[A-Za-z0-9:._@-]{1,128}$' }
+        subjectId: { $ref: '#/components/schemas/Uuid' }
+    TaskActionMessage:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, person, channel, reason, status, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        taskId: { type: string }
+        person: { $ref: '#/components/schemas/SubjectRef' }
+        channel: { type: string, enum: [email, teams, slack] }
+        reason: { type: string, description: 'created, or escalated-<level> after an escalation moved the task' }
+        status: { type: string, enum: [queued, sent, skipped] }
+        skipCode: { type: [string, 'null'], description: 'TASK_NOT_OPEN, TASK_ALREADY_CLAIMED, NOT_ELIGIBLE, CHANNEL_OFF, RECIPIENT_NOT_ALLOWED or NO_CHAT_IDENTITY' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        sentAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    TaskActionMessageList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/TaskActionMessage' } }
+    ChatInteractionReply:
+      type: object
+      description: 'Slack: response_type, replace_original, text, blocks. Teams: type, text, attachments (Adaptive Card).'
+      properties:
+        text: { type: string }
+    TaskActionLink:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, taskId, label, runReference, status, version, person, channel, expiresAt, rejectReasonRequired, actions]
+      properties:
+        workspaceId: { $ref: '#/components/schemas/Uuid' }
+        taskId: { type: string }
+        label: { type: string }
+        workflowName: { type: [string, 'null'] }
+        runReference: { type: string }
+        status: { type: string }
+        dueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer }
+        person: { $ref: '#/components/schemas/SubjectRef' }
+        channel: { type: string, enum: [email, teams, slack] }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+        rejectReasonRequired: { type: boolean }
+        actions:
+          type: object
+          additionalProperties: false
+          required: [claim, approve, reject]
+          properties:
+            claim: { $ref: '#/components/schemas/ActionAvailability' }
+            approve: { $ref: '#/components/schemas/ActionAvailability' }
+            reject: { $ref: '#/components/schemas/ActionAvailability' }
+    UseTaskActionLink:
+      type: object
+      additionalProperties: false
+      required: [action, expectedVersion, confirm]
+      properties:
+        action: { type: string, enum: [claim, approve, reject] }
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: [string, 'null'], maxLength: 1000 }
+        comment: { type: [string, 'null'], maxLength: 2000 }
+        confirm: { type: boolean, description: 'Must be true: the person confirmed on the link page' }
+    TaskActionResult:
+      type: object
+      additionalProperties: false
+      required: [action, outcome, taskId, taskStatus, version]
+      properties:
+        action: { type: string, enum: [claim, approve, reject] }
+        outcome: { type: string, enum: [done, replayed] }
+        taskId: { type: string }
+        taskStatus: { type: string }
+        version: { type: integer }
+        decision: { type: [string, 'null'], enum: [approved, rejected, null] }
+    StepTemplate:
+      type: object
+      additionalProperties: false
+      required: [id, workspaceId, workspaceKey, key, name, stepType, shared, own, status, latestVersion, step, sha256, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        workspaceId: { $ref: '#/components/schemas/Uuid' }
+        workspaceKey: { type: string }
+        key: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        stepType: { type: string }
+        operation: { type: [string, 'null'], description: 'What the step does, for palette search (connection, operation, topic, adapter, decision, group)' }
+        shared: { type: boolean, description: 'Offered to the organization''s other workspaces' }
+        own: { type: boolean, description: 'false for a template another workspace shares (read-only here)' }
+        status: { type: string, enum: [active, archived] }
+        latestVersion: { type: integer, minimum: 1 }
+        step: { type: object, additionalProperties: true, description: 'type, label, optional description and config of the step' }
+        sha256: { type: string }
+        updatedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    StepTemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/StepTemplate' } }
+    StepTemplateDetail:
+      type: object
+      additionalProperties: false
+      required: [template, versions]
+      properties:
+        template: { $ref: '#/components/schemas/StepTemplate' }
+        versions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [version, sha256, createdAt]
+            properties:
+              version: { type: integer, minimum: 1 }
+              sha256: { type: string }
+              note: { type: [string, 'null'] }
+              createdBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+              createdAt: { $ref: '#/components/schemas/Timestamp' }
+    CreateStepTemplate:
+      type: object
+      additionalProperties: false
+      required: [key, name, step]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        shared: { type: boolean, default: false }
+        step: { type: object, additionalProperties: true }
+        note: { type: [string, 'null'], maxLength: 500 }
+    AddStepTemplateVersion:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, step]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        step: { type: object, additionalProperties: true }
+        note: { type: [string, 'null'], maxLength: 500 }
+    UpdateStepTemplate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, name, shared, status]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        shared: { type: boolean }
+        status: { type: string, enum: [active, archived] }
+    # -------------------------------------------------------------- end of S141 TaskActions schemas
     McpServer:
       type: object
       additionalProperties: false
@@ -14576,7 +15152,7 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision, agentToolChanged], description: 'agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision, agentToolChanged, taskEscalated], description: 'taskEscalated: a level of an approval escalation policy (S141) told you about a waiting task; agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
         message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }

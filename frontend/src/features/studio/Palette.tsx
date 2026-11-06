@@ -13,16 +13,20 @@ import type { NodeKind } from './model/types'
 import { KIND_ACCENT, KIND_ICON } from './nodeMeta'
 import { useWorkspace } from '@/app/workspace'
 import { useConnectorPalette, type ConnectorPaletteItem } from '@/features/settings/connectorPackagesApi'
+import type { StepTemplate } from '@/api/types'
+import { WorkspaceTemplateSteps } from './WorkspaceTemplates'
 
 /**
  * Step palette with business labels (docs/build/S7-frontend.md section 5). Searchable; each item has a one-line
  * explanation. Items are buttons (activate with Enter or Space to add a step) and can also be dragged onto the canvas.
  */
 
-export function Palette({ onAdd, onAddPackageStep, disabled, defaultCollapsed = false }: {
+export function Palette({ onAdd, onAddPackageStep, onAddWorkspaceTemplate, disabled, defaultCollapsed = false }: {
   onAdd: (kind: NodeKind) => void
   /** S133: a step template or operation of an installed connector package. */
   onAddPackageStep?: (item: ConnectorPaletteItem) => void
+  /** S141 (CG-S03): a workspace step template. */
+  onAddWorkspaceTemplate?: (template: StepTemplate) => void
   disabled: boolean
   defaultCollapsed?: boolean
 }) {
@@ -112,6 +116,7 @@ export function Palette({ onAdd, onAddPackageStep, disabled, defaultCollapsed = 
         })}
         {items.length === 0 ? <li className="text-sm text-muted-foreground">No step matches &ldquo;{query}&rdquo;.</li> : null}
       </ul>
+      {onAddWorkspaceTemplate ? <WorkspaceTemplateSection query={q} disabled={disabled} onAdd={onAddWorkspaceTemplate} /> : null}
       {onAddPackageStep ? <PackageSteps query={q} disabled={disabled} onAdd={onAddPackageStep} /> : null}
     </section>
     </aside>
@@ -151,4 +156,9 @@ function PackageSteps({ query, disabled, onAdd }: { query: string; disabled: boo
       </ul>
     </section>
   )
+}
+
+function WorkspaceTemplateSection({ query, disabled, onAdd }: { query: string; disabled: boolean; onAdd: (template: StepTemplate) => void }) {
+  const { workspace } = useWorkspace()
+  return <WorkspaceTemplateSteps ws={workspace.id} query={query} disabled={disabled} onAdd={onAdd} />
 }

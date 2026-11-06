@@ -370,3 +370,15 @@ When the system answers "too many requests" (429) or "unavailable" (503) with a 
 that long, at most the longest delay. A call whose outcome is unknown is never retried automatically. When a
 connection is paused after repeated failures, or its request limit is reached, the timeline says the step is waiting
 and that no attempt was used. Details: [S131](build/S131-retry-and-circuit-breaker.md).
+
+## Escalation, tasks from email and chat, and step templates - 6 November 2026
+
+**Designers.** An approval step's *Escalate when nobody decides* adds up to five levels: tell a supervisor group, move
+the task to a supervisor group, or alert the operators, after a number of hours (working hours when the step has a
+calendar). Each level happens once and only while the task is still open; the due date does not change. The timeline
+shows every level. *Save as template* in a step's panel keeps the step's settings as a workspace template, found in
+the step list under *From workspace templates* by name or by what it does (for example a connection and operation).
+
+**Approvers.** When your workspace has actionable tasks on, a task can reach you by email, Teams or Slack with Open,
+Claim, Approve and Reject. Nothing happens until you confirm, and the same rules apply as on the task page. An email
+link works only for you and that task and expires. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).

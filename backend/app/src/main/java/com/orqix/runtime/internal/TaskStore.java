@@ -216,6 +216,21 @@ public class TaskStore {
                 .update() == 1;
     }
 
+    /**
+     * CG-T04 (S141): moves an open task to another group's queue (no assignee). Compare-and-set on the version; the due
+     * date is unchanged.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean moveToGroup(UUID workspaceId, String taskId, int expectedVersion, String groupKey) {
+        return jdbc.sql("""
+                UPDATE task_context SET candidate_group_key = :grp, assignee_subject_id = NULL, claimed_at = NULL,
+                       version = version + 1
+                WHERE workspace_id = :ws AND engine_task_id = :task AND version = :version AND status = 'open'
+                """)
+                .param("grp", groupKey).param("ws", workspaceId).param("task", taskId).param("version", expectedVersion)
+                .update() == 1;
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean setPriority(UUID workspaceId, String taskId, int expectedVersion, int priority) {
         return jdbc.sql("UPDATE task_context SET priority=:priority, version=version+1 WHERE workspace_id=:ws AND engine_task_id=:task AND version=:version AND status='open'")

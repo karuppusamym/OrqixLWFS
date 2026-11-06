@@ -67,11 +67,14 @@ public class ConnectionAdminService {
     private final Schema definitionSchema;
     private final Schema definitionV1Schema;
     private final WorkspaceFeatures features;
+    private final com.orqix.integration.agenttools.AgentToolRules agentTools;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
             EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AgentExecutor agents, AuditWriter audit,
-            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features) {
+            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features,
+            com.orqix.integration.agenttools.AgentToolRules agentTools) {
         this.features = features;
+        this.agentTools = agentTools;
         this.connections = connections;
         this.policy = policy;
         this.subjects = subjects;
@@ -145,7 +148,8 @@ public class ConnectionAdminService {
         if (definition == null || !definition.isObject()) {
             throw ApiException.malformed("definition must be a JSON object.");
         }
-        if ("agent".equals(definition.path("kind").asString("http"))) {
+        if ("agent".equals(definition.path("kind").asString("http"))
+                || "mcpServer".equals(definition.path("kind").asString("http"))) {
             features.require(workspaceId, WorkspaceFeatures.Feature.AGENTS);
         }
         // schemaVersion 1.0 is validated against the v1 schema plus its registration rules (S130); 0.1 as before.
@@ -170,6 +174,9 @@ public class ConnectionAdminService {
         int version = definition.path("version").asInt();
         List<ConnectionService.DefinitionRecord> existing = connections.definitions(workspaceId, key);
         List<ApiException.FieldError> semantic = agentChecks(definition, existing);
+        if (semantic.isEmpty()) {
+            semantic = agentTools.check(workspaceId, definition);
+        }
         if (!semantic.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
                     .withFieldErrors(semantic);
@@ -245,7 +252,8 @@ public class ConnectionAdminService {
                 if (auth.secretRef() == null || auth.headerName() == null) {
                     errors.add(new ApiException.FieldError("/auth", "required", "secretRef and headerName are required"));
                 }
-                if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
+                if (connections.definitions(workspaceId, key).stream()
+                        .anyMatch(d -> d.definition().isAgent() || d.definition().isMcpServer())) {
                     errors.add(new ApiException.FieldError("/auth/type", "enum",
                             "An agent connection supports none, bearerToken, oauth2ClientCredentials and oauth2AuthorizationCode"));
                 }
@@ -341,9 +349,14 @@ public class ConnectionAdminService {
         if (!operation.testable() || operation.effectClass() != ConnectionDefinition.EffectClass.READ_ONLY) {
             throw new ApiException(ProblemCode.OPERATION_NOT_TESTABLE, "Only read-only, testable operations can be tested.");
         }
+        // S135: an agent whose tools all live on registered tool servers has no binding of its own.
+        boolean ownBinding = !record.definition().isAgent() || operation.agent() == null
+                || operation.agent().usesOwnBinding();
         ConnectionService.Binding binding = connections.binding(workspaceId, key).filter(ConnectionService.Binding::enabled)
-                .orElseThrow(() -> new ApiException(ProblemCode.CONNECTION_NOT_BOUND,
-                        "Configure and enable the binding first."));
+                .orElse(null);
+        if (binding == null && ownBinding) {
+            throw new ApiException(ProblemCode.CONNECTION_NOT_BOUND, "Configure and enable the binding first.");
+        }
         long started = System.nanoTime();
         ConnectionDtos.TestResult result = record.definition().isAgent()
                 ? testAgent(caller, workspaceId, record, operation, binding, request.input(), started)
@@ -402,13 +415,16 @@ public class ConnectionAdminService {
             throw new ApiException(ProblemCode.AI_NOT_CONFIGURED, unavailable);
         }
         ObjectNode sample = sampleInput(operation, input);
-        try {
-            egress.check(binding.baseUrl());
-        } catch (EgressPolicy.EgressDeniedException e) {
-            return new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED", e.getMessage());
+        if (binding != null) {
+            try {
+                egress.check(binding.baseUrl());
+            } catch (EgressPolicy.EgressDeniedException e) {
+                return new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED",
+                        e.getMessage());
+            }
         }
         String secret = null;
-        if (!"none".equals(binding.authType())) {
+        if (binding != null && !"none".equals(binding.authType())) {
             secret = secrets.credential(binding.authType(), binding.secretRef(), binding.workspaceId()).orElse(null);
             if (secret == null) {
                 return new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
@@ -416,8 +432,8 @@ public class ConnectionAdminService {
             }
         }
         AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(workspaceId, null, null,
-                caller.subjectId(), "test", 1, record.definition(), operation, sample, Map.of(), binding.baseUrl(),
-                secret, operation.maxTimeoutSeconds()));
+                caller.subjectId(), "test", 1, record.definition(), operation, sample, Map.of(),
+                binding == null ? null : binding.baseUrl(), secret, operation.maxTimeoutSeconds()));
         if (run.outcome() == HttpExecutor.Outcome.SUCCEEDED) {
             return new ConnectionDtos.TestResult("succeeded", null, elapsed(started), null, run.detail(), run.output(),
                     run.summary());

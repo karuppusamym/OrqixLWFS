@@ -19,6 +19,8 @@ export function notificationHref(ws: string, n: Notification): string | null {
     return `/w/${ws}/workflows/${n.workflowId}/edit?element=${encodeURIComponent(n.elementId)}&discussion=1`
   }
   if (n.kind === 'promotionRequest') return `/w/${ws}/promotions`
+  // S135: a pinned MCP tool changed or disappeared; the administrator checks it on the Agents page.
+  if (n.kind === 'agentToolChanged') return `/w/${ws}/agents?tab=servers`
   if (n.kind === 'promotionDecision') return n.workflowId ? `/w/${ws}/workflows/${n.workflowId}` : null
   return n.runId ? `/w/${ws}/runs/${n.runId}` : null
 }

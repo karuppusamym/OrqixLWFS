@@ -169,7 +169,7 @@ public final class Stub {
         if (path.startsWith("/servicenow/")) {
             return ServiceNowStub.handle(request);
         }
-        if (path.equals("/mcp") || path.startsWith("/mcp?")) {
+        if (path.equals("/mcp") || path.startsWith("/mcp?") || path.startsWith("/mcp/")) {
             return McpStub.handle(request);
         }
         if ("GET".equals(method) && path.startsWith("/health")) {

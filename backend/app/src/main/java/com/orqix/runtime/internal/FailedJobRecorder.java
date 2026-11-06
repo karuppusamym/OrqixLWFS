@@ -58,6 +58,9 @@ public class FailedJobRecorder {
     @Transactional(propagation = Propagation.MANDATORY)
     public void deferred(UUID workspaceId, UUID runId, String nodeId, String reason, String connectionKey,
             Instant until) {
+        if (AgentLoops.TURN.equals(reason)) {
+            return; // CG-M03 (S135): the next turn of a durable agent, not a delay worth a timeline entry
+        }
         RunStore.RunRow run = runs.find(workspaceId, runId).orElse(null);
         if (run == null || !run.isActive()) {
             return;

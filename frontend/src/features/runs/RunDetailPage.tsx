@@ -388,6 +388,12 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                             <p className="text-sm">{describeEvent(e, ctx)}</p>
                             <DecisionEvidence event={e} />
                             <IncidentCorrectionEvidence event={e} />
+                            {/* S135: an agent step links to its conversation trace (shown when the workspace keeps traces). */}
+                            {e.type === 'EFFECT_SUCCEEDED' && e.data.agent && e.nodeId && can('run.operate') ? (
+                              <Link className="text-xs" to={`/w/${ws}/agents?run=${run.id}&node=${encodeURIComponent(e.nodeId)}`}>
+                                Agent trace of this step
+                              </Link>
+                            ) : null}
                             <p className="text-xs text-muted-foreground">
                               <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
                             </p>

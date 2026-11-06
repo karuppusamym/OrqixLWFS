@@ -251,7 +251,17 @@ public class AuditWriter {
             Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")),
             // IN04 hardening (S85): retention of agent write records, as for files (DOC08).
             Map.entry("agent.write.retention.updated", Set.of("retentionDays", "version")),
-            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")));
+            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")),
+            // S135 (doc 29 §8): ids, names, hashes and counts only; never schemas, arguments, answers or model text.
+            Map.entry("mcp.tool-snapshot.taken", Set.of("connectionKey", "definitionVersion", "pinned", "missing")),
+            Map.entry("mcp.tool-schema-changed", Set.of("connectionKey", "toolName", "kind", "pinnedSha256",
+                    "observedSha256")),
+            Map.entry("agent.kill-switch.changed", Set.of("scope", "connectionKey", "active")),
+            Map.entry("agent.trace.settings-changed", Set.of("enabled", "retentionDays", "redactFields",
+                    "redactPatterns")),
+            Map.entry("agent.request.answered", Set.of("requestId", "runId", "kind", "toolName", "outcome")),
+            Map.entry("agent.test-suite.saved", Set.of("connectionKey", "cases")),
+            Map.entry("agent.test-suite.ran", Set.of("connectionKey", "connectionVersion", "passed", "failed")));
 
     private final JdbcClient jdbc;
     private final Json json;

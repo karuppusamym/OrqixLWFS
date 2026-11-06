@@ -42,9 +42,12 @@ public class HttpTaskDelegate implements JavaDelegate {
     private final RuntimeMetrics metrics;
     private final JdbcClient jdbc;
     private final OrqixProperties properties;
+    private final com.orqix.runtime.internal.AgentLoops agentLoops;
 
     public HttpTaskDelegate(Json json, EffectDispatcher dispatcher, RunStore runs, RunEvents events,
-            RuntimeMetrics metrics, JdbcClient jdbc, OrqixProperties properties) {
+            RuntimeMetrics metrics, JdbcClient jdbc, OrqixProperties properties,
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.AgentLoops agentLoops) {
+        this.agentLoops = agentLoops;
         this.json = json;
         this.dispatcher = dispatcher;
         this.runs = runs;
@@ -91,9 +94,12 @@ public class HttpTaskDelegate implements JavaDelegate {
             throw new BpmnError(recordedError);
         extendJobLock(execution, dispatcher.leaseSeconds(workspaceId, connection, connectionVersion, operation,
                 timeoutSeconds));
-        EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(workspaceId,
+        EffectDispatcher.DispatchRequest dispatchRequest = new EffectDispatcher.DispatchRequest(workspaceId,
                 runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
-                results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution)));
+                results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution));
+        // CG-M03 (S135): a durable agent runs one turn per job execution; between turns the job is deferred.
+        EffectDispatcher.DispatchResult result = agentLoops.durable(workspaceId, connection, connectionVersion, operation)
+                ? agentLoops.turn(dispatchRequest) : dispatcher.dispatch(dispatchRequest);
 
         if (result instanceof EffectDispatcher.Succeeded success) {
             if (!success.reused()) {

@@ -4792,6 +4792,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        /** The tool pins of a registered MCP server (CG-M01) and the drift the runtime observed */
+        get: operations["getMcpToolSnapshot"];
+        put?: never;
+        /**
+         * Pin the tools of a registered MCP server as the bound server lists them now
+         * @description Connects to the server in the workspace binding, lists its tools and, for every tool in the definition's
+         *     catalog, stores the inputSchema and the SHA-256 of its canonical JSON. At runtime a tool whose live schema
+         *     differs, that is missing or that has no pin is refused (TOOL_SCHEMA_CHANGED / TOOL_NOT_PINNED) and the
+         *     administrator who pinned it is notified. Taking a new snapshot resolves the drift. The server's own tool
+         *     descriptions are never stored or offered. Fresh connection.manage.
+         */
+        post: operations["takeMcpToolSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-kill-switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Kill switches of agents and MCP servers (CG-M03)
+         * @description Also readable with run.operate.
+         */
+        get: operations["listAgentKillSwitches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-kill-switches/{scope}/{connectionKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scope: "agent" | "server";
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Switch an agent (scope agent) or an MCP server (scope server) off or on again
+         * @description Off stops new calls at once: an agent makes no further execution or durable turn (AGENT_STOPPED), a server's
+         *     tools are refused before every call. A call already in flight finishes. Fresh connection.manage, reason
+         *     required, expectedVersion once the switch exists.
+         */
+        put: operations["setAgentKillSwitch"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-trace-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The workspace's opt-in conversation trace setting (CG-M05) */
+        get: operations["getAgentTraceSettings"];
+        /**
+         * Enable or disable the conversation trace, with redaction rules and retention (1-30 days, default 7)
+         * @description Off (the default) keeps agent records metadata only. On keeps turns and tool calls with arguments, results and
+         *     model text after redaction: built-in rules (e-mail addresses, runs of 12-19 digits, bearer and API tokens),
+         *     the named JSON fields and the workspace patterns (regular expressions without nested repetition). Rows are
+         *     deleted when the retention passes.
+         */
+        put: operations["setAgentTraceSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/agent-trace": {
+        parameters: {
+            query?: {
+                nodeId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** The redacted conversation trace of a run's agent steps (one step with nodeId), linked to the diagram */
+        get: operations["getAgentTrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        /** The agent test suite of an agent connection (CG-M07) and its last result */
+        get: operations["getAgentTestSuite"];
+        /** Save the test suite (cases with input, tool fixtures and expectations; a pinned judge model) */
+        put: operations["saveAgentTestSuite"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run every case of the saved suite against the latest connection version
+         * @description Every tool is replaced by its fixtures (no MCP server, connection, workflow or person is involved); the model
+         *     runs for real and is metered like any AI use. Judge assertions use the suite's judge profile and fail with
+         *     JUDGE_MODEL_CHANGED when it resolves to another model than the pinned one.
+         */
+        post: operations["runAgentTestSuite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-requests": {
+        parameters: {
+            query?: {
+                status?: "open" | "answered" | "approved" | "rejected" | "cancelled" | "expired";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Questions, approvals and elicitations that durable agents raised for people (CG-M03)
+         * @description Members of the request's group (with task.act) see the question, the proposed arguments or the server's
+         *     message; operators (run.operate) see the requests without those details. Default status open.
+         */
+        get: operations["listAgentRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-requests/{requestId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                requestId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer an agent's question or elicitation, or approve or reject a proposed tool call
+         * @description Fresh task.act and membership of the request's group. An approval is never decided by the person whose request
+         *     the agent works on (403 SEPARATION_OF_DUTIES). An answer must fit the answer form. The answer wakes the agent.
+         */
+        post: operations["answerAgentRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-dashboard": {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Agent control plane (CG-M05) - calls, cost, refusals, schema changes, failure codes, p95 duration
+         * @description Also readable with connection.read. Facts only, never prompts, arguments or results.
+         */
+        get: operations["getAgentDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/agent-writes/{writeId}/reconcile": {
         parameters: {
             query?: never;
@@ -7596,6 +7839,177 @@ export interface components {
             retentionDays?: number | null;
             expectedVersion: number;
         };
+        McpToolDrift: {
+            id: components["schemas"]["Uuid"];
+            connectionKey: components["schemas"]["Key"];
+            toolName: string;
+            /** @enum {string} */
+            kind: "changed" | "missing" | "unpinned";
+            pinnedSha256?: string | null;
+            observedSha256?: string | null;
+            occurrences: number;
+            firstSeenAt: components["schemas"]["Timestamp"];
+            lastSeenAt: components["schemas"]["Timestamp"];
+        };
+        McpToolSnapshot: {
+            connectionKey: components["schemas"]["Key"];
+            definitionVersion: number;
+            takenAt?: components["schemas"]["Timestamp"] | null;
+            tools: {
+                name: string;
+                label: string;
+                /** @enum {string} */
+                status: "pinned" | "unpinned" | "missing";
+                schemaSha256?: string | null;
+            }[];
+            drift: components["schemas"]["McpToolDrift"][];
+        };
+        AgentKillSwitch: {
+            /** @enum {string} */
+            scope: "agent" | "server";
+            connectionKey: components["schemas"]["Key"];
+            /** @description true: switched off (no new calls) */
+            active: boolean;
+            reason: string;
+            changedBy: components["schemas"]["Uuid"];
+            changedAt: components["schemas"]["Timestamp"];
+            version: number;
+        };
+        SetAgentKillSwitch: {
+            active: boolean;
+            reason: string;
+            /** @description Required once the switch exists */
+            expectedVersion?: number | null;
+        };
+        AgentTraceSettings: {
+            enabled: boolean;
+            retentionDays: number;
+            redactFields: string[];
+            redactPatterns: string[];
+            changedBy?: components["schemas"]["Uuid"] | null;
+            changedAt?: components["schemas"]["Timestamp"] | null;
+            version: number;
+        };
+        SetAgentTraceSettings: {
+            enabled: boolean;
+            retentionDays?: number | null;
+            redactFields?: string[] | null;
+            redactPatterns?: string[] | null;
+            expectedVersion?: number | null;
+        };
+        AgentTrace: {
+            runId: components["schemas"]["Uuid"];
+            nodeId?: string | null;
+            enabled: boolean;
+            events: {
+                seq: number;
+                /** @enum {string} */
+                kind: "input" | "turn" | "toolCall" | "wait" | "answer" | "end";
+                toolName?: string | null;
+                model?: string | null;
+                outcome?: string | null;
+                durationMs?: number | null;
+                costUsd?: number | null;
+                /** @description Redacted arguments */
+                content: {
+                    [key: string]: unknown;
+                };
+                createdAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AgentTestSuite: {
+            connectionKey: components["schemas"]["Key"];
+            suite: components["schemas"]["AgentTestSuiteDocument"];
+            /** @description connectionVersion, passed, failed, ranAt and per case: name, passed, outcome, errorCode, toolSequence, output, assertions (kind, passed, message; judge: score and judgeModel) */
+            lastResult?: {
+                [key: string]: unknown;
+            } | null;
+            lastRunAt?: components["schemas"]["Timestamp"] | null;
+            version: number;
+        };
+        /**
+         * @description operation: the agent operation; judge: {profile, model} pins the judge (the profile must resolve to model);
+         *     cases (1-20): {name, input, fixtures: {<tool name>: [{args?, result, isError?}]}, expect: {calledOnce, called,
+         *     never: [tool names], neverWriteTools, order: [tool names], output: {field: value}, failure: errorCode,
+         *     judge: {criteria, minScore 1-5}}}. Fixture args are matched as a subset of the call's arguments.
+         */
+        AgentTestSuiteDocument: {
+            operation?: string;
+            judge?: {
+                profile?: string;
+                model?: string;
+            };
+            cases?: Record<string, never>[];
+        };
+        SaveAgentTestSuite: {
+            suite: components["schemas"]["AgentTestSuiteDocument"];
+            expectedVersion?: number | null;
+        };
+        AgentHumanRequest: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            runReference: string;
+            nodeId: string;
+            /** @enum {string} */
+            kind: "ask" | "approval" | "elicitation";
+            toolName: string;
+            toolLabel: string;
+            groupKey: components["schemas"]["Key"];
+            /** @enum {string} */
+            status: "open" | "answered" | "approved" | "rejected" | "cancelled" | "expired";
+            createdAt: components["schemas"]["Timestamp"];
+            /** @description ask and elicitation: the flat answer form (JSON Schema) */
+            answerSchema?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description Only for members of the group: question (ask), arguments (approval) or message (elicitation); cleared when the agent moves on */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            canAnswer: boolean;
+            version: number;
+        };
+        AnswerAgentRequest: {
+            /**
+             * @description Approvals only
+             * @enum {string|null}
+             */
+            decision?: "approve" | "reject" | null;
+            /** @description Ask and elicitation: values for the answer form */
+            answer?: {
+                [key: string]: unknown;
+            } | null;
+            reason?: string | null;
+            expectedVersion: number;
+        };
+        AgentDashboard: {
+            days: number;
+            from: components["schemas"]["Timestamp"];
+            agents: {
+                connectionKey: components["schemas"]["Key"];
+                calls: number;
+                succeeded: number;
+                failed: number;
+                costUsd: number;
+                p95DurationMs?: number | null;
+                failureCodes: {
+                    [key: string]: number;
+                };
+            }[];
+            /** @description Refused tool calls by outcome (refusedNotAllowed */
+            refusedToolCalls: {
+                [key: string]: number;
+            };
+            schemaRefusals: components["schemas"]["McpToolDrift"][];
+            killSwitches: components["schemas"]["AgentKillSwitch"][];
+            /** @description Durable loops by status */
+            loops: {
+                [key: string]: number;
+            };
+            openRequests: number;
+            /** @description Agreement of AI tasks with people; null until AI task decisions (CG-A03) record it */
+            aiTaskAgreement?: number | null;
+        };
         /** @enum {string} */
         WorkspaceRole: "WORKSPACE_ADMIN" | "WORKFLOW_DESIGNER" | "PUBLISHER" | "OPERATOR" | "VIEWER" | "APPROVER";
         /** @description RFC 9457 problem details with Orqix extension members. */
@@ -9524,10 +9938,10 @@ export interface components {
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
             /**
-             * @description promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
+             * @description agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
              * @enum {string}
              */
-            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision";
+            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision" | "agentToolChanged";
             /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
@@ -12252,12 +12666,42 @@ export interface components {
             additionalProperties?: boolean;
         };
         agentTool: {
-            /** @description Tool name as listed by the MCP server. */
+            /** @description Tool name: a tool of the MCP server in the agent's own binding, <mcpServer connection key>.<tool name> of a registered tool server (CG-M01), or the name of an Orqix tool with a source (CG-M02). */
             name: string;
             /** @description Business name of the tool or the system behind it, shown in the studio and on the run timeline. */
             label: string;
             /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
             description?: string;
+            /** @description CG-M02: an Orqix tool instead of an MCP tool. operation: a connection operation (inherits its effect class and journal); decision: a pinned shared decision table; workflow: starts a pinned child release and waits for its outcome; askPerson: a task for a group with a typed answer form. workflow and askPerson need agent.loop. */
+            source?: {
+                operation: {
+                    connection: string;
+                    operation: string;
+                };
+            } | {
+                decision: {
+                    key: string;
+                    version: number;
+                };
+            } | {
+                workflow: {
+                    key: string;
+                    release: number;
+                };
+            } | {
+                askPerson: {
+                    group: string;
+                    answerSchema: components["schemas"]["requestObject"];
+                };
+            };
+            /** @description CG-M03: the loop pauses before every call of this tool; a member of the group sees the proposed arguments and only an approval releases the call. Needs agent.loop. */
+            requiresApproval?: {
+                group: string;
+            };
+            /** @description Marks an operation tool whose effect class is nonIdempotent: offered only under an active S75 approval for the workflow, connection version, operation and tool, never on the approver's own requests. */
+            write?: boolean;
+            /** @description Data classes this tool may receive (default public and internal; tools of registered servers take theirs from the server definition). */
+            dataClasses?: ("public" | "internal" | "confidential" | "personal")[];
         };
         agentWriteTool: {
             /** @description Tool name offered to the model. Must differ from every name in tools. */
@@ -12283,7 +12727,7 @@ export interface components {
             instructions: string;
             /** @description Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile. */
             modelProfile?: string;
-            /** @description Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called. */
+            /** @description Allow-list of tools. Only these are offered to the model and only these can be called: tools of the MCP server in the binding, <server>.<tool> of registered tool servers, and Orqix tools with a source. */
             tools: components["schemas"]["agentTool"][];
             /** @description Upper bound on tool calls in one execution; further calls are refused. */
             maxToolCalls: number;
@@ -12291,6 +12735,40 @@ export interface components {
             summary?: string;
             /** @description Write-capable tools (IN04, docs/build/S75). Each sends one message through a workspace adapter to targets fixed here, never chosen by the model. Declaring a tool authorizes nothing: it is offered to the model only while a person holding agent.approve-write-tool has approved it for the workflow, this connection version, operation and tool, and the run was not started by that approver. Delivery uses the local stub transport only in this build. */
             writeTools?: components["schemas"]["agentWriteTool"][];
+            /** @description CG-M03 durable loop: each model turn runs as its own engine job, long tools (workflow, askPerson, approvals, elicitation) become waits, and the state between turns is encrypted and short-lived. Without loop the agent runs synchronously within maxTimeoutSeconds. */
+            loop?: {
+                maxTurns: number;
+                maxToolCalls: number;
+                /** @description ISO-8601 duration from the first turn, at most P7D. */
+                maxDuration: string;
+                /** @description Most this agent step may spend in one run, within the workspace budget. */
+                budgetUsd: number;
+            };
+            /** @description Read-only resources of registered tool servers (<server key>.<resource name>) given to the model as untrusted reference data. */
+            resources?: string[];
+            /** @description MCP elicitation requests become a task for this group (needs loop). Without it every elicitation is declined. */
+            elicitation?: {
+                group: string;
+            };
+            /** @description Data class of request fields (default internal). A tool argument carrying the value of a field whose class the tool may not receive is refused. */
+            inputDataClasses?: {
+                [key: string]: "public" | "internal" | "confidential" | "personal";
+            };
+        };
+        mcpServerTool: {
+            /** @description Tool name as listed by the MCP server. */
+            name: string;
+            label: string;
+            /** @description Administrator-written description offered to the model. The server's own description is never offered (tool poisoning). */
+            description: string;
+            /** @description Data classes this tool may receive in its arguments (default public and internal). Request values of other classes are refused before the call. */
+            dataClasses?: ("public" | "internal" | "confidential" | "personal")[];
+        };
+        mcpResource: {
+            name: string;
+            label: string;
+            uri: string;
+            maxChars: number;
         };
         /** @description An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false). */
         agentOperation: {
@@ -12332,6 +12810,12 @@ export interface components {
             /** @description May be invoked from the connection test endpoint. Only allowed for readOnly operations. */
             testable: boolean;
         } & (unknown & unknown & unknown);
+        /** @description Tool catalog of an MCP server (CG-M01). Only these tools can be referenced by agents (as <connection key>.<tool name>); each is pinned per workspace by a tool snapshot that records the SHA-256 of its inputSchema, and a tool whose live schema differs from the pin is refused (TOOL_SCHEMA_CHANGED). */
+        mcpServerSpec: {
+            tools: components["schemas"]["mcpServerTool"][];
+            /** @description Read-only resources agents may read as context (resources/read of a fixed URI, text only, capped). */
+            resources?: components["schemas"]["mcpResource"][];
+        };
         /**
          * Orqix connection definition v0.1 — portable HTTP operation or AI agent contract
          * @description Immutable, versioned, secret-free description of an approved integration: kind http (default) is an HTTP operation contract, kind agent is a bounded AI task that may call allow-listed tools of one MCP server (S13). Environment details (base URL or MCP endpoint, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics and docs/build/S13-agents-mcp.md for agents.
@@ -12340,15 +12824,16 @@ export interface components {
             /** @constant */
             schemaVersion: "0.1";
             /**
-             * @description http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph.
+             * @description http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph. mcpServer (CG-M01, docs/build/S135): a registered MCP tool server: its binding is the endpoint and its definition is the tool catalog agents may reference as <key>.<tool> (no operations).
              * @enum {unknown}
              */
-            kind?: "http" | "agent" | "microsoftGraph";
+            kind?: "http" | "agent" | "microsoftGraph" | "mcpServer";
             key: string;
             version: number;
             name: string;
             description?: string;
-            operations: Record<string, never>;
+            operations?: Record<string, never>;
+            mcpServer?: components["schemas"]["mcpServerSpec"];
             $defs: {
                 operation: {
                     label: string;
@@ -12423,7 +12908,7 @@ export interface components {
                     instructions: string;
                     /** @description Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile. */
                     modelProfile?: string;
-                    /** @description Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called. */
+                    /** @description Allow-list of tools. Only these are offered to the model and only these can be called: tools of the MCP server in the binding, <server>.<tool> of registered tool servers, and Orqix tools with a source. */
                     tools: components["schemas"]["agentTool"][];
                     /** @description Upper bound on tool calls in one execution; further calls are refused. */
                     maxToolCalls: number;
@@ -12431,14 +12916,63 @@ export interface components {
                     summary?: string;
                     /** @description Write-capable tools (IN04, docs/build/S75). Each sends one message through a workspace adapter to targets fixed here, never chosen by the model. Declaring a tool authorizes nothing: it is offered to the model only while a person holding agent.approve-write-tool has approved it for the workflow, this connection version, operation and tool, and the run was not started by that approver. Delivery uses the local stub transport only in this build. */
                     writeTools?: components["schemas"]["agentWriteTool"][];
+                    /** @description CG-M03 durable loop: each model turn runs as its own engine job, long tools (workflow, askPerson, approvals, elicitation) become waits, and the state between turns is encrypted and short-lived. Without loop the agent runs synchronously within maxTimeoutSeconds. */
+                    loop?: {
+                        maxTurns: number;
+                        maxToolCalls: number;
+                        /** @description ISO-8601 duration from the first turn, at most P7D. */
+                        maxDuration: string;
+                        /** @description Most this agent step may spend in one run, within the workspace budget. */
+                        budgetUsd: number;
+                    };
+                    /** @description Read-only resources of registered tool servers (<server key>.<resource name>) given to the model as untrusted reference data. */
+                    resources?: string[];
+                    /** @description MCP elicitation requests become a task for this group (needs loop). Without it every elicitation is declined. */
+                    elicitation?: {
+                        group: string;
+                    };
+                    /** @description Data class of request fields (default internal). A tool argument carrying the value of a field whose class the tool may not receive is refused. */
+                    inputDataClasses?: {
+                        [key: string]: "public" | "internal" | "confidential" | "personal";
+                    };
                 };
                 agentTool: {
-                    /** @description Tool name as listed by the MCP server. */
+                    /** @description Tool name: a tool of the MCP server in the agent's own binding, <mcpServer connection key>.<tool name> of a registered tool server (CG-M01), or the name of an Orqix tool with a source (CG-M02). */
                     name: string;
                     /** @description Business name of the tool or the system behind it, shown in the studio and on the run timeline. */
                     label: string;
                     /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
                     description?: string;
+                    /** @description CG-M02: an Orqix tool instead of an MCP tool. operation: a connection operation (inherits its effect class and journal); decision: a pinned shared decision table; workflow: starts a pinned child release and waits for its outcome; askPerson: a task for a group with a typed answer form. workflow and askPerson need agent.loop. */
+                    source?: {
+                        operation: {
+                            connection: string;
+                            operation: string;
+                        };
+                    } | {
+                        decision: {
+                            key: string;
+                            version: number;
+                        };
+                    } | {
+                        workflow: {
+                            key: string;
+                            release: number;
+                        };
+                    } | {
+                        askPerson: {
+                            group: string;
+                            answerSchema: components["schemas"]["requestObject"];
+                        };
+                    };
+                    /** @description CG-M03: the loop pauses before every call of this tool; a member of the group sees the proposed arguments and only an approval releases the call. Needs agent.loop. */
+                    requiresApproval?: {
+                        group: string;
+                    };
+                    /** @description Marks an operation tool whose effect class is nonIdempotent: offered only under an active S75 approval for the workflow, connection version, operation and tool, never on the approver's own requests. */
+                    write?: boolean;
+                    /** @description Data classes this tool may receive (default public and internal; tools of registered servers take theirs from the server definition). */
+                    dataClasses?: ("public" | "internal" | "confidential" | "personal")[];
                 };
                 agentWriteTool: {
                     /** @description Tool name offered to the model. Must differ from every name in tools. */
@@ -12459,8 +12993,29 @@ export interface components {
                     /** @description Upper bound on uses of this tool in one execution (default 1). */
                     maxCalls?: number;
                 } & (unknown & unknown);
+                /** @description Tool catalog of an MCP server (CG-M01). Only these tools can be referenced by agents (as <connection key>.<tool name>); each is pinned per workspace by a tool snapshot that records the SHA-256 of its inputSchema, and a tool whose live schema differs from the pin is refused (TOOL_SCHEMA_CHANGED). */
+                mcpServerSpec: {
+                    tools: components["schemas"]["mcpServerTool"][];
+                    /** @description Read-only resources agents may read as context (resources/read of a fixed URI, text only, capped). */
+                    resources?: components["schemas"]["mcpResource"][];
+                };
+                mcpServerTool: {
+                    /** @description Tool name as listed by the MCP server. */
+                    name: string;
+                    label: string;
+                    /** @description Administrator-written description offered to the model. The server's own description is never offered (tool poisoning). */
+                    description: string;
+                    /** @description Data classes this tool may receive in its arguments (default public and internal). Request values of other classes are refused before the call. */
+                    dataClasses?: ("public" | "internal" | "confidential" | "personal")[];
+                };
+                mcpResource: {
+                    name: string;
+                    label: string;
+                    uri: string;
+                    maxChars: number;
+                };
             };
-        } & (unknown & unknown);
+        } & (unknown & unknown & unknown);
         pathParam: {
             /** @enum {unknown} */
             type: "string" | "integer";
@@ -20954,6 +21509,378 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getMcpToolSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pins of the latest definition version (status pinned or unpinned per allow-listed tool) and open drift */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolSnapshot"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    takeMcpToolSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new pins (status pinned or missing per catalog tool) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpToolSnapshot"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAgentKillSwitches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every switch that was ever set, active first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentKillSwitch"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setAgentKillSwitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                scope: "agent" | "server";
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAgentKillSwitch"];
+            };
+        };
+        responses: {
+            /** @description The switch now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentKillSwitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAgentTraceSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setting (version 0 and enabled false until one is saved) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTraceSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setAgentTraceSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAgentTraceSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTraceSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAgentTrace: {
+        parameters: {
+            query?: {
+                nodeId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Events in order per step (empty when the trace is off or has expired) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTrace"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAgentTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The suite (an empty one with version 0 until saved) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTestSuite"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveAgentTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAgentTestSuite"];
+            };
+        };
+        responses: {
+            /** @description Saved (the last result is cleared) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTestSuite"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    runAgentTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The suite with lastResult (verdicts, tool sequences, judge scores) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTestSuite"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAgentRequests: {
+        parameters: {
+            query?: {
+                status?: "open" | "answered" | "approved" | "rejected" | "cancelled" | "expired";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requests, newest first (at most 200) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentHumanRequest"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    answerAgentRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                requestId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description The request after the answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentHumanRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAgentDashboard: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The figures for the window (default 7 days) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDashboard"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     reconcileAgentWrite: {

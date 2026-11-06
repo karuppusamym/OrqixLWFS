@@ -553,6 +553,12 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "revokeAgentWriteTool" -> Map.of("reason", "Foreign", "expectedVersion", 1);
             case "reconcileAgentWrite" -> Map.of("outcome", "notApplied", "reason", "Foreign", "expectedVersion", 1);
             case "setAgentWriteRetention" -> Map.of("retentionDays", 1, "expectedVersion", 0);
+            // S135 agent tools: well-formed bodies, so a 404 cannot be explained by validation.
+            case "setAgentKillSwitch" -> Map.of("active", true, "reason", "Foreign attempt");
+            case "setAgentTraceSettings" -> Map.of("enabled", true, "expectedVersion", 0);
+            case "saveAgentTestSuite" -> Map.of("suite", Map.of("operation", "assessVendor", "cases", List.of()),
+                    "expectedVersion", 0);
+            case "answerAgentRequest" -> Map.of("decision", "approve", "expectedVersion", 1);
             case "setWorkspaceFeature" -> Map.of("enabled", false);
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);

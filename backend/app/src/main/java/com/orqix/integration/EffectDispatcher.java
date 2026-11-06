@@ -141,9 +141,15 @@ public class EffectDispatcher {
         boolean dnsFailure = false;
         Optional<ConnectionService.Binding> binding = connections.binding(request.workspaceId(), request.connectionKey());
         String secretValue = null;
-        if (binding.isEmpty() || !binding.get().enabled()) {
+        // S135: an agent whose tools all live on registered tool servers needs no binding of its own; each server's
+        // binding is checked by the executor when it connects.
+        boolean needsBinding = !definition.isAgent() || operation.agent() == null || operation.agent().usesOwnBinding();
+        if (!needsBinding) {
+            binding = binding.filter(ConnectionService.Binding::enabled);
+        }
+        if (needsBinding && (binding.isEmpty() || !binding.get().enabled())) {
             policyDenial = "The connection binding is missing or disabled";
-        } else {
+        } else if (needsBinding) {
             try {
                 egress.check(binding.get().baseUrl());
             } catch (EgressPolicy.EgressDeniedException e) {
@@ -162,13 +168,13 @@ public class EffectDispatcher {
                     }
                 }
             }
-            if (policyDenial == null && definition.isAgent() && agents.unavailableReason() != null) {
-                // Agents need AI: a clear failure that an operator can retry after the fix (S13 section 7).
-                String reason = agents.unavailableReason();
-                policyDenial = "AI is not available: " + reason;
-                denialMessage = name + " needs AI, which is not available: " + reason
-                        + " An administrator must fix it, then an operator can retry.";
-            }
+        }
+        if (policyDenial == null && definition.isAgent() && agents.unavailableReason() != null) {
+            // Agents need AI: a clear failure that an operator can retry after the fix (S13 section 7).
+            String reason = agents.unavailableReason();
+            policyDenial = "AI is not available: " + reason;
+            denialMessage = name + " needs AI, which is not available: " + reason
+                    + " An administrator must fix it, then an operator can retry.";
         }
 
         // CG-W04 (S131): an open circuit or a used-up request rate defers the call before anything is registered.
@@ -217,10 +223,11 @@ public class EffectDispatcher {
             return new Failed(effect.id(), attempt, true, "RETRIES_EXHAUSTED", "DNS_FAILURE", "retryable", null,
                     effectClass, retriesMessage(name));
         }
-        ConnectionService.Binding target = binding.orElseThrow();
         if (definition.isAgent()) {
-            return dispatchAgent(request, record, operation, target, secretValue, effect, attempt, effectClass);
+            return dispatchAgent(request, record, operation, binding.orElse(null), secretValue, effect, attempt,
+                    effectClass);
         }
+        ConnectionService.Binding target = binding.orElseThrow();
         HttpExecutor.Target http = new HttpExecutor.Target(target.baseUrl(), target.authType(),
                 target.authHeaderName(), target.secretRef(), request.workspaceId());
         ObjectNode inputs = request.body();
@@ -313,8 +320,10 @@ public class EffectDispatcher {
             int attempt, String effectClass) {
         AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(request.workspaceId(), request.runId(),
                 effect.id(), request.initiatorSubjectId(), request.nodeId(), attempt, record.definition(), operation,
-                request.body(), request.resultMapping(), target.baseUrl(),
-                ("bearerToken".equals(target.authType()) || ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType()))) ? secretValue : null, request.timeoutSeconds()));
+                request.body(), request.resultMapping(), target == null ? null : target.baseUrl(),
+                target != null && ("bearerToken".equals(target.authType()) || "oauth2ClientCredentials".equals(target.authType())
+                        || "oauth2AuthorizationCode".equals(target.authType())) ? secretValue : null,
+                request.timeoutSeconds(), request.occurrence()));
         switch (run.outcome()) {
             case SUCCEEDED -> {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.SUCCEEDED, null, null, run.detail(),

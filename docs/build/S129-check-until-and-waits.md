@@ -1,6 +1,6 @@
 # S129: Check until done, callback safety net and "Waiting for"
 
-5 November 2026. Wave A of the Camunda gap plan ([doc 29](../29-camunda-gap-implementation-plan.md)): **CG-W01** "Keep checking until done" (§5.3), **CG-W03** callback with a polling safety net (§5.5) and **CG-W08** the uniform "Waiting for" projection, panel and API (§5.10). Migrations **V210** (`poll_wait`), **V211** (`wait_state`) and **V212** (purge grant and index). OpenAPI: one block tagged **Waits**.
+5 November 2026. Wave A of the Camunda gap plan ([doc 29](../29-camunda-gap-implementation-plan.md)): **CG-W01** "Keep checking until done" (§5.3), **CG-W03** callback with a polling safety net (§5.5) and **CG-W08** the uniform "Waiting for" projection, panel and API (§5.10). Migrations **V210** (`poll_wait`), **V211** (`wait_state`) and **V242** (purge grant and index; renumbered from V212 at the Wave A merge). OpenAPI: one block tagged **Waits**.
 
 ## 1. What the designer sets
 
@@ -87,13 +87,13 @@ Closed on 6 November 2026, after merging connection v1, retry and circuit breake
 | Optional results | `poll.optionalResults` names mapped results that may be missing in an answer (a ticket number that appears only when done). The scheduler passes them to the executor as optional mappings (`ResultMappings`, `?` + pointer, in both the v0 and v1 mapping paths); a missing value leaves the check pending instead of making the answer unusable. They are optional outputs (`mayBeAbsent`), so later steps cannot require them (`WF_FIELDREF_NOT_GUARANTEED`); `WF_POLL_OPTIONAL` refuses names that are not kept results, and `WF_RESULT_OPTIONAL` is not raised for them. Studio has "May be missing until the work is done". |
 | Release migration (S38) | A request waiting in a polling step (or a message wait with a safety net) can move only when the step's settings, including checks, operation, mappings and the pinned connection version, are identical; otherwise `POLL_CHANGED`. Before, polling steps could never move. |
 | Repair scan (S72) | Open checks count as work outside the engine (a polling request is not "stranded"). Checks scheduled for a step where the engine is not waiting, or a step that shows checks with none scheduled, are reported (`unsupported`, never rebuilt). A `wait_state` that disagrees with the steps is `projectionDrift`, repairable: repair derives it again from the unchanged steps. |
-| Purge | Ended `poll_wait` rows older than `orqix.polling.retention` (default 30 days) are deleted hourly (`orqix.polling.purge-delay`) in batches of 500 with SKIP LOCKED, one `poll.waits-purged` audit entry (count, retention) per workspace and batch. V212 grants DELETE and adds the index. |
+| Purge | Ended `poll_wait` rows older than `orqix.polling.retention` (default 30 days) are deleted hourly (`orqix.polling.purge-delay`) in batches of 500 with SKIP LOCKED, one `poll.waits-purged` audit entry (count, retention) per workspace and batch. V242 grants DELETE and adds the index. |
 | Safety-net inspector | Wait for a message has "Also check the other system now and then": connection, read-only operation, what to send, message values from the answer, done condition and interval. A connection used only by a safety net counts as used (dependencies sync, `WF_DEPENDENCY_UNUSED`, binding check, release connection pins). |
 | Insights | "Waiting on outside systems" (`GET /insights/outside-waits`, `run.read`): per kind and system (connection, message name or worker topic) the requests waiting now, the longest and total time so far (from `wait_state`), and finished checks in the period with average and 90th percentile (from `poll_wait`). |
 
 Remaining limits:
 
-- **Flyway order.** V212 sorts below the merged V220–V241. A database already migrated to V241 rejects it unless Flyway's out-of-order mode is enabled for this deployment, or the file is renumbered above V241 at merge.
+- **Flyway order.** Resolved at the Wave A merge: the purge migration is V242, after V220–V241, so no out-of-order mode is needed.
 - Each check adds one `effect_journal` row (up to 1,000 per step occurrence); they appear in the request's technical details.
 - A deferral or `Retry-After` does not stretch the deadline; an operator can extend it.
 - Engine-level release migration of a waiting polling step was checked through the compatibility rules only (`ReleaseCompatibility`), not by moving a live instance.

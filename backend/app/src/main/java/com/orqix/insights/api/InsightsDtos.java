@@ -58,4 +58,17 @@ public final class InsightsDtos {
 
     public record Steps(Range range, List<Step> items, boolean truncated) {
     }
+
+    /**
+     * Time spent waiting on one outside system (docs/build/S129, CG-W08): {@code source} is the connection, message
+     * name or worker topic. Open waits come from the "Waiting for" projection; finished ones from the checks that
+     * ended in the range.
+     */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
+    public record OutsideWait(String kind, String source, int openNow, Long longestOpenSeconds, Long totalOpenSeconds,
+            int finished, Long averageFinishedSeconds, Long p90FinishedSeconds) {
+    }
+
+    public record OutsideWaits(Range range, List<OutsideWait> items, long totalOpenSeconds) {
+    }
 }

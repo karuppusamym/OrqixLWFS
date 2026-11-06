@@ -260,6 +260,57 @@ public class InsightsQueries {
     }
 
     /** Requests waiting at a wait step right now. */
+    /**
+     * S129: waits on outside systems, by kind and source. Open: the "Waiting for" rows (poll, message, callback,
+     * external job) with how long they have waited so far. Finished: checks and safety nets that ended in the window.
+     */
+    public List<InsightsDtos.OutsideWait> outsideWaits(Window w, Instant now) {
+        Map<String, long[]> open = new LinkedHashMap<>();
+        jdbc.sql("""
+                SELECT ws.kind, coalesce(ws.connection_key, ws.correlation_ref, ws.node_id) AS source, count(*) AS n,
+                       max(EXTRACT(EPOCH FROM (CAST(:now AS timestamptz) - ws.since)))::bigint AS longest,
+                       sum(EXTRACT(EPOCH FROM (CAST(:now AS timestamptz) - ws.since)))::bigint AS total
+                FROM wait_state ws JOIN workflow_run r ON r.workspace_id = ws.workspace_id AND r.id = ws.run_id
+                WHERE ws.workspace_id = :ws AND ws.kind IN ('poll', 'message', 'callback', 'externalJob')
+                  AND (CAST(:wf AS uuid) IS NULL OR r.workflow_id = :wf)
+                GROUP BY ws.kind, coalesce(ws.connection_key, ws.correlation_ref, ws.node_id)
+                """).param("ws", w.workspaceId()).param("wf", w.workflowId()).param("now", Sql.ts(now))
+                .query((rs, n) -> {
+                    open.put(rs.getString("kind") + "|" + rs.getString("source"),
+                            new long[] {rs.getLong("n"), rs.getLong("longest"), rs.getLong("total")});
+                    return null;
+                }).list();
+        Map<String, long[]> finished = new LinkedHashMap<>();
+        jdbc.sql("""
+                SELECT CASE WHEN p.kind = 'fallback' THEN 'message' ELSE 'poll' END AS kind, p.connection_key AS source,
+                       count(*) AS n, avg(EXTRACT(EPOCH FROM (p.ended_at - p.started_at)))::bigint AS average,
+                       percentile_cont(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (p.ended_at - p.started_at)))::bigint AS p90
+                FROM poll_wait p JOIN workflow_run r ON r.workspace_id = p.workspace_id AND r.id = p.run_id
+                WHERE p.workspace_id = :ws AND p.ended_at >= :from AND p.ended_at < :to
+                  AND (CAST(:wf AS uuid) IS NULL OR r.workflow_id = :wf)
+                GROUP BY 1, 2
+                """).param("ws", w.workspaceId()).param("wf", w.workflowId()).param("from", Sql.ts(w.from()))
+                .param("to", Sql.ts(w.to()))
+                .query((rs, n) -> {
+                    finished.put(rs.getString("kind") + "|" + rs.getString("source"),
+                            new long[] {rs.getLong("n"), rs.getLong("average"), rs.getLong("p90")});
+                    return null;
+                }).list();
+        java.util.Set<String> keys = new java.util.TreeSet<>(open.keySet());
+        keys.addAll(finished.keySet());
+        List<InsightsDtos.OutsideWait> out = new java.util.ArrayList<>();
+        for (String k : keys) {
+            String[] parts = k.split("\\|", 2);
+            long[] o = open.get(k);
+            long[] f = finished.get(k);
+            out.add(new InsightsDtos.OutsideWait(parts[0], parts[1], o == null ? 0 : (int) o[0], o == null ? null : o[1],
+                    o == null ? null : o[2], f == null ? 0 : (int) f[0], f == null ? null : f[1], f == null ? null : f[2]));
+        }
+        out.sort(java.util.Comparator.comparing((InsightsDtos.OutsideWait x) -> x.totalOpenSeconds() == null ? 0L
+                : x.totalOpenSeconds()).reversed().thenComparing(InsightsDtos.OutsideWait::source));
+        return out.size() > STEP_LIMIT ? out.subList(0, STEP_LIMIT) : out;
+    }
+
     public Map<String, Integer> openWaits(UUID workspaceId, UUID workflowId) {
         return openCounts("""
                 SELECT r.workflow_id, s ->> 'nodeId' AS node_id, count(*) AS n

@@ -1184,6 +1184,8 @@ final class SimulationRun {
             JsonNode value = response == null ? null : pointer(response, e.getValue());
             if (response == null) {
                 out.put(e.getKey(), "sample-" + e.getKey());
+            } else if ((value == null || value.isNull()) && n.poll().optional(e.getKey())) {
+                continue; // S129: an optional result is not there yet
             } else if (value == null || value.isNull() || value.isObject() || value.isArray()) {
                 return null;
             } else {

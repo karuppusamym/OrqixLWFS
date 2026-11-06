@@ -3933,6 +3933,25 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/insights/outside-waits:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Insights]
+      operationId: getInsightsOutsideWaits
+      summary: Time spent waiting on outside systems (connections, messages, workers), longest total waiting first
+      description: Open waits from the "Waiting for" projection; finished checks and safety nets that ended in the range. At most 200 rows.
+      x-orqix-permission: run.read
+      parameters:
+        - $ref: '#/components/parameters/InsightsFrom'
+        - $ref: '#/components/parameters/InsightsTo'
+        - $ref: '#/components/parameters/InsightsWorkflowId'
+      responses:
+        '200': { description: Waits on outside systems, content: { application/json: { schema: { $ref: '#/components/schemas/InsightsOutsideWaits' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   # ------------------------------------------------------------------ end of Waits
 
   /workspaces/{workspaceId}/kafka-triggers:
@@ -9809,6 +9828,27 @@ components:
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
         extendBy: { type: string, maxLength: 24, description: 'ISO-8601 duration, for example PT6H or P1D' }
+    InsightsOutsideWait:
+      type: object
+      additionalProperties: false
+      required: [kind, source, openNow, longestOpenSeconds, totalOpenSeconds, finished, averageFinishedSeconds, p90FinishedSeconds]
+      properties:
+        kind: { type: string, enum: [poll, message, callback, externalJob] }
+        source: { type: string, description: Connection key, message name or worker topic }
+        openNow: { type: integer, minimum: 0 }
+        longestOpenSeconds: { type: [integer, 'null'], minimum: 0 }
+        totalOpenSeconds: { type: [integer, 'null'], minimum: 0 }
+        finished: { type: integer, minimum: 0, description: Checks and safety nets that ended in the range }
+        averageFinishedSeconds: { type: [integer, 'null'], minimum: 0 }
+        p90FinishedSeconds: { type: [integer, 'null'], minimum: 0 }
+    InsightsOutsideWaits:
+      type: object
+      additionalProperties: false
+      required: [range, items, totalOpenSeconds]
+      properties:
+        range: { $ref: '#/components/schemas/InsightsRange' }
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InsightsOutsideWait' } }
+        totalOpenSeconds: { type: integer, minimum: 0 }
     # ---------------------------------------------------------------- end of Waits
     KafkaCluster:
       type: object

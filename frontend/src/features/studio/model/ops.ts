@@ -703,7 +703,9 @@ export function renameHttpResult(def: Definition, nodeId: string, oldName: strin
 
 /** Keep dependencies.connections in step with the connections the steps use. */
 export function syncConnectionDependencies(def: Definition, latestVersions: Record<string, number | undefined>): Definition {
-  const used = [...new Set(def.nodes.filter((n) => n.type === 'http').map((n) => n.config.connectionRef as string).filter(Boolean))]
+  // S129: a message wait's safety-net check uses a connection too.
+  const used = [...new Set(def.nodes.flatMap((n) => n.type === 'http' ? [n.config.connectionRef as string]
+    : n.type === 'waitForMessage' ? [(n.config.fallbackCheck as { connectionRef?: string } | undefined)?.connectionRef ?? ''] : []).filter(Boolean))]
   const current = def.dependencies.connections
   const wanted = used.map((key) => ({ key, definitionVersion: current.find((c) => c.key === key)?.definitionVersion ?? latestVersions[key] ?? 1 }))
   if (sameJson(wanted, current)) return def

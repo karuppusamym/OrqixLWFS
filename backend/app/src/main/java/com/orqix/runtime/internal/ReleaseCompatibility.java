@@ -42,7 +42,21 @@ public final class ReleaseCompatibility {
             return findings;
         }
         String kind = sourceNode.path("type").asString("");
-        if (!MIGRATABLE_STEPS.contains(kind)) {
+        // S129: a call that keeps checking until done waits too; it moves only with identical checking settings.
+        boolean polling = "http".equals(kind) && sourceNode.path("config").path("poll").isObject();
+        if (polling || sourceNode.path("config").path("fallbackCheck").isObject()) {
+            JsonNode targetConfig = targetNode == null ? null : targetNode.path("config");
+            String connection = polling ? sourceNode.path("config").path("connectionRef").asString("")
+                    : sourceNode.path("config").path("fallbackCheck").path("connectionRef").asString("");
+            if (targetConfig != null && (!sourceNode.path("config").equals(targetConfig)
+                    || pinnedVersion(source, connection) != pinnedVersion(target, connection))) {
+                findings.add(new Finding("POLL_CHANGED", "The step '" + label(sourceNode) + "' checks another system;"
+                        + " a request waiting at it can move only when its checks, operation, mappings and connection"
+                        + " version are identical in the target release.", active));
+                return findings;
+            }
+        }
+        if (!MIGRATABLE_STEPS.contains(kind) && !polling) {
             findings.add(new Finding("STEP_KIND", "A request waiting at a '" + kind
                     + "' step cannot be moved; only approvals and waits can.", active));
         }
@@ -128,6 +142,16 @@ public final class ReleaseCompatibility {
      * What a node points at outside its own settings: the decision table it evaluates and the connection version it
      * calls. A request that already passed the node was decided by exactly those, so they must be unchanged too.
      */
+    /** @return the pinned version of a connection in a definition, or -1 */
+    private static int pinnedVersion(JsonNode definition, String connectionKey) {
+        for (JsonNode c : definition.path("dependencies").path("connections")) {
+            if (connectionKey.equals(c.path("key").asString(""))) {
+                return c.path("definitionVersion").asInt(-1);
+            }
+        }
+        return -1;
+    }
+
     private static List<JsonNode> references(JsonNode definition, JsonNode node) {
         List<JsonNode> result = new ArrayList<>();
         String decisionRef = node.path("config").path("decisionRef").asString("");

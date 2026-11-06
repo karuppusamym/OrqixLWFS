@@ -47,6 +47,33 @@ export function createWaitHandlers(): HttpHandler[] {
       return HttpResponse.json({ items: waitsOf(String(params.runId)), endedChecks: [] } satisfies S['RunWaitList'])
     }),
     http.get(`${B}/waits`, () => HttpResponse.json({ items: [] } satisfies S['WaitSearchResult'])),
+    http.get(`${B}/insights/outside-waits`, ({ params, request }) => {
+      // Waits on outside systems from the mock runs' steps: messages and outside workers (the mock has no checks).
+      const url = new URL(request.url)
+      const today = new Date().toISOString().slice(0, 10)
+      const from = url.searchParams.get('from') ?? today
+      const to = url.searchParams.get('to') ?? today
+      const now = Date.now()
+      const rows = new Map<string, S['InsightsOutsideWait']>()
+      for (const run of db.runs.values()) {
+        if (run.wsId !== String(params.ws)) continue
+        for (const w of waitsOf(run.id)) {
+          if (w.kind !== 'message' && w.kind !== 'externalJob') continue
+          const source = w.correlationRef ?? w.label
+          const waited = Math.max(0, Math.round((now - new Date(w.since).getTime()) / 1000))
+          const old = rows.get(`${w.kind}|${source}`)
+          rows.set(`${w.kind}|${source}`, {
+            kind: w.kind, source, openNow: (old?.openNow ?? 0) + 1,
+            longestOpenSeconds: Math.max(old?.longestOpenSeconds ?? 0, waited), totalOpenSeconds: (old?.totalOpenSeconds ?? 0) + waited,
+            finished: 0, averageFinishedSeconds: null, p90FinishedSeconds: null,
+          })
+        }
+      }
+      const items = [...rows.values()]
+      const days = Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) + 1)
+      return HttpResponse.json({ range: { from, to, days, generatedAt: new Date().toISOString() }, items,
+        totalOpenSeconds: items.reduce((sum, i) => sum + (i.totalOpenSeconds ?? 0), 0) } satisfies S['InsightsOutsideWaits'])
+    }),
     // No checks exist in the browser mock, so every action addresses an unknown wait.
     http.post(`${B}/runs/:runId/waits/:waitId/check-now`, missing),
     http.post(`${B}/runs/:runId/waits/:waitId/extend-deadline`, missing),

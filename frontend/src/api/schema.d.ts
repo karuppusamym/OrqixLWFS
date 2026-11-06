@@ -3025,6 +3025,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/insights/outside-waits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Time spent waiting on outside systems (connections, messages, workers), longest total waiting first
+         * @description Open waits from the "Waiting for" projection; finished checks and safety nets that ended in the range. At most 200 rows.
+         */
+        get: operations["getInsightsOutsideWaits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/kafka-triggers": {
         parameters: {
             query?: never;
@@ -7091,6 +7113,24 @@ export interface components {
             /** @description ISO-8601 duration, for example PT6H or P1D */
             extendBy: string;
         };
+        InsightsOutsideWait: {
+            /** @enum {string} */
+            kind: "poll" | "message" | "callback" | "externalJob";
+            /** @description Connection key */
+            source: string;
+            openNow: number;
+            longestOpenSeconds: number | null;
+            totalOpenSeconds: number | null;
+            /** @description Checks and safety nets that ended in the range */
+            finished: number;
+            averageFinishedSeconds: number | null;
+            p90FinishedSeconds: number | null;
+        };
+        InsightsOutsideWaits: {
+            range: components["schemas"]["InsightsRange"];
+            items: components["schemas"]["InsightsOutsideWait"][];
+            totalOpenSeconds: number;
+        };
         KafkaCluster: {
             name: string;
             allowedTopics: string[];
@@ -10831,6 +10871,8 @@ export interface components {
             };
             /** @description One last check exactly at the deadline (default true). */
             finalCheckAtDeadline?: boolean;
+            /** @description Mapped result fields that may be missing in an answer, for example a ticket number that appears only when the work is done. A missing value leaves the check pending instead of making the answer unusable; the field is an optional output of the step (WF_POLL_OPTIONAL). */
+            optionalResults?: components["schemas"]["fieldKey"][];
             /** @description Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW). */
             showWhileWaiting?: components["schemas"]["fieldKey"][];
         };
@@ -11751,6 +11793,8 @@ export interface components {
                     };
                     /** @description One last check exactly at the deadline (default true). */
                     finalCheckAtDeadline?: boolean;
+                    /** @description Mapped result fields that may be missing in an answer, for example a ticket number that appears only when the work is done. A missing value leaves the check pending instead of making the answer unusable; the field is an optional output of the step (WF_POLL_OPTIONAL). */
+                    optionalResults?: components["schemas"]["fieldKey"][];
                     /** @description Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW). */
                     showWhileWaiting?: components["schemas"]["fieldKey"][];
                 };
@@ -17991,6 +18035,39 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getInsightsOutsideWaits: {
+        parameters: {
+            query?: {
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Waits on outside systems */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightsOutsideWaits"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listKafkaTriggers: {

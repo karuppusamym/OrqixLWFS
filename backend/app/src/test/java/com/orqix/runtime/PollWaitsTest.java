@@ -134,6 +134,167 @@ class PollWaitsTest extends RuntimeTestBase {
     void stopLeftoverChecks() {
         jdbc.sql("UPDATE poll_wait SET state = 'cancelled', end_reason = 'testEnded', next_check_at = NULL, lease_owner = NULL,"
                 + " lease_until = NULL WHERE state IN ('waiting', 'checking', 'attention')").update();
+        jdbc.sql("DELETE FROM connection_circuit WHERE connection_key = 'order-status'").update();
+    }
+
+    // ------------------------------------------------------------------ follow-ups after the Wave A merge
+
+    @Autowired
+    com.orqix.runtime.internal.RunRepair repair;
+
+    @Autowired
+    com.orqix.runtime.internal.RunStore runStore;
+
+    @Autowired
+    org.springframework.transaction.PlatformTransactionManager transactions;
+
+    private com.orqix.runtime.api.RuntimeDtos.RunDiagnosis diagnose(UUID run) {
+        return new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status ->
+                repair.diagnose(runStore.find(PURCHASING, run).orElseThrow()).diagnosis());
+    }
+
+    private long secondsToNextCheck(UUID run) {
+        return jdbc.sql("SELECT EXTRACT(EPOCH FROM (next_check_at - now()))::bigint FROM poll_wait WHERE run_id = :run")
+                .param("run", run).query(Long.class).single();
+    }
+
+    @Test
+    void aCheckDeferredByAnOpenCircuitWaitsWithoutCountingACheckOrAnError() throws Exception {
+        UUID run = startAndApprove(polling(poll("")));
+        awaitChecks(run, 1);
+        int calls = TrackingStub.calls();
+        jdbc.sql("""
+                INSERT INTO connection_circuit (workspace_id, connection_key, state, consecutive_failures, opened_at,
+                                                open_until, reason, updated_at)
+                VALUES (:ws, 'order-status', 'open', 10, now(), now() + interval '10 minutes', 'test', now())
+                ON CONFLICT (workspace_id, connection_key) DO UPDATE SET state = 'open',
+                    open_until = now() + interval '10 minutes'
+                """).param("ws", PURCHASING).update();
+        due(run);
+        Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> {
+            polls.runDue();
+            return events(run, "POLL_CHECK_DEFERRED") == 1;
+        });
+        assertThat(TrackingStub.calls()).isEqualTo(calls);
+        Poll p = row(run);
+        assertThat(p.checks()).isEqualTo(1);
+        assertThat(p.state()).isEqualTo("waiting");
+        assertThat(jdbc.sql("SELECT consecutive_errors FROM poll_wait WHERE run_id = :run").param("run", run)
+                .query(Integer.class).single()).isZero();
+        // The next check is at the end of the cool-down (about 10 minutes), not at the 10-second interval.
+        assertThat(secondsToNextCheck(run)).isBetween(560L, 610L);
+        // A deferral past the deadline gives up instead of spinning.
+        jdbc.sql("UPDATE poll_wait SET started_at = now() - interval '2 hours', authored_deadline_at = now() - interval '1 second',"
+                + " deadline_at = now() - interval '1 second', next_check_at = now() - interval '1 second' WHERE run_id = :run")
+                .param("run", run).update();
+        awaitEnded(run);
+        assertThat(row(run).state()).isEqualTo("timedOut");
+        assertThat(TrackingStub.calls()).isEqualTo(calls);
+    }
+
+    @Test
+    void retryAfterOfTheServerSetsTheNextCheckCappedAtTheLongestInterval() throws Exception {
+        TrackingStub.states("pending");
+        TrackingStub.failWithRetryAfter(503, 120);
+        UUID run = startAndApprove(polling(poll(",\"backoff\":{\"multiplier\":1,\"maxInterval\":\"PT10M\"}")));
+        awaitChecks(run, 1);
+        due(run);
+        awaitChecks(run, 2);
+        assertThat(secondsToNextCheck(run)).isBetween(100L, 125L);
+        TrackingStub.failWithRetryAfter(429, 7200);
+        due(run);
+        awaitChecks(run, 3);
+        // Two hours asked, but never later than the longest interval (10 minutes).
+        assertThat(secondsToNextCheck(run)).isBetween(580L, 605L);
+    }
+
+    @Test
+    void anOptionalResultMissingInPendingAnswersDoesNotMakeThemUnusable() throws Exception {
+        TrackingStub.raw("{\"state\":\"pending\"}");
+        TrackingStub.raw("{\"state\":\"shipped\",\"trackingRef\":\"TRK-9\"}");
+        UUID run = startAndApprove(polling(poll(",\"optionalResults\":[\"trackingRef\"]")));
+        awaitChecks(run, 1);
+        assertThat(row(run).state()).isEqualTo("waiting");
+        due(run);
+        awaitChecks(run, 2);
+        awaitEnded(run);
+        assertThat(run(PURCHASING, run).path("output").path("trackingRef").asString()).isEqualTo("TRK-9");
+        assertThat(row(run).state()).isEqualTo("met");
+    }
+
+    @Test
+    void endedChecksArePurgedAfterTheRetentionWithAnAuditedCount() throws Exception {
+        TrackingStub.states("shipped");
+        UUID run = startAndApprove(polling(poll("")));
+        awaitEnded(run);
+        UUID id = row(run).id();
+        assertThat(polls.purge(java.time.Instant.now(), Duration.ofDays(30))).isZero();
+        jdbc.sql("UPDATE poll_wait SET ended_at = now() - interval '31 days' WHERE id = :id").param("id", id).update();
+        assertThat(polls.purge(java.time.Instant.now(), Duration.ofDays(30))).isGreaterThanOrEqualTo(1);
+        assertThat(row(run)).isNull();
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE action = 'poll.waits-purged' AND workspace_id = :ws")
+                .param("ws", PURCHASING).query(Long.class).single()).isPositive();
+    }
+
+    @Test
+    void theRepairScanUnderstandsChecksAndRebuildsTheWaitingForList() throws Exception {
+        UUID run = startAndApprove(polling(poll("")));
+        awaitChecks(run, 1);
+        assertThat(diagnose(run).state()).isEqualTo("inSync");
+        // The derived list lost its row: reported as repairable drift; repair derives it again.
+        jdbc.sql("DELETE FROM wait_state WHERE run_id = :run").param("run", run).update();
+        var drift = diagnose(run);
+        assertThat(drift.state()).isEqualTo("projectionDrift");
+        assertThat(drift.repairable()).isTrue();
+        int version = run(PURCHASING, run).path("version").asInt();
+        var repaired = api("olga.operator").post(Map.of("reason", "Rebuild the waiting list", "expectedVersion", version),
+                UUID.randomUUID().toString(), "/workspaces/{ws}/runs/{id}/repair", PURCHASING, run);
+        assertThat(repaired.status()).as(repaired.toString()).isEqualTo(200);
+        assertThat(jdbc.sql("SELECT count(*) FROM wait_state WHERE run_id = :run").param("run", run)
+                .query(Long.class).single()).isEqualTo(1);
+        // A step that shows checks, but no check is scheduled: reported, never rebuilt.
+        jdbc.sql("UPDATE poll_wait SET state = 'cancelled', next_check_at = NULL WHERE run_id = :run").param("run", run).update();
+        var orphan = diagnose(run);
+        assertThat(orphan.state()).isEqualTo("unsupported");
+        assertThat(orphan.message()).contains("no check is scheduled");
+    }
+
+    @Test
+    void aRequestWaitingInAPollingStepMovesOnlyWithIdenticalCheckSettings() throws Exception {
+        JsonNode source = json.parse("""
+                {"nodes":[{"id":"start","type":"start","label":"Start","config":{}},
+                  {"id":"track","type":"http","label":"Track","config":{"connectionRef":"order-status","operation":"getStatus",
+                   "inputMapping":{},"resultMapping":{"state":"/state"},"timeoutSeconds":5,
+                   "poll":{"every":"PT10S","giveUpAfter":"PT1H","until":{"fieldRef":"/steps/track/state","operator":"eq","value":"shipped"}}}},
+                  {"id":"end","type":"end","label":"End","config":{"businessOutcome":"Done","outcomeKind":"success"}}],
+                 "transitions":[{"id":"a","from":"start","to":"track","on":"next"},{"id":"b","from":"track","to":"end","on":"next"},
+                  {"id":"c","from":"track","to":"end","on":"timedOut"}],
+                 "dependencies":{"connections":[{"key":"order-status","definitionVersion":1}]}}""");
+        assertThat(com.orqix.runtime.internal.ReleaseCompatibility.check(source, source, List.of("track"))).isEmpty();
+        ObjectNode changed = (ObjectNode) source.deepCopy();
+        ((ObjectNode) changed.path("nodes").get(1).path("config").path("poll")).put("every", "PT1M");
+        assertThat(com.orqix.runtime.internal.ReleaseCompatibility.check(source, changed, List.of("track")))
+                .extracting(com.orqix.runtime.internal.ReleaseCompatibility.Finding::code).containsExactly("POLL_CHANGED");
+        ObjectNode repinned = (ObjectNode) source.deepCopy();
+        ((ObjectNode) repinned.path("dependencies").path("connections").get(0)).put("definitionVersion", 2);
+        assertThat(com.orqix.runtime.internal.ReleaseCompatibility.check(source, repinned, List.of("track")))
+                .extracting(com.orqix.runtime.internal.ReleaseCompatibility.Finding::code).containsExactly("POLL_CHANGED");
+    }
+
+    @Test
+    void insightsReportTimeSpentWaitingOnOutsideSystems() throws Exception {
+        UUID run = startAndApprove(polling(poll("")));
+        awaitChecks(run, 1);
+        JsonNode body = api("olga.operator").get("/workspaces/{ws}/insights/outside-waits", PURCHASING).body();
+        JsonNode item = null;
+        for (JsonNode i : body.path("items")) {
+            if ("poll".equals(i.path("kind").asString()) && "order-status".equals(i.path("source").asString())) {
+                item = i;
+            }
+        }
+        assertThat(item).as(body.toString()).isNotNull();
+        assertThat(item.path("openNow").asInt()).isPositive();
+        assertThat(body.path("totalOpenSeconds").asLong()).isNotNegative();
     }
 
     private long events(UUID run, String type) {

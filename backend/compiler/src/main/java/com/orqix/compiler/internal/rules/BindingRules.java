@@ -200,6 +200,8 @@ final class BindingRules {
         for (Node n : rc.definition().nodes()) {
             if (n instanceof Node.Http http) {
                 usedKeys.add(http.connectionRef());
+            } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
+                usedKeys.add(m.fallbackCheck().connectionRef()); // S129 safety-net check
             }
         }
         for (Dependency dup : rc.connections().duplicates()) {
@@ -307,7 +309,7 @@ final class BindingRules {
             if (scalar == null) {
                 rc.issues().blocker("WF_RESULT_POINTER_UNKNOWN", path, n.id(), null, "The response of " + op
                         + " has no single value at " + e.getValue() + ".");
-            } else if (!scalar.allRequired()) {
+            } else if (!scalar.allRequired() && !(n.polls() && n.poll().optional(e.getKey()))) {
                 rc.issues().warning("WF_RESULT_OPTIONAL", path, n.id(), null, "The response of " + op
                         + " does not always contain " + e.getValue() + ". If it is missing, " + q(n)
                         + " stops and the request needs attention.");
@@ -323,7 +325,9 @@ final class BindingRules {
 
     /** @return connection keys of http nodes, in canonical node order without repeats */
     static List<String> usedConnections(RuleContext rc) {
-        return rc.definition().nodes().stream().filter(n -> n instanceof Node.Http)
-                .map(n -> ((Node.Http) n).connectionRef()).distinct().toList();
+        return rc.definition().nodes().stream().flatMap(n -> n instanceof Node.Http h ? java.util.stream.Stream.of(h.connectionRef())
+                : n instanceof Node.WaitForMessage m && m.fallbackCheck() != null
+                        ? java.util.stream.Stream.of(m.fallbackCheck().connectionRef()) : java.util.stream.Stream.<String>empty())
+                .distinct().toList();
     }
 }

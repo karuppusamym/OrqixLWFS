@@ -133,6 +133,16 @@ public class InsightsService {
         }));
     }
 
+    /** S129: time spent waiting on outside systems (connections, messages, workers). */
+    public InsightsDtos.OutsideWaits outsideWaits(Caller caller, UUID workspaceId, String from, String to, UUID workflowId) {
+        Params p = params(caller, workspaceId, from, to, workflowId, "getInsightsOutsideWaits");
+        return cache.get(key("outsideWaits", p), () -> bounded(() -> {
+            List<InsightsDtos.OutsideWait> items = queries.outsideWaits(p.window(), p.now());
+            long total = items.stream().mapToLong(i -> i.totalOpenSeconds() == null ? 0 : i.totalOpenSeconds()).sum();
+            return new InsightsDtos.OutsideWaits(p.range(), items, total);
+        }));
+    }
+
     private static String key(String kind, Params p) {
         return kind + "|" + p.workspaceId() + "|" + p.workflowId() + "|" + p.from() + "|" + p.to();
     }

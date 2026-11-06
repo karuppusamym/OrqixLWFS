@@ -92,6 +92,13 @@ final class PollRules {
                         + " and failed at the same time. Change the conditions so that they never both hold.");
             }
         }
+        for (int i = 0; i < p.optionalResults().size(); i++) {
+            String key = p.optionalResults().get(i);
+            if (!h.resultMapping().containsKey(key)) {
+                rc.issues().blocker("WF_POLL_OPTIONAL", base + "/optionalResults/" + i, h.id(), null, q(key)
+                        + " is not a result of " + q(h) + ". Only kept results can be marked as possibly missing.");
+            }
+        }
         for (int i = 0; i < p.showWhileWaiting().size(); i++) {
             String key = p.showWhileWaiting().get(i);
             if (!h.resultMapping().containsKey(key)) {

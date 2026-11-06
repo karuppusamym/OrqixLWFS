@@ -850,6 +850,7 @@ class Run {
             continue
           }
           const value = pointer(response, resultMapping[key] as string)
+          if ((value === undefined || value === null) && (p.optionalResults ?? []).includes(key)) continue
           if (value === undefined || value === null || typeof value === 'object') { out = null; break }
           out[key] = value
         }

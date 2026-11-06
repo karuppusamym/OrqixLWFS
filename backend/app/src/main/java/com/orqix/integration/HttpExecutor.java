@@ -320,7 +320,10 @@ public class HttpExecutor {
         }
         ObjectNode result = json.object();
         for (Map.Entry<String, String> mapping : resultMapping.entrySet()) {
-            JsonNode value = responseBody.at(mapping.getValue());
+            JsonNode value = responseBody.at(ResultMappings.pointer(mapping.getValue()));
+            if ((value.isMissingNode() || value.isNull()) && ResultMappings.isOptional(mapping.getValue())) {
+                continue; // S129: an optional result of a check is simply not there yet
+            }
             if (value.isMissingNode() || value.isNull() || value.isContainer()) {
                 return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
                         "Result pointer " + mapping.getValue() + " did not resolve", null, null);

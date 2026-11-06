@@ -160,8 +160,11 @@ public class PollWaits {
         int max = Math.min(PollSchedule.CHECK_LIMIT, p.has("maxChecks") ? Math.min(worst, p.path("maxChecks").asInt()) : worst);
         List<String> shown = new ArrayList<>();
         p.path("showWhileWaiting").forEach(v -> shown.add(v.asString()));
-        return new Settings(p.path("until"), p.has("failWhen") ? p.path("failWhen") : null,
-                stringMap(node.path("config").path("resultMapping")),
+        Map<String, String> mapping = stringMap(node.path("config").path("resultMapping"));
+        // Results that may be missing in an answer are passed as optional mappings (missing = still pending).
+        p.path("optionalResults").forEach(v -> mapping.computeIfPresent(v.asString(),
+                (key, pointer) -> com.orqix.integration.ResultMappings.optional(pointer)));
+        return new Settings(p.path("until"), p.has("failWhen") ? p.path("failWhen") : null, mapping,
                 new PollSchedule(every, multiplier, cap, deadline, immediate, finalCheck, Math.max(1, max)),
                 p.path("jitterPercent").asInt(10), p.path("onCheckError").path("maxConsecutive").asInt(5),
                 "timedOut".equals(p.path("onCheckError").path("then").asString("needsAttention")), List.copyOf(shown),
@@ -351,9 +354,18 @@ public class PollWaits {
     }
 
     /** What one check found. */
-    enum Outcome { DONE, FAILED, PENDING, ERROR, REJECTED, DEADLINE, UNAVAILABLE, BUSY }
+    enum Outcome { DONE, FAILED, PENDING, ERROR, REJECTED, DEADLINE, UNAVAILABLE, BUSY, DEFERRED }
 
-    record Checked(Outcome outcome, ObjectNode result, Integer httpStatus, String code, String message) {
+    /**
+     * @param retryAfter    the server's {@code Retry-After} of a retryable failure (429, 503), else null
+     * @param deferredUntil when an open circuit or a used-up request rate lets the call run again (CG-W04), else null
+     */
+    record Checked(Outcome outcome, ObjectNode result, Integer httpStatus, String code, String message,
+            Duration retryAfter, Instant deferredUntil) {
+
+        Checked(Outcome outcome, ObjectNode result, Integer httpStatus, String code, String message) {
+            this(outcome, result, httpStatus, code, message, null, null);
+        }
     }
 
     /** Performs one claimed check outside any transaction, then records it. */
@@ -378,10 +390,17 @@ public class PollWaits {
 
     private Checked call(Row row, RunStore.RunRow run, Settings s) {
         int occurrence = row.checksDone() + 1;
-        EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(row.workspaceId(),
-                row.runId(), row.nodeId(), occurrence, row.connectionKey(), row.connectionVersion(), row.operation(),
-                (ObjectNode) row.request(), s.resultMapping(), row.timeoutSeconds(), properties.runtime().lockOwner(),
-                run.initiator()));
+        EffectDispatcher.DispatchResult result;
+        try {
+            result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(row.workspaceId(),
+                    row.runId(), row.nodeId(), occurrence, row.connectionKey(), row.connectionVersion(), row.operation(),
+                    (ObjectNode) row.request(), s.resultMapping(), row.timeoutSeconds(), properties.runtime().lockOwner(),
+                    run.initiator()));
+        } catch (com.orqix.integration.CallDeferredException deferred) {
+            // CG-W04: the binding's circuit is open or its request rate is used up. Nothing was sent or registered,
+            // so this is neither a check nor an error: the check waits until the call may run.
+            return new Checked(Outcome.DEFERRED, null, null, deferred.reason(), null, null, deferred.until());
+        }
         if (result instanceof EffectDispatcher.Succeeded ok) {
             Function<String, JsonNode> values = ref -> ref.startsWith(own(row.nodeId()))
                     ? ok.result().path(ref.substring(own(row.nodeId()).length()))
@@ -396,7 +415,8 @@ public class PollWaits {
             return new Checked(Outcome.BUSY, null, null, "BUSY", null);
         }
         if (failed.retryable()) {
-            return new Checked(Outcome.ERROR, null, failed.httpStatus(), failed.errorCode(), failed.businessMessage());
+            return new Checked(Outcome.ERROR, null, failed.httpStatus(), failed.errorCode(), failed.businessMessage(),
+                    failed.retryAfter(), null);
         }
         if ("CONNECTION_UNAVAILABLE".equals(failed.attentionReason())) {
             return new Checked(Outcome.UNAVAILABLE, null, null, failed.errorCode(), failed.businessMessage());
@@ -420,7 +440,8 @@ public class PollWaits {
             return;
         }
         Settings s = settings(row.workspaceId(), run.releaseId(), row.nodeId(), row.kind());
-        boolean ranCheck = checked.outcome() != Outcome.DEADLINE && checked.outcome() != Outcome.BUSY;
+        boolean ranCheck = checked.outcome() != Outcome.DEADLINE && checked.outcome() != Outcome.BUSY
+                && checked.outcome() != Outcome.DEFERRED;
         int checks = row.checksDone() + (ranCheck ? 1 : 0);
         boolean finalCheck = ranCheck && !now.isBefore(row.deadlineAt());
         String digest = checked.result() == null ? row.lastResultDigest() : json.canonicalSha256(checked.result());
@@ -462,7 +483,8 @@ public class PollWaits {
                 }
             }
             case BUSY -> reschedule(row, s, checks, row.consecutiveErrors(), now, now.plusSeconds(5));
-            case PENDING -> pendingOrGiveUp(row, run, s, checks, 0, finalCheck, now);
+            case DEFERRED -> deferred(row, run, s, checks, checked, now);
+            case PENDING -> pendingOrGiveUp(row, run, s, checks, 0, finalCheck, now, null);
             case ERROR -> {
                 int errors = row.consecutiveErrors() + 1;
                 Map<String, Object> data = new LinkedHashMap<>();
@@ -480,13 +502,42 @@ public class PollWaits {
                     }
                     return;
                 }
-                pendingOrGiveUp(row, run, s, checks, errors, finalCheck, now);
+                pendingOrGiveUp(row, run, s, checks, errors, finalCheck, now, checked.retryAfter());
             }
         }
     }
 
+    /**
+     * The call was deferred by the binding's circuit or rate limit: the next check is at the end of the wait, capped
+     * at the deadline, with the checks and consecutive errors unchanged. At or after the deadline the request gives
+     * up (the other system cannot be called for a final check).
+     */
+    private void deferred(Row row, RunStore.RunRow run, Settings s, int checks, Checked checked, Instant now) {
+        if (!now.isBefore(row.deadlineAt())) {
+            if (FALLBACK.equals(row.kind())) {
+                end(row, "timedOut", "deadline", now);
+                clearStepPolling(row);
+            } else {
+                timedOut(row, run, checks, "deadline", now);
+            }
+            return;
+        }
+        Instant until = checked.deferredUntil() == null || !checked.deferredUntil().isAfter(now) ? now.plusSeconds(1)
+                : checked.deferredUntil();
+        Instant next = until.isBefore(row.deadlineAt()) ? until : row.deadlineAt();
+        if (!"deferred".equals(row.lastOutcome())) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("reason", checked.code());
+            data.put("until", next.toString());
+            events.append(row.workspaceId(), row.runId(), "POLL_CHECK_DEFERRED", row.nodeId(), null, data);
+        }
+        jdbc.sql("UPDATE poll_wait SET last_outcome = 'deferred' WHERE id = :id").param("id", row.id()).update();
+        reschedule(row, s, checks, row.consecutiveErrors(), now, next);
+    }
+
+    /** @param retryAfter the server's Retry-After of the failed check, or null */
     private void pendingOrGiveUp(Row row, RunStore.RunRow run, Settings s, int checks, int errors, boolean finalCheck,
-            Instant now) {
+            Instant now, Duration retryAfter) {
         if (finalCheck || checks >= row.maxChecks()) {
             if (FALLBACK.equals(row.kind())) {
                 // The safety net stops; the message may still come or the step's own time limit decides.
@@ -499,6 +550,11 @@ public class PollWaits {
         }
         long interval = s.schedule().intervalAfter(checks);
         Instant next = now.plusSeconds(jitter(interval, s.jitterPercent()));
+        if (retryAfter != null && retryAfter.getSeconds() > 0) {
+            // CG-W04: never sooner than the server asked, never later than the longest interval (then the deadline cap).
+            long wait = Math.min(s.schedule().maxInterval(), Math.max(interval, retryAfter.getSeconds()));
+            next = now.plusSeconds(wait);
+        }
         if (!next.isBefore(row.deadlineAt())) {
             if (!s.schedule().finalCheck() && FALLBACK.equals(row.kind())) {
                 end(row, "timedOut", "deadline", now);
@@ -669,6 +725,44 @@ public class PollWaits {
             m.updateStep(row.nodeId(), step -> step.putNull("nextCheckAt").put("checks", checks));
         });
         events.append(row.workspaceId(), row.runId(), "RUN_NEEDS_ATTENTION", row.nodeId(), null, Map.of("reason", reason));
+    }
+
+    /** Rows deleted per purge batch; at most 20 batches per pass. */
+    static final int PURGE_BATCH = 500;
+
+    /**
+     * Deletes ended rows whose end is older than the retention as of {@code now} (also called by tests), in batches of
+     * 500 with SKIP LOCKED, with one audit entry per workspace and batch. A row a "Waiting for" entry still points to
+     * is kept. @return the number of rows deleted
+     */
+    public int purge(Instant now, Duration retention) {
+        Instant before = now.minus(retention);
+        int total = 0;
+        for (int batch = 0; batch < 20; batch++) {
+            Integer deleted = tx.execute(status -> {
+                List<UUID> workspaces = jdbc.sql("""
+                        WITH doomed AS (
+                            SELECT p.id FROM poll_wait p
+                            WHERE p.ended_at IS NOT NULL AND p.ended_at < :before
+                              AND NOT EXISTS (SELECT 1 FROM wait_state w WHERE w.poll_wait_id = p.id)
+                            ORDER BY p.ended_at LIMIT :limit FOR UPDATE SKIP LOCKED)
+                        DELETE FROM poll_wait p USING doomed d WHERE p.id = d.id RETURNING p.workspace_id
+                        """).param("before", Sql.ts(before)).param("limit", PURGE_BATCH)
+                        .query((rs, n) -> Sql.uuid(rs, "workspace_id")).list();
+                Map<UUID, Integer> counts = new LinkedHashMap<>();
+                workspaces.forEach(ws -> counts.merge(ws, 1, Integer::sum));
+                counts.forEach((ws, n) -> audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.SYSTEM, null,
+                        "poll.waits-purged", "workspace", ws.toString(), AuditWriter.Outcome.SUCCESS,
+                        Map.of("count", n, "retentionSeconds", retention.toSeconds()))));
+                return workspaces.size();
+            });
+            int n = deleted == null ? 0 : deleted;
+            total += n;
+            if (n < PURGE_BATCH) {
+                break;
+            }
+        }
+        return total;
     }
 
     // ------------------------------------------------------------------ closing (caller's transaction)

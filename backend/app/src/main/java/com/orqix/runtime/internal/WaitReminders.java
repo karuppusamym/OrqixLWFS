@@ -255,7 +255,7 @@ public class WaitReminders {
     }
 
     /** @return why an address from the request may not be used, or null when the adapter approves its domain */
-    static String refusal(String address, AdapterSteps.Fact adapter) {
+    String refusal(String address, AdapterSteps.Fact adapter) {
         Matcher m = EMAIL.matcher(address == null ? "" : address);
         if (!m.matches()) {
             return "The request has no usable email address for the reminder.";
@@ -264,7 +264,7 @@ public class WaitReminders {
             return "The adapter no longer exists.";
         }
         Set<String> approved = new java.util.HashSet<>();
-        com.orqix.compiler.internal.json.StrictJson.parse(adapter.configJson()).path("allowedRecipientDomains")
+        json.parse(adapter.configJson()).path("allowedRecipientDomains")
                 .forEach(d -> approved.add(d.asString().toLowerCase(Locale.ROOT)));
         String domain = m.group(1).toLowerCase(Locale.ROOT);
         return approved.contains(domain) ? null : "The address's domain " + domain + " is not approved by the adapter.";

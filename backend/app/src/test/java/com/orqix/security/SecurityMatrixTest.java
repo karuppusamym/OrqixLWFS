@@ -114,6 +114,33 @@ class SecurityMatrixTest extends RuntimeTestBase {
     }
 
     @Test
+    void analyticsOperationsAreInTheMatrixWithTheirPermissions() {
+        JsonNode paths = OpenApiContract.get().document().path("paths");
+        Map<String, String[]> expected = new LinkedHashMap<>();
+        expected.put("/workspaces/{workspaceId}/analytics/heatmap|get", new String[] {"getAnalyticsHeatmap", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/human-work|get", new String[] {"getHumanWorkAnalytics", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/kpis|get", new String[] {"getKpiOverview", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/status|get", new String[] {"getAnalyticsStatus", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/backfill|post", new String[] {"startAnalyticsBackfill", "run.operate"});
+        expected.put("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets|get",
+                new String[] {"getWorkflowKpiTargets", "workflow.read"});
+        expected.put("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets|put",
+                new String[] {"setWorkflowKpiTargets", "workflow.edit"});
+        expected.forEach((key, value) -> {
+            String[] parts = key.split("[|]");
+            JsonNode op = paths.path(parts[0]).path(parts[1]);
+            assertThat(op.path("operationId").asString()).isEqualTo(value[0]);
+            assertThat(op.path("x-orqix-permission").asString()).as(value[0]).isEqualTo(value[1]);
+            assertThat(op.path("tags").get(0).asString()).isEqualTo("Analytics");
+        });
+        assertThat(paths.path("/workspaces/{workspaceId}/analytics/backfill").path("post").path("x-orqix-audit").asString())
+                .isEqualTo("analytics.backfill.requested");
+        assertThat(paths.path("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets").path("put")
+                .path("x-orqix-audit").asString()).isEqualTo("analytics.kpi-targets.updated");
+        // tSec01 above calls all of them as foreign principals with real purchasing ids and requires 404 and no change.
+    }
+
+    @Test
     void testTabOperationsAreInTheMatrixWithTheirPermissions() {
         JsonNode paths = OpenApiContract.get().document().path("paths");
         String base = "/workspaces/{workspaceId}/workflows/{workflowId}/";
@@ -485,6 +512,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
                     "secretRef", "webhook-foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
             case "resumeCallbackWait" -> Map.of("result", Map.of());
+            // S145: well-formed bodies, so a 404 cannot be explained by validation.
+            case "setWorkflowKpiTargets" -> Map.of("cycleP95Seconds", 3600, "expectedVersion", 0);
+            case "startAnalyticsBackfill" -> Map.of("since", "2026-01-01");
             // S140: lookups and guest response forms.
             case "searchLookupOptions" -> Map.of("search", "ab");
             case "replaceGuestDomains" -> Map.of("domains", List.of("foreign.example"));
@@ -690,7 +720,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "bulk_operation", "bulk_operation_item", "run_search_value", "external_worker_seen", "alert_destination", "alert_rule", "alert_rule_destination", "alert_incident", "alert_delivery", "retention_policy", "legal_hold", "retention_sweep", "run_archive",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "bulk_operation", "bulk_operation_item", "run_search_value", "external_worker_seen", "alert_destination", "alert_rule", "alert_rule_destination", "alert_incident", "alert_delivery", "retention_policy", "legal_hold", "retention_sweep", "run_archive", "analytics_kpi_target", "analytics_kpi_state",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

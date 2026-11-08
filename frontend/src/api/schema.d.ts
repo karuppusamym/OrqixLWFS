@@ -4092,6 +4092,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/analytics/heatmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Heatmap of one workflow - visits, average and p95 time per step, runs per connection
+         * @description From the analytics read model, never from the run tables. Covers runs started in the range (UTC dates), of one
+         *     release when `releaseId` is given. Step figures count finished visits; connection figures count runs that used
+         *     the connection at least once (`share` of the runs started). Node and connection ids are those of the release
+         *     definition, so the Studio canvas and the run diagram overlay them by id. `freshness` says how current the read
+         *     model is.
+         */
+        get: operations["getAnalyticsHeatmap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/analytics/human-work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Human work - waiting versus working time per step and group, load, SLA attainment, reassignments
+         * @description Tasks that ended in the range, per workflow step and candidate group: waiting time (nobody assigned) and
+         *     working time (someone assigned), SLA attainment over tasks with a due time, and reassignments. Groups also show
+         *     their open tasks now, whatever their age. No people, titles or request data. Capped at 200 step rows
+         *     (`truncated`) and 200 groups.
+         */
+        get: operations["getHumanWorkAnalytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/analytics/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Business value view - workflows with KPI targets, off-target ones first, ranked by delay cost
+         * @description Workflows with targets, measured over runs completed and tasks ended in the range. A measure with fewer than 5
+         *     samples is `insufficientData`. `excessHours` is the time completed runs spent over the cycle-time target (the
+         *     p95 target, else the median target); `delayCost` multiplies it by the workflow's delay cost per hour.
+         */
+        get: operations["getKpiOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/analytics/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** How current the analytics read model is - pending and failed updates, last projection */
+        get: operations["getAnalyticsStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/analytics/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the runs of the workspace (optionally those started since a date) for the analytics read model
+         * @description Adds every run of the workspace to the projection queue, except runs already waiting there; the projector then
+         *     rebuilds their figures from their timelines. Safe to repeat and to interrupt: the queue survives restarts.
+         */
+        post: operations["startAnalyticsBackfill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** The KPI targets of the workflow (version 0 when none are set) */
+        get: operations["getWorkflowKpiTargets"];
+        /** Set all KPI targets of the workflow at once (an absent target is cleared; none clears all) */
+        put: operations["setWorkflowKpiTargets"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/cancel": {
         parameters: {
             query?: never;
@@ -9711,6 +9849,148 @@ export interface components {
             range: components["schemas"]["InsightsRange"];
             items: components["schemas"]["InsightsOutsideWait"][];
             totalOpenSeconds: number;
+        };
+        /** @description How current the read model is. Pending updates are counted up to 10000. */
+        AnalyticsFreshness: {
+            /** Format: date-time */
+            lastProjectedAt: string | null;
+            pendingUpdates: number;
+        };
+        AnalyticsHeatStep: {
+            nodeId: string;
+            kind: string;
+            /** @description Finished visits (a step visited twice in a run counts twice) */
+            visits: number;
+            runs: number;
+            averageSeconds: number | null;
+            p95Seconds: number | null;
+            maxSeconds: number | null;
+        };
+        AnalyticsHeatRoute: {
+            transitionId: string;
+            runs: number;
+            share: number;
+        };
+        AnalyticsHeatmap: {
+            range: components["schemas"]["InsightsRange"];
+            workflowId: components["schemas"]["Uuid"];
+            releaseId: components["schemas"]["Uuid"] | null;
+            /** @description Runs started in the range */
+            runs: number;
+            finishedRuns: number;
+            steps: components["schemas"]["AnalyticsHeatStep"][];
+            routes: components["schemas"]["AnalyticsHeatRoute"][];
+            freshness: components["schemas"]["AnalyticsFreshness"];
+        };
+        AnalyticsHumanStep: {
+            workflow: components["schemas"]["InsightsWorkflow"];
+            nodeId: string;
+            label: string;
+            groupKey: string;
+            groupName: string | null;
+            finished: number;
+            averageWaitingSeconds: number | null;
+            p95WaitingSeconds: number | null;
+            averageWorkingSeconds: number | null;
+            p95WorkingSeconds: number | null;
+            slaMet: number;
+            slaMissed: number;
+            slaAttainment: number | null;
+            reassignments: number;
+            /** @description Tasks whose times come from their last claim only, because another task of the same step was open at the same time */
+            approximate: number;
+        };
+        AnalyticsHumanGroup: {
+            groupKey: string;
+            groupName: string | null;
+            openNow: number;
+            openUnassigned: number;
+            oldestOpenSeconds: number | null;
+            finished: number;
+            averageWaitingSeconds: number | null;
+            averageWorkingSeconds: number | null;
+            slaMet: number;
+            slaMissed: number;
+            slaAttainment: number | null;
+            reassignments: number;
+        };
+        AnalyticsHumanWork: {
+            range: components["schemas"]["InsightsRange"];
+            steps: components["schemas"]["AnalyticsHumanStep"][];
+            groups: components["schemas"]["AnalyticsHumanGroup"][];
+            truncated: boolean;
+            freshness: components["schemas"]["AnalyticsFreshness"];
+        };
+        AnalyticsKpiTargets: {
+            workflowId: components["schemas"]["Uuid"];
+            cycleP50Seconds: number | null;
+            cycleP95Seconds: number | null;
+            /** @description Share of completed runs without a human task */
+            automationRate: number | null;
+            /** @description Share of tasks with a due time finished in time */
+            slaAttainment: number | null;
+            delayCostPerHour: number | null;
+            currency: string | null;
+            version: number;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        AnalyticsKpiTargetsUpdate: {
+            cycleP50Seconds?: number | null;
+            cycleP95Seconds?: number | null;
+            automationRate?: number | null;
+            slaAttainment?: number | null;
+            delayCostPerHour?: number | null;
+            /** @description Required with delayCostPerHour */
+            currency?: string | null;
+            /** @description The version read (0 when none was set) */
+            expectedVersion: number;
+        };
+        AnalyticsKpiMeasure: {
+            /** @enum {string} */
+            measure: "cycleP50" | "cycleP95" | "automationRate" | "slaAttainment";
+            target: number;
+            actual: number | null;
+            samples: number;
+            /** @enum {string} */
+            status: "onTarget" | "offTarget" | "insufficientData";
+            /** @description How far the actual figure is on the wrong side of the target (seconds or share) */
+            gap: number | null;
+        };
+        AnalyticsKpiWorkflow: {
+            workflow: components["schemas"]["InsightsWorkflow"];
+            targets: components["schemas"]["AnalyticsKpiTargets"];
+            measures: components["schemas"]["AnalyticsKpiMeasure"][];
+            offTarget: number;
+            completedRuns: number;
+            excessHours: number;
+            delayCost: number | null;
+            currency: string | null;
+        };
+        AnalyticsKpiOverview: {
+            range: components["schemas"]["InsightsRange"];
+            items: components["schemas"]["AnalyticsKpiWorkflow"][];
+            freshness: components["schemas"]["AnalyticsFreshness"];
+        };
+        AnalyticsStatus: {
+            pending: number;
+            /** @description Updates that failed 5 times and are no longer retried */
+            failed: number;
+            /** Format: date-time */
+            oldestPendingAt: string | null;
+            /** Format: date-time */
+            lastProjectedAt: string | null;
+            projectedRuns: number;
+        };
+        AnalyticsBackfillRequest: {
+            /**
+             * Format: date
+             * @description Only runs started on or after this UTC date
+             */
+            since?: string | null;
+        };
+        AnalyticsBackfill: {
+            enqueued: number;
         };
         /** @description A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays. */
         WorkingCalendarContent: {
@@ -25121,6 +25401,224 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    getAnalyticsHeatmap: {
+        parameters: {
+            query: {
+                /** @description The workflow (404 when it is not in the workspace). */
+                workflowId: components["schemas"]["Uuid"];
+                /** @description Limit to one release of the workflow (404 when it is not a release of that workflow). */
+                releaseId?: components["schemas"]["Uuid"];
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Heatmap figures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsHeatmap"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getHumanWorkAnalytics: {
+        parameters: {
+            query?: {
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Human work figures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsHumanWork"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getKpiOverview: {
+        parameters: {
+            query?: {
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description KPI figures per workflow */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsKpiOverview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAnalyticsStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read model status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    startAnalyticsBackfill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AnalyticsBackfillRequest"];
+            };
+        };
+        responses: {
+            /** @description Runs queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsBackfill"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getWorkflowKpiTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Targets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsKpiTargets"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setWorkflowKpiTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyticsKpiTargetsUpdate"];
+            };
+        };
+        responses: {
+            /** @description The targets now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsKpiTargets"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     cancelRun: {

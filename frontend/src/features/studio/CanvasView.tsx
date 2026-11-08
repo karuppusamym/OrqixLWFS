@@ -39,6 +39,10 @@ import { KIND_VAR } from './nodeMeta'
 import { NotationLegend, NotationToggle } from './notation/NotationControls'
 import { useNotation } from './notation/useNotation'
 import { usePlayback } from './test/PlaybackContext'
+import { useOptionalWorkspace } from '@/app/workspace'
+import { StudioHeatmap } from '@/features/analytics/StudioHeatmap'
+import { HeatBadges, HeatmapProvider } from '@/features/analytics/HeatmapOverlay'
+import type { HeatIndex } from '@/features/analytics/heatmap'
 
 const nodeTypes = { step: StepNode }
 const edgeTypes = { route: RouteEdge }
@@ -385,10 +389,14 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
 
   const onlyStart = def.nodes.length <= 1
   const frames = useMemo(() => framesOf(def), [def])
+  // CG-N01 (docs/build/S145): released figures overlaid on the draft by step and connection id, for run.read only.
+  const heatAllowed = useOptionalWorkspace()?.can('run.read') ?? false
+  const [heatIndex, setHeatIndex] = useState<HeatIndex | null>(null)
 
   return (
     <div ref={rootRef} className="orqix-flow relative h-full min-h-[480px] w-full" aria-label="Workflow canvas" role="group">
       <div className={prepared ? 'h-full w-full' : 'h-full w-full opacity-0'}>
+        <HeatmapProvider index={heatIndex}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -421,6 +429,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--canvas-dot)" />
           <ScopeFrames frames={frames} />
+          {heatIndex ? <HeatBadges index={heatIndex} /> : null}
           <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ ...FIT_ALL, duration: 200 }} />
           <MiniMap
             pannable
@@ -439,8 +448,10 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             ) : null}
             <NotationToggle value={notation} onChange={changeNotation} />
             {notation === 'bpmn' ? <NotationLegend className="w-80 max-w-full" /> : null}
+            {heatAllowed ? <StudioHeatmap onIndex={setHeatIndex} /> : null}
           </Panel>
         </ReactFlow>
+        </HeatmapProvider>
       </div>
       {!prepared ? (
         <p role="status" className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">

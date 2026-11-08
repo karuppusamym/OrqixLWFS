@@ -20,6 +20,8 @@ import { useInsightsSteps, useInsightsSummary, useInsightsThroughput, type Insig
 import { formatSeconds, percent, rangeFor, STEP_KIND_LABEL, stepsCsv } from './format'
 import { ThroughputChart } from './ThroughputChart'
 import { OutsideWaits } from './OutsideWaits'
+import { HumanWorkCard } from '@/features/analytics/HumanWorkCard'
+import { KpiOverviewCard } from '@/features/analytics/KpiOverviewCard'
 import { insightsReport, reportFilename, throughputCsv } from './report'
 
 const RANGES = [7, 30, 90] as const
@@ -136,6 +138,8 @@ export function InsightsPage() {
           <Cards data={summary.data} />
           <Bottlenecks query={steps} />
           <OutsideWaits ws={ws} query={query} enabled={allowed} />
+          <KpiOverviewCard ws={ws} query={query} enabled={allowed} canEdit={can('workflow.edit')} />
+          <HumanWorkCard ws={ws} query={query} enabled={allowed} />
 
           <div className="grid gap-6 xl:grid-cols-2">
             <NeedsAttention ws={ws} data={summary.data} />

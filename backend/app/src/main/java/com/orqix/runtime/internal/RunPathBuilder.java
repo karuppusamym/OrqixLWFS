@@ -243,7 +243,7 @@ public final class RunPathBuilder {
                         close(visits, node, at, "timedOut".equals(e.data().path("outcome").asString(null)) ? "timedOut" : "completed");
                     }
                 }
-                case "DECISION_EVALUATED", "EFFECT_SUCCEEDED", "NOTIFICATION_CREATED", "DOCUMENT_GENERATED" -> {
+                case "DECISION_EVALUATED", "EFFECT_SUCCEEDED", "NOTIFICATION_CREATED", "DOCUMENT_GENERATED", "STEP_CALCULATED" -> {
                     if (node != null) {
                         instant(visits, node, at, "completed");
                     }

@@ -70,6 +70,34 @@ public final class ProcessData {
         throw new IllegalArgumentException("Unsupported fieldRef " + fieldRef);
     }
 
+    /**
+     * Evaluates an Orqix expression (S137) over the request and the step results, with the types the compiler pinned
+     * in the BPMN ({@code typesBase64}); {@code today()} uses the engine clock.
+     *
+     * @return the value as JSON (null when the expression gives none)
+     * @throws IllegalStateException when the expression exceeds its bounds (the job fails, the request needs attention)
+     */
+    public static JsonNode expression(VariableScope scope, Json json, String source, String typesBase64) {
+        JsonNode types = CalculateTaskDelegate.base64(json, typesBase64);
+        try {
+            return com.orqix.compiler.Expressions.evaluate(source, types, input(scope, json),
+                    id -> step(scope, json, id).orElse(null),
+                    org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration().getClock()
+                            .getCurrentTime().toInstant());
+        } catch (com.orqix.compiler.Expressions.Failure e) {
+            throw new IllegalStateException("EXPR_EVALUATION: " + e.code() + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * The value of one mapping of a call: a field reference, or an {@code =} expression (S137) whose types are on the
+     * same {@code orqix:input} element.
+     */
+    public static JsonNode mapping(VariableScope scope, Json json, String source, String typesBase64) {
+        return source.startsWith("=") ? expression(scope, json, source.substring(1), typesBase64)
+                : resolve(scope, json, source);
+    }
+
     /** Resolves a field to BigDecimal/String/Boolean; absence is a compiler-guaranteed defect (S5 section 5). */
     public static Object requireScalar(VariableScope scope, Json json, String fieldRef) {
         Object value = Json.scalar(resolve(scope, json, fieldRef));

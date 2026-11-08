@@ -35,6 +35,8 @@ public final class Enums {
         SEND_ADAPTER("sendAdapter", "Send through an adapter"),
         /** Run an approved AI skill: classify, extract, score, recommend or summarize (CG-A01, S134). */
         AI_TASK("aiTask", "AI task"),
+        /** Compute named outputs with Orqix expressions (CG-X01, S137). */
+        CALCULATE("calculate", "Calculate"),
         END("end", "Finish");
 
         private final String json;

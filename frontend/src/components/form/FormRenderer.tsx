@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { FileField } from './FileField'
 import type { FieldDef } from '@/lib/form/schema'
 import type { FieldErrors, RawValue, RawValues } from '@/lib/form/values'
-import { emptyValues, rowFields, type RowRawValue } from '@/lib/form/values'
+import { computedPreview, emptyValues, rowFields, type RowRawValue } from '@/lib/form/values'
 import { visibleFields } from '@/lib/form/visibility'
 
 export function fieldDomId(prefix: string, key: string): string {
@@ -39,7 +39,11 @@ export interface FormRendererProps {
  */
 export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, readOnly, onFileBusyChange,view }: FormRendererProps) {
   const shown = visibleFields(fields, values)
-  const render = (f: FieldDef) => readOnly ? <ReadOnlyControl key={f.key} field={f} value={values[f.key]} id={fieldDomId(idPrefix, f.key)} /> : <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
+  // CG-F04 (S137): computed answers are shown as they are calculated, never typed.
+  const computed = computedPreview(fields, values)
+  const render = (f: FieldDef) => f.computed !== undefined
+    ? <ReadOnlyControl key={f.key} field={{ ...f, description: f.description ?? 'Calculated from your other answers.' }} value={computed[f.key] ?? ''} id={fieldDomId(idPrefix, f.key)} />
+    : readOnly ? <ReadOnlyControl key={f.key} field={f} value={values[f.key]} id={fieldDomId(idPrefix, f.key)} /> : <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
   const sectionIds = [...new Set(shown.flatMap(f => f.section ? [f.section.id] : []))]
   return (
     <div className="space-y-5">

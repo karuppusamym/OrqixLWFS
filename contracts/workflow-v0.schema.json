@@ -116,6 +116,25 @@
             "$ref": "#/$defs/condition"
           }
         },
+        "computed": {
+          "description": "CG-F04 (docs/build/S137): fields whose value an Orqix expression computes from the other request fields. A computed field is read-only on the form; the browser shows the value as the requester types and the server recomputes it with the same engine when the request is submitted, replacing whatever was sent. The field must exist in inputSchema with a scalar type the expression gives; computed fields may use other computed fields but never in a cycle.",
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "rules": {
+          "description": "CG-F04 (docs/build/S137): cross-field validation rules over the request fields, for example end after start or total within budget. A rule is broken only when its check is false (a check on a missing value is not broken; use required for that). The browser and the server evaluate the same expressions with identical engines; the server refuses a request that breaks a rule.",
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/formRule"
+          }
+        },
         "layout": {
           "description": "Titled field groups with one or two columns (S35). Fields in no section follow the sections in the usual order.",
           "type": "object",
@@ -223,6 +242,9 @@
           },
           {
             "$ref": "#/$defs/aiTaskNode"
+          },
+          {
+            "$ref": "#/$defs/calculateNode"
           }
         ]
       }
@@ -651,39 +673,215 @@
         "boolean"
       ]
     },
+    "expression": {
+      "description": "An Orqix expression (CG-X01, docs/build/S137): a total, side-effect-free, FEEL-like formula over input.<field>, steps.<stepId>.<output> and, in a Calculate step, earlier outputs by name. Decimal arithmetic (+ - * /, 34 significant digits), comparisons (= != < <= > >=, in), and/or, if then else, null, and the functions abs floor ceiling round number, length upper lower trim substring contains startsWith endsWith replace string, date today addDays addMonths addYears daysBetween year month day weekday addWorkingDays workingDaysBetween isWorkingDay, count sum average min max filter any all (with item), coalesce isEmpty not. No loops, recursion or I/O; at most 2000 characters and 300 parts; evaluation work is bounded. The compiler type checks it (WF_EXPRESSION_INVALID).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "expressionCondition": {
+      "description": "A condition written as an Orqix expression that must give true or false (docs/build/S137), for example input.endDate > addWorkingDays(input.startDate, 5). The path is taken only when it is true; false or a missing value is not taken.",
+      "type": "object",
+      "properties": {
+        "expression": {
+          "$ref": "#/$defs/expression"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "additionalProperties": false
+    },
+    "mappingSource": {
+      "description": "A field reference, or = followed by an Orqix expression (docs/build/S137), for example = round(input.amount * 1.2, 2).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/fieldRef"
+        },
+        {
+          "type": "string",
+          "pattern": "^=",
+          "minLength": 2,
+          "maxLength": 2001
+        }
+      ]
+    },
+    "expressionCalendar": {
+      "description": "Working calendar of working-day functions and today() in an expression (the S27 calendar shape; opening hours are not used by day arithmetic). Without it: Monday to Friday, UTC, no holidays.",
+      "type": "object",
+      "properties": {
+        "zone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "weekdays": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 7
+          }
+        },
+        "holidays": {
+          "type": "array",
+          "maxItems": 366,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/calendarDate"
+          }
+        }
+      },
+      "required": [
+        "zone",
+        "weekdays"
+      ],
+      "additionalProperties": false
+    },
+    "calculateOutput": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        },
+        "type": {
+          "description": "Declared type of the result; the compiler checks the expression gives it (WF_CALCULATE_TYPE).",
+          "enum": [
+            "number",
+            "integer",
+            "string",
+            "boolean",
+            "date"
+          ]
+        },
+        "scale": {
+          "description": "Numbers only: decimal places the stored result is rounded to with rounding (default halfUp). integer means scale 0.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "rounding": {
+          "description": "Numbers only: how the result is rounded to scale. halfUp rounds .5 away from zero; halfEven to the even neighbour (banker's); down towards zero; up away from zero; floor and ceiling towards minus or plus infinity.",
+          "enum": [
+            "halfUp",
+            "halfEven",
+            "down",
+            "up",
+            "floor",
+            "ceiling"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "optional": {
+          "description": "true when the output may have no value (null); by default an output without a value stops the request with an incident, so later steps can rely on it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "expression",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "calculateNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "calculate"
+        },
+        "config": {
+          "description": "Calculate (CG-X01, docs/build/S137): named outputs computed from request fields and earlier step results with Orqix expressions, in order; a later output may use an earlier one by name. Outputs at /steps/<id>/<key> with their declared types. Runs inside the engine, never calls out, and cannot fail except when an expression exceeds its bounded work, which stops the request with an incident.",
+          "type": "object",
+          "properties": {
+            "outputs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "$ref": "#/$defs/calculateOutput"
+              }
+            },
+            "calendar": {
+              "$ref": "#/$defs/expressionCalendar"
+            }
+          },
+          "required": [
+            "outputs"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "formRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
+        },
+        "check": {
+          "description": "An Orqix expression over input.<field> that must give true or false; the rule is broken when it is false.",
+          "$ref": "#/$defs/expression"
+        },
+        "message": {
+          "description": "Plain text shown when the rule is broken, for example 'The end date must be after the start date.'",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "fields": {
+          "description": "Fields the message is shown at (default: the request as a whole).",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "check",
+        "message"
+      ],
+      "additionalProperties": false
+    },
     "condition": {
       "if": {
         "required": [
-          "all"
+          "expression"
         ]
       },
       "then": {
-        "type": "object",
-        "properties": {
-          "all": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 8,
-            "items": {
-              "$ref": "#/$defs/atomicCondition"
-            }
-          }
-        },
-        "required": [
-          "all"
-        ],
-        "additionalProperties": false
+        "$ref": "#/$defs/expressionCondition"
       },
       "else": {
         "if": {
           "required": [
-            "any"
+            "all"
           ]
         },
         "then": {
           "type": "object",
           "properties": {
-            "any": {
+            "all": {
               "type": "array",
               "minItems": 2,
               "maxItems": 8,
@@ -693,12 +891,36 @@
             }
           },
           "required": [
-            "any"
+            "all"
           ],
           "additionalProperties": false
         },
         "else": {
-          "$ref": "#/$defs/atomicCondition"
+          "if": {
+            "required": [
+              "any"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "any": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                  "$ref": "#/$defs/atomicCondition"
+                }
+              }
+            },
+            "required": [
+              "any"
+            ],
+            "additionalProperties": false
+          },
+          "else": {
+            "$ref": "#/$defs/atomicCondition"
+          }
         }
       }
     },
@@ -1329,7 +1551,7 @@
                 "$ref": "#/$defs/fieldKey"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/fieldRef"
+                "$ref": "#/$defs/mappingSource"
               }
             },
             "resultMapping": {

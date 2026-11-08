@@ -121,6 +121,14 @@ public final class BpmnGenerator {
     public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
                                   Map<String, String> decisionResource, Map<String, WorkflowInfo> children,
                                   Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins) {
+        return generate(definition, compilerVersion, semanticHash, decisionResource, children, aiPins, Map.of());
+    }
+
+    /** @param expressionTypes pinned expression types by site, {@code node/<id>} or {@code flow/<id>} (S137) */
+    public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
+                                  Map<String, String> decisionResource, Map<String, WorkflowInfo> children,
+                                  Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins,
+                                  Map<String, String> expressionTypes) {
         Map<String, Node> nodes = new HashMap<>();
         definition.nodes().forEach(n -> nodes.put(n.id(), n));
         Map<String, String> branchDefault = new HashMap<>();
@@ -158,6 +166,7 @@ public final class BpmnGenerator {
         }
         Scopes scopes = new Scopes(definition);
         scopes.aiPins = aiPins == null ? Map.of() : aiPins;
+        scopes.expressionTypes = expressionTypes == null ? Map.of() : expressionTypes;
         // Business errors and signals (S59): one definition per code or name, sorted. Signals reach only the steps of
         // the request that sends them (flowable:scope processInstance), never other requests.
         scopes.errorCodes().forEach(code ->
@@ -182,7 +191,7 @@ public final class BpmnGenerator {
         }
         for (Transition t : definition.transitions()) {
             if (scopes.container(t) == null) {
-                flow(x, map, nodes, t, scopes.target(t));
+                flow(x, map, nodes, t, scopes.target(t), scopes);
             }
         }
         for (WorkflowDefinition.Subprocess s : definition.subprocesses()) {
@@ -354,7 +363,7 @@ public final class BpmnGenerator {
                     x.attr("default", branchDefault.get(b.id()));
                 }
             }
-            case Node.Http h when h.polls() -> pollTask(x, map, d, h);
+            case Node.Http h when h.polls() -> pollTask(x, map, d, h, scopes);
             case Node.Http h -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", h.id())
@@ -384,8 +393,8 @@ public final class BpmnGenerator {
                     // Opt-in (S71): a known failure becomes this business error for the section's error boundary.
                     x.attr("raiseOnFailure", h.raiseOnFailure());
                 }
-                h.inputMapping().forEach((name, fieldRef) ->
-                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                h.inputMapping().forEach((name, fieldRef) -> input(x, name, fieldRef,
+                        scopes.expressionTypes.get("node/" + h.id())));
                 h.resultMapping().forEach((name, pointer) ->
                         x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("pointer", pointer));
                 x.close();
@@ -477,6 +486,7 @@ public final class BpmnGenerator {
                 x.close();
             }
             case Node.AiTask ai -> aiTask(x, map, d, ai, scopes.aiPins.get(ai.id()));
+            case Node.Calculate calc -> calculate(x, d, calc, scopes.expressionTypes.getOrDefault("node/" + calc.id(), EMPTY_TYPES));
             case Node.Notification no -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", no.id())
@@ -690,7 +700,7 @@ public final class BpmnGenerator {
         map.node(id, begin);
         for (Transition t : d.transitions()) {
             if (scopes.container(t) == s) {
-                flow(x, map, nodes, t, scopes.target(t));
+                flow(x, map, nodes, t, scopes.target(t), scopes);
             }
         }
         java.util.List<String> exits = scopes.exits(s);
@@ -797,6 +807,8 @@ public final class BpmnGenerator {
         private final java.util.Set<String> mergedSplits = new java.util.HashSet<>();
         /** AI task node id to its pinned skill version (S134). */
         Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins = Map.of();
+        /** Pinned expression types by site (S137): node/<id>, flow/<id>; base64 canonical JSON. */
+        Map<String, String> expressionTypes = Map.of();
 
         Scopes(WorkflowDefinition d) {
             this.d = d;
@@ -932,7 +944,8 @@ public final class BpmnGenerator {
         }
     }
 
-    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t, String target) {
+    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t, String target,
+            Scopes scopes) {
         map.transition(t.id(), t.id());
         Node from = nodes.get(t.from());
         String source = flowSource(from, t);
@@ -956,7 +969,11 @@ public final class BpmnGenerator {
         if (t.condition() != null) {
             Condition c = t.condition();
             x.open("", "extensionElements", BPMN_NS);
-            if (c.compound()) {
+            if (c.isExpression()) {
+                // S137: an Orqix expression, evaluated by the route bean; never part of the engine expression.
+                x.leaf("orqix", "condition", ORQIX_NS).attr("expression", c.expression())
+                        .attr("typesBase64", scopes.expressionTypes.getOrDefault("flow/" + t.id(), EMPTY_TYPES));
+            } else if (c.compound()) {
                 x.open("orqix", "condition", ORQIX_NS).attr("group", c.group());
                 for (Condition term : c.terms()) x.leaf("orqix", "term", ORQIX_NS)
                         .attr("fieldRef", term.fieldRef()).attr("operator", term.operator().json())
@@ -982,7 +999,7 @@ public final class BpmnGenerator {
      * ({@code met}, {@code failed} or {@code timedOut}); a generated exclusive gateway then takes the matching path. The
      * settings travel as canonical JSON so the BPMN round trip keeps them; the runtime reads them from the release.
      */
-    private static void pollTask(XmlOut x, SourceMap map, WorkflowDefinition d, Node.Http h) {
+    private static void pollTask(XmlOut x, SourceMap map, WorkflowDefinition d, Node.Http h, Scopes scopes) {
         x.open("", "serviceTask", BPMN_NS)
                 .attr("id", h.id())
                 .attr("name", h.label())
@@ -1000,8 +1017,8 @@ public final class BpmnGenerator {
                 .attr("connectionVersion", version)
                 .attr("operation", h.operation())
                 .attr("timeoutSeconds", Integer.toString(h.timeoutSeconds()));
-        h.inputMapping().forEach((name, fieldRef) ->
-                x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+        h.inputMapping().forEach((name, fieldRef) -> input(x, name, fieldRef,
+                scopes.expressionTypes.get("node/" + h.id())));
         h.resultMapping().forEach((name, pointer) ->
                 x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("pointer", pointer));
         x.close();
@@ -1066,6 +1083,61 @@ public final class BpmnGenerator {
         map.node(ai.id(), ai.id() + "__toAiRoute");
         x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", ai.label() + ": AI route");
         map.node(ai.id(), gateway);
+    }
+
+    /**
+     * Calculate (CG-X01, docs/build/S137): an asynchronous service task whose delegate evaluates the outputs with the
+     * Orqix expression engine. The settings travel as canonical JSON (round trip and runtime); readable
+     * {@code orqix:output} children show each formula.
+     */
+    /** base64 of {"input":{},"steps":{}}: an expression site that reads no fields. */
+    static final String EMPTY_TYPES = base64Json(tools.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+            .<tools.jackson.databind.node.ObjectNode>set("input", tools.jackson.databind.node.JsonNodeFactory.instance.objectNode())
+            .set("steps", tools.jackson.databind.node.JsonNodeFactory.instance.objectNode()));
+
+    private static void calculate(XmlOut x, WorkflowDefinition d, Node.Calculate calc, String types) {
+        x.open("", "serviceTask", BPMN_NS)
+                .attr("id", calc.id())
+                .attr("name", calc.label())
+                .attr("flowable", FLOWABLE_NS, "async", "true")
+                .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixCalculate}");
+        x.open("", "extensionElements", BPMN_NS);
+        x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+        x.open("orqix", "calculate", ORQIX_NS).attr("configBase64", base64Json(calculateConfig(calc)))
+                .attr("typesBase64", types);
+        for (Node.Calculate.Output o : calc.outputs()) {
+            x.leaf("orqix", "output", ORQIX_NS).attr("key", o.key()).attr("type", o.type()).attr("expression", o.expression());
+        }
+        x.close();
+        x.close();
+        x.close();
+    }
+
+    /** @return the canonical config of a Calculate step, as the workflow JSON holds it */
+    public static tools.jackson.databind.node.ObjectNode calculateConfig(Node.Calculate calc) {
+        var f = tools.jackson.databind.node.JsonNodeFactory.instance;
+        var config = f.objectNode();
+        var outputs = config.putArray("outputs");
+        for (Node.Calculate.Output o : calc.outputs()) {
+            var out = outputs.addObject();
+            out.put("key", o.key()).put("expression", o.expression()).put("type", o.type());
+            if (o.scale() != null) out.put("scale", o.scale());
+            if (o.rounding() != null) out.put("rounding", o.rounding());
+            if (o.description() != null) out.put("description", o.description());
+            if (o.optional()) out.put("optional", true);
+        }
+        if (calc.calendar() != null && !calc.calendar().isNull()) config.set("calendar", calc.calendar().deepCopy());
+        return config;
+    }
+
+    /** A call's input mapping; an = expression (S137) carries its pinned types. */
+    private static void input(XmlOut x, String name, String source, String types) {
+        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", source);
+        if (source.startsWith("=")) {
+            x.attr("typesBase64", types == null ? EMPTY_TYPES : types);
+        }
     }
 
     static String base64Json(tools.jackson.databind.JsonNode node) {

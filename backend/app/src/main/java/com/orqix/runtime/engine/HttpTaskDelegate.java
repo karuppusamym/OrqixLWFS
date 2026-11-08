@@ -76,8 +76,12 @@ public class HttpTaskDelegate implements JavaDelegate {
         UUID workspaceId = ProcessData.workspaceId(execution);
         UUID runId = ProcessData.runId(execution);
         Map<String, JsonNode> values = new LinkedHashMap<>();
+        Map<String, String> expressionTypes = OrqixModel.childMap(http, "input", "typesBase64");
         inputs.forEach((name, fieldRef) -> {
-            JsonNode value = ProcessData.resolve(execution, json, fieldRef);
+            JsonNode value = ProcessData.mapping(execution, json, fieldRef, expressionTypes.get(name));
+            if (fieldRef.startsWith("=") && value.isNull()) {
+                return; // an = mapping without a value leaves the request field out (S137)
+            }
             if (value.isMissingNode() || value.isNull()) {
                 throw new IllegalStateException("Input " + fieldRef + " is not available; the compiler guarantees it");
             }

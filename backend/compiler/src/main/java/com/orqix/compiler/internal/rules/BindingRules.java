@@ -163,6 +163,7 @@ final class BindingRules {
             case Node.ExternalTask e -> refs.addAll(e.inputMapping().values());
             case Node.SendAdapter a -> refs.addAll(a.inputMapping().values());
             case Node.AiTask ai -> refs.addAll(ai.inputMapping().values());
+            case Node.Calculate c -> refs.addAll(ExpressionRules.calculateRefs(rc, c));
             case Node.StartWorkflow s -> {
                 refs.addAll(s.inputMapping().values());
                 if (s.forEach() != null) refs.add(s.forEach().itemsRef());
@@ -181,10 +182,17 @@ final class BindingRules {
             }
         }
         for (com.orqix.compiler.internal.model.WorkflowDefinition.Transition t : rc.leaving(node)) {
-            if (t.condition() != null) {
+            if (t.condition() != null && t.condition().isExpression()) {
+                refs.addAll(ExpressionRules.refs(rc, node, t.condition().expression(), java.util.Map.of()));
+            } else if (t.condition() != null) {
                 conditionRefs(t.condition(), refs);
             }
         }
+        // = mappings (S137) read the fields their expressions name.
+        new java.util.ArrayList<>(refs).stream().filter(r -> r.startsWith("=")).forEach(r -> {
+            refs.remove(r);
+            refs.addAll(ExpressionRules.refs(rc, node, r.substring(1), java.util.Map.of()));
+        });
         return refs;
     }
 
@@ -237,6 +245,9 @@ final class BindingRules {
         // Field references are checked even when the connection cannot be resolved.
         for (Map.Entry<String, String> e : n.inputMapping().entrySet()) {
             String path = JsonPointers.append(n.configPath("inputMapping"), e.getKey());
+            if (e.getValue().startsWith("=")) {
+                continue; // an Orqix expression (S137), checked by ExpressionRules
+            }
             Resolution res = rc.types().resolve(e.getValue());
             if (res instanceof Unknown u) {
                 rc.issues().blocker("WF_FIELDREF_UNKNOWN", path, n.id(), null, u.message());
@@ -286,6 +297,10 @@ final class BindingRules {
                 }
                 continue;
             }
+            if (e.getValue().startsWith("=")) {
+                expressionMapping(rc, n, e.getKey(), e.getValue().substring(1), target, path);
+                continue;
+            }
             if (rc.types().resolve(e.getValue()) instanceof Resolved r) {
                 String problem = FieldTypes.incompatibility(r.type(), target.kind(), target.enumValues());
                 if (problem != null) {
@@ -321,6 +336,37 @@ final class BindingRules {
             rc.issues().blocker("WF_TIMEOUT_EXCEEDS_OPERATION", n.configPath("timeoutSeconds"), n.id(), null,
                     n.label() + " waits up to " + n.timeoutSeconds() + " seconds, but the operation " + op
                             + " allows at most " + max + ".");
+        }
+    }
+
+    /** An = mapping (S137): the expression's type must fit the request field. */
+    private static void expressionMapping(RuleContext rc, Node.Http n, String key, String source,
+            Connections.RequestField target, String path) {
+        com.orqix.compiler.expr.Expression e;
+        try {
+            e = com.orqix.compiler.expr.Expression.compile(source, ExpressionRules.scope(rc, n, Map.of()));
+        } catch (com.orqix.compiler.expr.ExpressionException problem) {
+            return; // reported by ExpressionRules
+        }
+        FieldKind kind = switch (e.type()) {
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.NUMBER -> FieldKind.NUMBER;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.STRING -> FieldKind.STRING;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.BOOLEAN -> FieldKind.BOOLEAN;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.DATE -> FieldKind.DATE;
+            case com.orqix.compiler.expr.ExprType.Scalar s -> null;
+            default -> FieldKind.ARRAY;
+        };
+        if (kind == null) return;
+        if (kind == FieldKind.ARRAY) {
+            rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(key)
+                    + " takes a single value, but this expression gives " + e.type().describe() + ".");
+            return;
+        }
+        String problem = FieldTypes.incompatibility(new FieldTypes.FieldType(kind, null, false, null, null),
+                target.kind(), target.enumValues());
+        if (problem != null) {
+            rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(key) + " "
+                    + problem + " (the expression gives " + e.type().describe() + ").");
         }
     }
 

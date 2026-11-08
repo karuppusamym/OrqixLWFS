@@ -61,6 +61,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     assertThat(operation.has("x-orqix-audit") || "markNotificationRead".equals(operationId)
                             || "markAllNotificationsRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
+                            // S137: the expression preview computes and stores nothing.
+                            || "evaluateExpression".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
                             || "checkDraftBpmn".equals(operationId) || "convertDecisionDmn".equals(operationId)
                             // S126: the case type check reads the draft and writes nothing, like validateDraft.
@@ -483,6 +485,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "checkDraftBpmn" -> Map.of("revision", 1, "bpmn", "<definitions/>");
             case "applyDraftBpmn" -> Map.of("bpmn", "<definitions/>");
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
+            case "evaluateExpression" -> Map.of("expression", "1 + 1");
             case "simulateWorkflow" -> Map.of("revision", 1, "input", Map.of("amount", 1));
             case "simulateWorkflowCases" -> Map.of("revision", 1, "cases", List.of(Map.of("id", "c1",
                     "input", Map.of("amount", 1), "scenario", Map.of("calls", Map.of("procure",

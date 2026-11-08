@@ -102,6 +102,10 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
     case 'sendAdapter':
       return (c.adapter as string) ? `Through ${c.adapter as string} (${String(c.kind ?? '')})` : 'No adapter chosen'
+    case 'calculate': {
+      const outputs = (Array.isArray(c.outputs) ? c.outputs : []) as Array<{ key?: string }>
+      return outputs.length === 0 ? 'No outputs yet' : `Works out ${outputs.map(o => o.key).filter(Boolean).join(', ')}`
+    }
     case 'aiTask':
       return (c.skillRef as string) ? `${String(c.mode ?? 'classify')} with ${c.skillRef as string} (${String(c.autonomy ?? 'suggest')})` : 'No AI skill chosen'
     case 'startWorkflow':

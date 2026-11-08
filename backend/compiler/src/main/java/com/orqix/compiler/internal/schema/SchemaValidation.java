@@ -46,7 +46,7 @@ public final class SchemaValidation {
             NodeKind.DECISION, NodeKind.BRANCH, NodeKind.HTTP, NodeKind.NOTIFICATION, NodeKind.PARALLEL_SPLIT,
             NodeKind.PARALLEL_JOIN, NodeKind.WAIT, NodeKind.START_WORKFLOW, NodeKind.WAIT_FOR_MESSAGE, NodeKind.END, NodeKind.GENERATE_DOCUMENT, NodeKind.EXTERNAL_TASK,
             NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL, NodeKind.WAIT_FOR_SIGNAL, NodeKind.COMPENSATE, NodeKind.SEND_ADAPTER,
-            NodeKind.AI_TASK);
+            NodeKind.AI_TASK, NodeKind.CALCULATE);
 
     private final Schema workflowSchema;
     private final Schema connectionSchema;

@@ -241,16 +241,28 @@ final class TypeRules {
     private static void branches(RuleContext rc) {
         Map<Node, List<Transition>> byBranch = new LinkedHashMap<>();
         Map<Transition, List<Disjointness.Typed>> typed = new LinkedHashMap<>();
+        java.util.Set<Node> withExpressions = new java.util.LinkedHashSet<>();
         for (Transition t : rc.definition().transitions()) {
             if (t.condition() == null) continue;
             Node from = rc.graph().node(t.from());
+            if (t.condition().isExpression()) {
+                // S137: checked by ExpressionRules; exclusiveness of expressions cannot be proven.
+                if (from != null && from.kind() == NodeKind.BRANCH) withExpressions.add(from);
+                continue;
+            }
             var checked = LogicalConditions.check(rc, t.condition(), t.path() + "/condition", from == null ? null : from.id(), t.id());
             if (checked != null) typed.put(t, checked);
             if (from != null && from.kind() == NodeKind.BRANCH && t.on() == Route.CONDITION)
                 byBranch.computeIfAbsent(from, key -> new ArrayList<>()).add(t);
         }
+        for (Node branch : withExpressions) {
+            rc.issues().warning("WF_BRANCH_EXPRESSION_ORDER", branch.path(), branch.id(), null, q(branch)
+                    + " has conditions written as expressions, which cannot be checked for overlap. Its paths are"
+                    + " tried in the order they are listed and the first whose condition is true is taken.");
+        }
         for (var e : byBranch.entrySet()) {
             Node branch = e.getKey(); List<Transition> routes = e.getValue();
+            if (withExpressions.contains(branch)) continue;
             boolean scalar = routes.stream().noneMatch(t -> t.condition().compound());
             String field = scalar ? routes.get(0).condition().fieldRef() : null;
             boolean mixed = false;

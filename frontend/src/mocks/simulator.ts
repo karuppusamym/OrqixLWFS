@@ -2,7 +2,12 @@ import { isCalendarDate } from '@/lib/dates'
 import { describe as describePoll, offsets, scheduleOf, seconds as pollSeconds, type PollConfig } from '@/features/studio/model/pollSchedule'
 import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { studioScope } from '@/features/studio/model/expressionScope'
+import { compile } from '@/lib/expr'
+import { CalculationFailure, runCalculation, type CalculateConfig } from '@/lib/expr/calculate'
+import { applyComputed } from '@/lib/form/computed'
+import { parseFormSchema, parseFormUi } from '@/lib/form/schema'
+import { conditionTerms, isAtomicCondition, isExpressionCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue } from '@/features/studio/model/decisionLogic'
 
 /**
@@ -336,6 +341,8 @@ class Run {
         return this.decision(node)
       case 'branch':
         return this.branch(node)
+      case 'calculate':
+        return this.calculate(node)
       case 'http':
         return this.http(node)
       case 'generateDocument': {
@@ -552,9 +559,9 @@ class Run {
       }
       try {
         const terms: Json[] = []
-        const matched = this.evaluate(t.condition, terms)
+        const matched = this.evaluate(t.condition, terms, n.id)
         r.matched = matched
-        if (!isAtomicCondition(t.condition)) r.terms = terms
+        if (!isAtomicCondition(t.condition) && !isExpressionCondition(t.condition)) r.terms = terms
         if (matched) chosen = t
       } catch (e) {
         r.matched = null
@@ -584,7 +591,37 @@ class Run {
     return picked
   }
 
-  private evaluate(c: Condition, terms: Json[]): boolean {
+  /** Noon of the test's day in UTC: today() is the test's day (S137). */
+  private now(): string {
+    return `${this.ctx.today}T12:00:00Z`
+  }
+
+  /** Calculate (S137): the engine's expression language and rounding over this test's values. */
+  private calculate(n: WorkflowNode): Transition | null {
+    try {
+      const { scope } = studioScope(this.def, n.id)
+      const outputs = runCalculation(n.config as unknown as CalculateConfig, scope, k => this.input[k], (id, k) => this.steps.get(id)?.[k], this.now())
+      this.steps.set(n.id, outputs)
+      const t = this.next(n, 'next')
+      const parts = Object.entries(outputs).map(([k, v]) => `${k} = ${v === null ? 'no value' : String(v)}`)
+      this.add(n, `${quote(n.label)}: ${parts.join('; ')}.`, { outputs: outputs as Json }, outputs as Record<string, Json>, t)
+      return t
+    } catch (e) {
+      if (!(e instanceof CalculationFailure)) throw e
+      this.stallWith(n, `${quote(n.label)} stops: ${e.message}`, { output: e.output, code: e.code }, 'CALCULATION_FAILED', e.message)
+      return null
+    }
+  }
+
+  private evaluate(c: Condition, terms: Json[], at = ''): boolean {
+    if (isExpressionCondition(c)) {
+      try {
+        const { scope } = studioScope(this.def, at || null)
+        return compile(c.expression, scope).evaluate({ input: k => this.input[k], step: (id, k) => this.steps.get(id)?.[k], now: this.now() }) === true
+      } catch (e) {
+        throw new Error(`the condition ${quote(c.expression)} cannot be evaluated: ${(e as Error).message}`)
+      }
+    }
     if (isAtomicCondition(c)) return this.atom(c, null)
     const all = 'all' in c
     const list = (all ? c.all : c.any) ?? []
@@ -1341,6 +1378,7 @@ class Run {
   }
 
   private conditionText(c: Condition, withValue: boolean, known: unknown): string {
+    if (isExpressionCondition(c)) return c.expression
     if (!isAtomicCondition(c)) {
       const all = 'all' in c
       const parts = ((all ? c.all : c.any) ?? []).map((t) => this.conditionText(t, withValue, undefined))
@@ -1565,8 +1603,10 @@ export class ScenarioError extends Error {}
 /**
  * Dry run of a definition. Throws {@link ScenarioError} for a malformed scenario.
  */
-export function simulateDefinition(def: Definition, input: Record<string, unknown>, scenario: SimulationScenario, ctx: SimContext, depth = 0, budget:Budget={nodes:0,children:0}): SimulationOutcome {
+export function simulateDefinition(def: Definition, sample: Record<string, unknown>, scenario: SimulationScenario, ctx: SimContext, depth = 0, budget:Budget={nodes:0,children:0}): SimulationOutcome {
   validateScenario(scenario)
+  // CG-F04 (S137): computed fields are filled as the server fills them when the request is submitted.
+  const input = def.inputUi?.computed ? applyComputed(parseFormSchema(def.inputSchema), parseFormUi(def.inputUi), sample, `${ctx.today}T12:00:00Z`) : sample
   const blockers = ctx.issues.filter((i) => i.severity === 'blocker' && !TOLERATED.has(i.code))
   if (blockers.length > 0 || !def.nodes.some((n) => n.type === 'start')) return { status: 'cannotRun', issues: blockers }
   const errors = ctx.validateInput(def, input)

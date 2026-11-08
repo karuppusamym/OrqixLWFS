@@ -82,6 +82,8 @@ final class SimulationRun {
     private final int depth;
     private final ValidationReport report;
     private final List<ValidationIssue> tolerated;
+    /** The compiler's analysis: the types expressions are checked against (S137). */
+    private final com.orqix.compiler.internal.rules.RuleContext analysis;
 
     private final Map<String, Map<String, Object>> steps = new HashMap<>();
     private final List<ObjectNode> trace = new ArrayList<>();
@@ -102,6 +104,7 @@ final class SimulationRun {
         this.budget = budget;
         this.def = outcome.definition();
         this.graph = outcome.analysis().graph();
+        this.analysis = outcome.analysis();
         this.connections = outcome.analysis().connections();
         this.definitionJson = definitionJson;
         this.inputValues = input;
@@ -238,6 +241,7 @@ final class SimulationRun {
             case Node.ExternalTask n -> externalTask(n);
             case Node.SendAdapter n -> sendAdapter(n);
             case Node.AiTask n -> aiTask(n);
+            case Node.Calculate n -> calculate(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -680,6 +684,9 @@ final class SimulationRun {
 
     /** Evaluates a condition with the runtime's short-circuit rules; throws IllegalArgumentException for a missing value. */
     private boolean evaluate(Condition c, ArrayNode terms) {
+        if (c.isExpression()) {
+            return Boolean.TRUE.equals(expression(c.expression()));
+        }
         if (!c.compound()) {
             return atom(c, null);
         }
@@ -704,6 +711,55 @@ final class SimulationRun {
             }
         }
         return result;
+    }
+
+    /** The value of an expression condition (S137) over this test's request and step results; null when none. */
+    private Object expression(String source) {
+        try {
+            var scope = com.orqix.compiler.internal.rules.ExpressionRules.scope(analysis, graph.starts().get(0), Map.of());
+            return com.orqix.compiler.expr.Expression.compile(source, scope).evaluate(com.orqix.compiler.expr.Values.of(
+                    inputValues, id -> steps.containsKey(id) ? DefaultWorkflowSimulator.json(steps.get(id)) : null,
+                    Map.of(), now(null), null));
+        } catch (com.orqix.compiler.expr.ExpressionException e) {
+            throw new IllegalArgumentException("the condition " + Text.quote(source) + " cannot be evaluated: " + e.getMessage());
+        }
+    }
+
+    /** Noon of the test's day in the calendar's zone, so today() is the test's day there. */
+    private java.time.Instant now(com.orqix.compiler.BusinessCalendar calendar) {
+        java.time.ZoneId zone = calendar == null ? java.time.ZoneOffset.UTC : calendar.zone();
+        return context.today().atTime(12, 0).atZone(zone).toInstant();
+    }
+
+    // ------------------------------------------------------------------ calculate
+
+    /** Calculate (CG-X01, S137): the outputs with the engine's own evaluation. */
+    private Transition calculate(Node.Calculate n) {
+        ObjectNode d = F.objectNode();
+        var config = com.orqix.compiler.internal.bpmn.BpmnGenerator.calculateConfig(n);
+        try {
+            var types = com.orqix.compiler.internal.rules.ExpressionRules.pinnedTypesOf(analysis, n);
+            ObjectNode out = com.orqix.compiler.expr.Calculation.run(config, types, inputValues,
+                    id -> steps.containsKey(id) ? DefaultWorkflowSimulator.json(steps.get(id)) : null,
+                    now(com.orqix.compiler.expr.Values.calendar(n.calendar())));
+            Map<String, Object> wrote = new LinkedHashMap<>();
+            List<String> parts = new ArrayList<>();
+            out.properties().forEach(e -> {
+                Object value = DefaultWorkflowSimulator.plain(e.getValue());
+                wrote.put(e.getKey(), value);
+                parts.add(e.getKey() + " = " + (value == null ? "no value" : Text.value(value, false)));
+            });
+            d.set("outputs", out);
+            steps.put(n.id(), wrote);
+            Transition t = next(n, Route.NEXT);
+            add(n, Text.quote(n.label()) + ": " + String.join("; ", parts) + ".", d, wrote, t);
+            return t;
+        } catch (com.orqix.compiler.expr.Calculation.Failure f) {
+            d.put("output", f.output());
+            d.put("code", f.code());
+            stallWith(n, Text.quote(n.label()) + " stops: " + f.getMessage(), d, "CALCULATION_FAILED", f.getMessage());
+            return null;
+        }
     }
 
     private boolean atom(Condition c, ObjectNode record) {
@@ -2211,6 +2267,9 @@ final class SimulationRun {
      * value to show when it is already known (otherwise it is looked up).
      */
     private String conditionText(Condition c, boolean withValue, Object known) {
+        if (c.isExpression()) {
+            return c.expression();
+        }
         if (c.compound()) {
             List<String> parts = new ArrayList<>();
             c.terms().forEach(t -> parts.add(conditionText(t, withValue, null)));

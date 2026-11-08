@@ -9,6 +9,7 @@ import org.flowable.engine.delegate.DelegateExecution;
 import org.springframework.stereotype.Component;
 
 import com.orqix.compiler.ConditionMatcher;
+import tools.jackson.databind.JsonNode;
 import com.orqix.shared.json.Json;
 
 /**
@@ -74,6 +75,12 @@ public class OrqixRoute {
             throw new IllegalStateException(transitionId + " is not a sequence flow");
         }
         ExtensionElement condition = OrqixModel.requireExtension(element, "condition");
+        String expression = OrqixModel.attribute(condition, "expression");
+        if (expression != null) {
+            // S137: an Orqix expression; the path is taken only when it gives true (false or no value is not taken).
+            JsonNode value = ProcessData.expression(execution, json, expression, OrqixModel.attribute(condition, "typesBase64"));
+            return value.isBoolean() && value.booleanValue();
+        }
         String group = OrqixModel.attribute(condition, "group");
         if (group != null) {
             var terms = OrqixModel.children(condition, "term");

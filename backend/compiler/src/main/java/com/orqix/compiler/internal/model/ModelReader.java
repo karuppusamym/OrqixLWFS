@@ -226,6 +226,18 @@ public final class ModelReader {
                     c.has("minConfidence") ? c.get("minConfidence").decimalValue() : Node.AiTask.DEFAULT_MIN_CONFIDENCE,
                     c.path("reviewSamplePercent").asInt(Node.AiTask.DEFAULT_REVIEW_PERCENT),
                     c.has("redaction") ? stringMap(c.get("redaction")) : Map.of());
+            case CALCULATE -> {
+                List<Node.Calculate.Output> outputs = new ArrayList<>();
+                int at = 0;
+                for (JsonNode o : c.path("outputs")) {
+                    outputs.add(new Node.Calculate.Output(at++, o.get("key").stringValue(), o.get("expression").stringValue(),
+                            o.get("type").stringValue(), o.has("scale") ? o.get("scale").intValue() : null,
+                            o.has("rounding") ? o.get("rounding").stringValue() : null,
+                            o.has("description") ? o.get("description").stringValue() : null,
+                            o.path("optional").asBoolean(false)));
+                }
+                yield new Node.Calculate(index, id, label, List.copyOf(outputs), c.get("calendar"));
+            }
         };
     }
 
@@ -345,6 +357,11 @@ public final class ModelReader {
      */
     public static Condition readCondition(JsonNode c, boolean decisionRow) {
         require(c != null && c.isObject(), "condition must be an object");
+        if (c.has("expression")) {
+            require(!decisionRow, "an expression cannot be used as a decision row or check condition");
+            require(c.size() == 1 && c.get("expression").isString(), "an expression condition has only its expression text");
+            return Condition.ofExpression(c.get("expression").stringValue());
+        }
         if (c.has("all") || c.has("any")) {
             String group = c.has("all") ? "all" : "any";
             require(c.size() == 1 && c.path(group).isArray() && c.path(group).size() >= 2 && c.path(group).size() <= 8,
@@ -517,9 +534,18 @@ public final class ModelReader {
                     s.path("columns").asInt(1), List.copyOf(fields),
                     s.has("visibleWhen") ? readCondition(s.get("visibleWhen")) : null));
         }
+        List<InputUi.FormRule> rules = new ArrayList<>();
+        int ruleIndex = 0;
+        for (JsonNode r : ui.path("rules")) {
+            List<String> ruleFields = new ArrayList<>();
+            r.path("fields").forEach(f -> ruleFields.add(f.stringValue()));
+            rules.add(new InputUi.FormRule(ruleIndex++, r.path("id").asString(""), r.path("check").asString(""),
+                    r.path("message").asString(""), List.copyOf(ruleFields)));
+        }
         return new InputUi(List.copyOf(order), ui.has("widgets") ? stringMap(ui.get("widgets")) : Map.of(),
                 conditionMap(ui.get("visibleWhen")), conditionMap(ui.get("requiredWhen")), List.copyOf(sections),
-                "above".equals(ui.path("layout").path("helpText").asString("below")));
+                "above".equals(ui.path("layout").path("helpText").asString("below")),
+                ui.has("computed") ? stringMap(ui.get("computed")) : Map.of(), List.copyOf(rules));
     }
 
     private static Map<String, Condition> conditionMap(JsonNode o) {

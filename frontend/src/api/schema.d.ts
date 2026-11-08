@@ -1506,6 +1506,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/expressions/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an Orqix expression and evaluate it with sample values (no side effects)
+         * @description The server's own engine on an expression of a Calculate step, condition, mapping or form rule, for the guided editor's preview. types names the request fields (input), step results (steps) and earlier outputs (locals) the expression may use, in the expression type notation; with values the result is evaluated. A problem with the expression is a 200 answer with valid false (or, for an exceeded bound while evaluating, valid true and problem set). Nothing is stored or audited.
+         */
+        post: operations["evaluateExpression"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv": {
         parameters: {
             query?: never;
@@ -9382,6 +9404,71 @@ export interface components {
             /** @description Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied) */
             matchedRows?: number[];
         };
+        /** @description Expression type notation: number, integer (a number), string, boolean, date or any; {"list": T}; {"row": {column: T}}. */
+        ExpressionType: ("number" | "integer" | "string" | "boolean" | "date" | "any") | {
+            list: components["schemas"]["ExpressionType"];
+        } | {
+            row: {
+                [key: string]: components["schemas"]["ExpressionType"];
+            };
+        };
+        ExpressionEvaluateRequest: {
+            expression: string;
+            types?: {
+                input?: {
+                    [key: string]: components["schemas"]["ExpressionType"];
+                };
+                steps?: {
+                    [key: string]: {
+                        [key: string]: components["schemas"]["ExpressionType"];
+                    };
+                };
+                locals?: {
+                    [key: string]: components["schemas"]["ExpressionType"];
+                };
+            };
+            /** @description Sample values; without them the expression is only checked. */
+            values?: {
+                input?: {
+                    [key: string]: unknown;
+                };
+                steps?: {
+                    [key: string]: {
+                        [key: string]: unknown;
+                    };
+                };
+                locals?: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Working calendar of working-day functions and today() (zone, weekdays, holidays); default Monday to Friday in UTC. */
+            calendar?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @description The instant today() uses; default the server time.
+             */
+            now?: string;
+        };
+        ExpressionEvaluateResult: {
+            valid: boolean;
+            /** @description number, string, boolean, date, list, row, null or any */
+            type?: string | null;
+            /** @description Business wording, e.g. a number or a list of rows. */
+            typeDescription?: string | null;
+            /** @description Request fields and step results used, as field references. */
+            fieldRefs: string[];
+            /** @description The result as JSON (numbers exact, dates YYYY-MM-DD); absent without values. */
+            value?: unknown;
+            problem?: {
+                /** @description EXPR_SYNTAX, EXPR_TOO_COMPLEX, EXPR_UNKNOWN_FIELD, EXPR_UNKNOWN_FUNCTION, EXPR_ARGUMENTS, EXPR_TYPE, EXPR_COST_LIMIT, EXPR_NUMBER_RANGE, EXPR_TEXT_LIMIT or EXPR_LIST_LIMIT */
+                code: string;
+                message: string;
+                /** @description Zero-based offset of the part the problem is about. */
+                position: number;
+            } | null;
+        };
         WorkflowTestCase: {
             id: string;
             name: string;
@@ -12650,6 +12737,12 @@ export interface components {
                 [key: string]: components["schemas"]["formField"];
             };
         };
+        /** @description An Orqix expression (CG-X01, docs/build/S137): a total, side-effect-free, FEEL-like formula over input.<field>, steps.<stepId>.<output> and, in a Calculate step, earlier outputs by name. Decimal arithmetic (+ - * /, 34 significant digits), comparisons (= != < <= > >=, in), and/or, if then else, null, and the functions abs floor ceiling round number, length upper lower trim substring contains startsWith endsWith replace string, date today addDays addMonths addYears daysBetween year month day weekday addWorkingDays workingDaysBetween isWorkingDay, count sum average min max filter any all (with item), coalesce isEmpty not. No loops, recursion or I/O; at most 2000 characters and 300 parts; evaluation work is bounded. The compiler type checks it (WF_EXPRESSION_INVALID). */
+        expression: string;
+        /** @description A condition written as an Orqix expression that must give true or false (docs/build/S137), for example input.endDate > addWorkingDays(input.startDate, 5). The path is taken only when it is true; false or a missing value is not taken. */
+        expressionCondition: {
+            expression: components["schemas"]["expression"];
+        };
         /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
         fieldRef: string;
         /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
@@ -12684,12 +12777,39 @@ export interface components {
             label: components["schemas"]["label"];
             config: Record<string, never>;
         };
+        calculateOutput: {
+            key: components["schemas"]["fieldKey"];
+            expression: components["schemas"]["expression"];
+            /**
+             * @description Declared type of the result; the compiler checks the expression gives it (WF_CALCULATE_TYPE).
+             * @enum {unknown}
+             */
+            type: "number" | "integer" | "string" | "boolean" | "date";
+            /** @description Numbers only: decimal places the stored result is rounded to with rounding (default halfUp). integer means scale 0. */
+            scale?: number;
+            /**
+             * @description Numbers only: how the result is rounded to scale. halfUp rounds .5 away from zero; halfEven to the even neighbour (banker's); down towards zero; up away from zero; floor and ceiling towards minus or plus infinity.
+             * @enum {unknown}
+             */
+            rounding?: "halfUp" | "halfEven" | "down" | "up" | "floor" | "ceiling";
+            description?: string;
+            /** @description true when the output may have no value (null); by default an output without a value stops the request with an incident, so later steps can rely on it. */
+            optional?: boolean;
+        };
+        /** @description Working calendar of working-day functions and today() in an expression (the S27 calendar shape; opening hours are not used by day arithmetic). Without it: Monday to Friday, UTC, no holidays. */
+        expressionCalendar: {
+            zone: string;
+            weekdays: number[];
+            holidays?: components["schemas"]["calendarDate"][];
+        };
         stageEmail: {
             subject: string;
             body: string;
             recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
             supervisorGroupRef?: components["schemas"]["key"];
         };
+        /** @description A field reference, or = followed by an Orqix expression (docs/build/S137), for example = round(input.amount * 1.2, 2). */
+        mappingSource: components["schemas"]["fieldRef"] | string;
         /** @description This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*). */
         stepRetry: {
             /** @description Total attempts, the first included. */
@@ -12803,6 +12923,15 @@ export interface components {
         };
         /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
         signalName: string;
+        formRule: {
+            id: string;
+            /** @description An Orqix expression over input.<field> that must give true or false; the rule is broken when it is false. */
+            check: components["schemas"]["expression"];
+            /** @description Plain text shown when the rule is broken, for example 'The end date must be after the start date.' */
+            message: string;
+            /** @description Fields the message is shown at (default: the request as a whole). */
+            fields?: components["schemas"]["fieldKey"][];
+        };
         startNode: {
             id?: unknown;
             label?: unknown;
@@ -12932,7 +13061,7 @@ export interface components {
                 connectionRef: components["schemas"]["key"];
                 operation: string;
                 inputMapping: {
-                    [key: string]: components["schemas"]["fieldRef"];
+                    [key: string]: components["schemas"]["mappingSource"];
                 };
                 resultMapping: {
                     [key: string]: string;
@@ -13226,6 +13355,17 @@ export interface components {
                 };
             };
         } & components["schemas"]["nodeBase"];
+        calculateNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "calculate";
+            /** @description Calculate (CG-X01, docs/build/S137): named outputs computed from request fields and earlier step results with Orqix expressions, in order; a later output may use an earlier one by name. Outputs at /steps/<id>/<key> with their declared types. Runs inside the engine, never calls out, and cannot fail except when an expression exceeds its bounded work, which stops the request with an incident. */
+            config?: {
+                outputs: components["schemas"]["calculateOutput"][];
+                calendar?: components["schemas"]["expressionCalendar"];
+            };
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
@@ -13348,6 +13488,12 @@ export interface components {
                 requiredWhen?: {
                     [key: string]: components["schemas"]["condition"];
                 };
+                /** @description CG-F04 (docs/build/S137): fields whose value an Orqix expression computes from the other request fields. A computed field is read-only on the form; the browser shows the value as the requester types and the server recomputes it with the same engine when the request is submitted, replacing whatever was sent. The field must exist in inputSchema with a scalar type the expression gives; computed fields may use other computed fields but never in a cycle. */
+                computed?: {
+                    [key: string]: components["schemas"]["expression"];
+                };
+                /** @description CG-F04 (docs/build/S137): cross-field validation rules over the request fields, for example end after start or total within budget. A rule is broken only when its check is false (a check on a missing value is not broken; use required for that). The browser and the server evaluate the same expressions with identical engines; the server refuses a request that breaks a rule. */
+                rules?: components["schemas"]["formRule"][];
                 /** @description Titled field groups with one or two columns (S35). Fields in no section follow the sections in the usual order. */
                 layout?: {
                     sections?: components["schemas"]["formSection"][];
@@ -13362,7 +13508,7 @@ export interface components {
             triggers: ("manual" | "api")[];
             /** @description CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution. */
             exposeAsTool?: boolean;
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"] | components["schemas"]["aiTaskNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"] | components["schemas"]["aiTaskNode"] | components["schemas"]["calculateNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -13477,6 +13623,59 @@ export interface components {
                 fieldRef: string;
                 /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
                 literal: string | number | boolean;
+                /** @description An Orqix expression (CG-X01, docs/build/S137): a total, side-effect-free, FEEL-like formula over input.<field>, steps.<stepId>.<output> and, in a Calculate step, earlier outputs by name. Decimal arithmetic (+ - * /, 34 significant digits), comparisons (= != < <= > >=, in), and/or, if then else, null, and the functions abs floor ceiling round number, length upper lower trim substring contains startsWith endsWith replace string, date today addDays addMonths addYears daysBetween year month day weekday addWorkingDays workingDaysBetween isWorkingDay, count sum average min max filter any all (with item), coalesce isEmpty not. No loops, recursion or I/O; at most 2000 characters and 300 parts; evaluation work is bounded. The compiler type checks it (WF_EXPRESSION_INVALID). */
+                expression: string;
+                /** @description A condition written as an Orqix expression that must give true or false (docs/build/S137), for example input.endDate > addWorkingDays(input.startDate, 5). The path is taken only when it is true; false or a missing value is not taken. */
+                expressionCondition: {
+                    expression: components["schemas"]["expression"];
+                };
+                /** @description A field reference, or = followed by an Orqix expression (docs/build/S137), for example = round(input.amount * 1.2, 2). */
+                mappingSource: components["schemas"]["fieldRef"] | string;
+                /** @description Working calendar of working-day functions and today() in an expression (the S27 calendar shape; opening hours are not used by day arithmetic). Without it: Monday to Friday, UTC, no holidays. */
+                expressionCalendar: {
+                    zone: string;
+                    weekdays: number[];
+                    holidays?: components["schemas"]["calendarDate"][];
+                };
+                calculateOutput: {
+                    key: components["schemas"]["fieldKey"];
+                    expression: components["schemas"]["expression"];
+                    /**
+                     * @description Declared type of the result; the compiler checks the expression gives it (WF_CALCULATE_TYPE).
+                     * @enum {unknown}
+                     */
+                    type: "number" | "integer" | "string" | "boolean" | "date";
+                    /** @description Numbers only: decimal places the stored result is rounded to with rounding (default halfUp). integer means scale 0. */
+                    scale?: number;
+                    /**
+                     * @description Numbers only: how the result is rounded to scale. halfUp rounds .5 away from zero; halfEven to the even neighbour (banker's); down towards zero; up away from zero; floor and ceiling towards minus or plus infinity.
+                     * @enum {unknown}
+                     */
+                    rounding?: "halfUp" | "halfEven" | "down" | "up" | "floor" | "ceiling";
+                    description?: string;
+                    /** @description true when the output may have no value (null); by default an output without a value stops the request with an incident, so later steps can rely on it. */
+                    optional?: boolean;
+                };
+                calculateNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "calculate";
+                    /** @description Calculate (CG-X01, docs/build/S137): named outputs computed from request fields and earlier step results with Orqix expressions, in order; a later output may use an earlier one by name. Outputs at /steps/<id>/<key> with their declared types. Runs inside the engine, never calls out, and cannot fail except when an expression exceeds its bounded work, which stops the request with an incident. */
+                    config?: {
+                        outputs: components["schemas"]["calculateOutput"][];
+                        calendar?: components["schemas"]["expressionCalendar"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                formRule: {
+                    id: string;
+                    /** @description An Orqix expression over input.<field> that must give true or false; the rule is broken when it is false. */
+                    check: components["schemas"]["expression"];
+                    /** @description Plain text shown when the rule is broken, for example 'The end date must be after the start date.' */
+                    message: string;
+                    /** @description Fields the message is shown at (default: the request as a whole). */
+                    fields?: components["schemas"]["fieldKey"][];
+                };
                 condition: unknown;
                 /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
                 formSchema: {
@@ -13658,7 +13857,7 @@ export interface components {
                         connectionRef: components["schemas"]["key"];
                         operation: string;
                         inputMapping: {
-                            [key: string]: components["schemas"]["fieldRef"];
+                            [key: string]: components["schemas"]["mappingSource"];
                         };
                         resultMapping: {
                             [key: string]: string;
@@ -17787,6 +17986,37 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    evaluateExpression: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpressionEvaluateRequest"];
+            };
+        };
+        responses: {
+            /** @description Check and evaluation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpressionEvaluateResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };

@@ -57,7 +57,13 @@ export interface FormUi {
   visibleWhen?: Record<string, Condition>
   requiredWhen?: Record<string, Condition>
   layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
+  /** CG-F04 (S137): fields an expression computes from the other answers (read-only on the form). */
+  computed?: Record<string, string>
+  /** CG-F04 (S137): cross-field rules, broken when the check is false. */
+  rules?: FormRule[]
 }
+
+export interface FormRule { id: string; check: string; message: string; fields?: string[] }
 
 const FIELD_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'array']
 const WIDGETS: readonly string[] = ['text', 'textarea', 'number', 'money', 'select', 'radio', 'checkbox']
@@ -159,11 +165,22 @@ export function parseFormUi(raw: unknown): FormUi {
     }
     ui.layout = { sections, helpText: raw.layout.helpText === 'above' ? 'above' : 'below' }
   }
+  if (isRecord(raw.computed)) {
+    const computed: Record<string, string> = {}
+    for (const [key, value] of Object.entries(raw.computed).slice(0, 30)) if (typeof value === 'string' && value.length <= 2000) computed[key] = value
+    ui.computed = computed
+  }
+  if (Array.isArray(raw.rules)) {
+    ui.rules = raw.rules.slice(0, 20).filter(isRecord).filter(r => typeof r.id === 'string' && typeof r.check === 'string' && typeof r.message === 'string')
+      .map(r => ({ id: r.id as string, check: r.check as string, message: r.message as string,
+        ...(Array.isArray(r.fields) ? { fields: r.fields.filter((f): f is string => typeof f === 'string') } : {}) }))
+  }
   return ui
 }
 
 function parseCondition(value: unknown): Condition | undefined {
   if (!isRecord(value)) return
+  if (typeof value.expression === 'string' && value.expression.length <= 2000) return { expression: value.expression }
   const group = 'all' in value ? 'all' : 'any' in value ? 'any' : undefined
   if (group) {
     if (!Array.isArray(value[group]) || value[group].length < 2 || value[group].length > 8) return
@@ -189,6 +206,8 @@ export interface FieldDef {
   requiredWhen?: Condition
   section?: { id: string; title: string; columns: 1 | 2 }
   helpAbove?: boolean
+  /** CG-F04 (S137): the expression that computes this field; it is then read-only. */
+  computed?: string
 }
 
 /** Pick the widget: explicit hint when compatible with the type, otherwise inferred from the schema. */
@@ -231,6 +250,7 @@ export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
       requiredWhen: ui.requiredWhen?.[key],
       section: section ? { id: section.id, title: section.title, columns: section.columns ?? 1 } : undefined,
       helpAbove: ui.layout ? ui.layout.helpText === 'above' : undefined,
+      ...(ui.computed?.[key] !== undefined ? { computed: ui.computed[key] } : {}),
     }
   })
 }

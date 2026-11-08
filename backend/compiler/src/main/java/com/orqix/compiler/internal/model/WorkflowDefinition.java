@@ -81,7 +81,13 @@ public record WorkflowDefinition(
      * and {@code range} the bounds of {@code between} (docs/build/S121).
      */
     public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms,
-                            List<Literal> list, Range range) {
+                            List<Literal> list, Range range, String expression) {
+        public Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms,
+                List<Literal> list, Range range) { this(fieldRef, operator, value, group, terms, list, range, null); }
+        /** A condition written as an Orqix expression (S137). */
+        public static Condition ofExpression(String expression) { return new Condition(null, null, null, null, List.of(), List.of(), null, expression); }
+        /** @return true for a condition written as an Orqix expression (S137) */
+        public boolean isExpression() { return expression != null; }
         public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of(), List.of(), null); }
         public Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) { this(fieldRef, operator, value, group, terms, List.of(), null); }
         public boolean compound() { return group != null; }
@@ -246,9 +252,19 @@ public record WorkflowDefinition(
      * descriptions show above the control.
      */
     public record InputUi(List<String> order, Map<String, String> widgets, Map<String, Condition> visibleWhen,
-                          Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove) {
+                          Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove,
+                          Map<String, String> computed, List<FormRule> rules) {
         public InputUi(List<String> order, Map<String, String> widgets) {
             this(order, widgets, Map.of(), Map.of(), List.of(), false);
+        }
+
+        public InputUi(List<String> order, Map<String, String> widgets, Map<String, Condition> visibleWhen,
+                Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove) {
+            this(order, widgets, visibleWhen, requiredWhen, sections, helpAbove, Map.of(), List.of());
+        }
+
+        /** A cross-field rule (CG-F04, S137): broken when {@code check} is false; {@code fields} may be empty. */
+        public record FormRule(int index, String id, String check, String message, List<String> fields) {
         }
 
         /** A titled group of fields; {@code condition} may be null. */

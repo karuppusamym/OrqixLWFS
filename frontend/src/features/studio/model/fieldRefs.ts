@@ -129,6 +129,11 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       if (mode === 'summarize') return [...common, base('summary', 'string')]
       return common
     }
+    case 'calculate': {
+      // S137: each output with its declared type (integer stays a whole number).
+      const outputs = (Array.isArray(node.config.outputs) ? node.config.outputs : []) as Array<{ key?: string; type?: FieldType; description?: string }>
+      return outputs.filter(o => o.key).map(o => base(o.key as string, o.type ?? 'string', humanize(o.key as string)))
+    }
     case 'sendAdapter':
       // S73: how the adapter took the message; a database read also reports its row count.
       return node.config.kind === 'jdbc' ? [base('outcome', 'string'), base('rowCount', 'integer', 'Row count')] : [base('outcome', 'string')]

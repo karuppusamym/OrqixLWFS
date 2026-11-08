@@ -228,6 +228,29 @@ public sealed interface Node {
         }
     }
 
+    /**
+     * Calculate (CG-X01, S137): named outputs computed in order with Orqix expressions. {@code calendar} (may be null)
+     * is the working calendar of working-day functions and {@code today()}.
+     */
+    record Calculate(int index, String id, String label, java.util.List<Output> outputs,
+                     tools.jackson.databind.JsonNode calendar) implements Node {
+
+        /** One output: its declared type (number, integer, string, boolean, date) and, for numbers, rounding. */
+        public record Output(int index, String key, String expression, String type, Integer scale, String rounding,
+                             String description, boolean optional) {
+        }
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.CALCULATE;
+        }
+
+        /** @return the output with this key, or null */
+        public Output output(String key) {
+            return outputs.stream().filter(o -> o.key().equals(key)).findFirst().orElse(null);
+        }
+    }
+
     /** Notify someone. */
     record Notification(int index, String id, String label, String channel, String recipient, String message)
             implements Node {

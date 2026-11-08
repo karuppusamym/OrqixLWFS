@@ -47,6 +47,7 @@ tags:
   - name: Access
   - name: AI
   - name: AiSkills
+  - name: Expressions
   - name: Migration
   - name: Conversation
   - name: Insights
@@ -1922,6 +1923,39 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ---------------------------------------------------------------- Expressions (CG-X01, docs/build/S137)
+  /workspaces/{workspaceId}/expressions/evaluate:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Expressions]
+      operationId: evaluateExpression
+      summary: Check an Orqix expression and evaluate it with sample values (no side effects)
+      description: >-
+        The server's own engine on an expression of a Calculate step, condition, mapping or form rule, for the guided
+        editor's preview. types names the request fields (input), step results (steps) and earlier outputs (locals)
+        the expression may use, in the expression type notation; with values the result is evaluated. A problem with
+        the expression is a 200 answer with valid false (or, for an exceeded bound while evaluating, valid true and
+        problem set). Nothing is stored or audited.
+      x-orqix-permission: workflow.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpressionEvaluateRequest' }
+      responses:
+        '200':
+          description: Check and evaluation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpressionEvaluateResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---------------------------------------------------------------- end of Expressions
 
   /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv:
     parameters:
@@ -12781,6 +12815,70 @@ components:
           type: array
           description: Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied)
           items: { type: integer, minimum: 0 }
+
+    # ---------------------------------------------------------------- Expressions (CG-X01, docs/build/S137)
+    ExpressionType:
+      description: 'Expression type notation: number, integer (a number), string, boolean, date or any; {"list": T}; {"row": {column: T}}.'
+      oneOf:
+        - { type: string, enum: [number, integer, string, boolean, date, any] }
+        - type: object
+          additionalProperties: false
+          required: [list]
+          properties:
+            list: { $ref: '#/components/schemas/ExpressionType' }
+        - type: object
+          additionalProperties: false
+          required: [row]
+          properties:
+            row: { type: object, maxProperties: 30, additionalProperties: { $ref: '#/components/schemas/ExpressionType' } }
+    ExpressionEvaluateRequest:
+      type: object
+      additionalProperties: false
+      required: [expression]
+      properties:
+        expression: { type: string, minLength: 1, maxLength: 2000 }
+        types:
+          type: object
+          additionalProperties: false
+          properties:
+            input: { type: object, maxProperties: 50, additionalProperties: { $ref: '#/components/schemas/ExpressionType' } }
+            steps:
+              type: object
+              maxProperties: 50
+              additionalProperties: { type: object, maxProperties: 50, additionalProperties: { $ref: '#/components/schemas/ExpressionType' } }
+            locals: { type: object, maxProperties: 20, additionalProperties: { $ref: '#/components/schemas/ExpressionType' } }
+        values:
+          type: object
+          additionalProperties: false
+          description: Sample values; without them the expression is only checked.
+          properties:
+            input: { type: object, additionalProperties: true }
+            steps: { type: object, additionalProperties: { type: object, additionalProperties: true } }
+            locals: { type: object, additionalProperties: true }
+        calendar:
+          type: object
+          description: Working calendar of working-day functions and today() (zone, weekdays, holidays); default Monday to Friday in UTC.
+          additionalProperties: true
+        now: { type: string, format: date-time, description: 'The instant today() uses; default the server time.' }
+    ExpressionEvaluateResult:
+      type: object
+      additionalProperties: false
+      required: [valid, fieldRefs]
+      properties:
+        valid: { type: boolean }
+        type: { type: [string, 'null'], description: 'number, string, boolean, date, list, row, null or any' }
+        typeDescription: { type: [string, 'null'], description: 'Business wording, e.g. a number or a list of rows.' }
+        fieldRefs: { type: array, items: { type: string }, description: 'Request fields and step results used, as field references.' }
+        value: { description: 'The result as JSON (numbers exact, dates YYYY-MM-DD); absent without values.' }
+        problem:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [code, message, position]
+          properties:
+            code: { type: string, description: 'EXPR_SYNTAX, EXPR_TOO_COMPLEX, EXPR_UNKNOWN_FIELD, EXPR_UNKNOWN_FUNCTION, EXPR_ARGUMENTS, EXPR_TYPE, EXPR_COST_LIMIT, EXPR_NUMBER_RANGE, EXPR_TEXT_LIMIT or EXPR_LIST_LIMIT' }
+            message: { type: string }
+            position: { type: integer, minimum: 0, description: Zero-based offset of the part the problem is about. }
+    # ---------------------------------------------------------------- end of Expressions
 
     WorkflowTestCase:
       type: object

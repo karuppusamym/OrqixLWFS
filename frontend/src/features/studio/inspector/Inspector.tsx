@@ -24,6 +24,7 @@ import { CompensateInspector, RaiseErrorInspector, SignalInspector } from './Sco
 import { CommitInput, CommitTextarea } from './controls'
 import { SendBackFields } from './SendBackFields'
 import { ReminderFields, TimeoutCalendarField, WaitForFirstInspector, WorkingTimeFields } from './WaitsAndStartsFields'
+import { SaveAsTemplate } from '../WorkspaceTemplates'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
 export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => void }) {
@@ -69,7 +70,7 @@ export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => 
 function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode: (nodeId: string) => void }) {
   const def = useStudio((s) => s.definition)
   const issues = useStudio((s) => s.issues)
-  const { store, readOnly } = useStudioContext()
+  const { store, readOnly, wsId } = useStudioContext()
   const node = nodeById(def, nodeId)
   const mine = useMemo(() => (node ? issues.filter((i) => locateIssue(def, i).nodeId === node.id) : []), [def, issues, node])
   if (!node) return null
@@ -142,6 +143,8 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
           return next
         })} />}
       </FormField>
+
+      {!readOnly && node.type !== 'start' && node.type !== 'end' ? <SaveAsTemplate ws={wsId} node={node} /> : null}
 
       {node.type !== 'start' && !readOnly ? (
         <div className="border-t border-border pt-4">

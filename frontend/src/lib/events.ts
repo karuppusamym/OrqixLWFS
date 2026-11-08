@@ -211,6 +211,24 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${actorName(event, ctx)} picked up ${label}`
     case 'TASK_DISPATCHED':
       return `${str(event.data.assignee) ?? 'Someone'} was assigned ${label}${str(event.data.rule) ? `: ${str(event.data.rule)}` : ''}`
+    case 'TASK_ESCALATED': {
+      // CG-T04 (S141): one level of the step's escalation policy; the due date is not changed.
+      const level = Number(event.data.level ?? 0)
+      const hours = Number(event.data.afterHours ?? 0)
+      const waited = `${hours} ${event.data.workingTime ? 'working ' : ''}hour${hours === 1 ? '' : 's'}`
+      const group = groupName(str(event.data.group), ctx)
+      const count = Number(event.data.recipients ?? 0)
+      const people = `${count} ${count === 1 ? 'person' : 'people'}`
+      switch (str(event.data.outcome)) {
+        case 'notified': return `Escalation level ${level}: after ${waited}, ${people} in ${group} were told about ${label}`
+        case 'reassigned': return `Escalation level ${level}: after ${waited}, ${label} moved to ${group}`
+        case 'alerted': return `Escalation level ${level}: after ${waited}, operators were alerted about ${label} (${people})`
+        case 'noEligiblePerson': return `Escalation level ${level}: ${label} stayed in its queue because nobody in ${group} may decide it`
+        case 'noRecipients': return `Escalation level ${level}: nobody in ${group} could be told about ${label}`
+        case 'noOperators': return `Escalation level ${level}: no operator could be alerted about ${label}`
+        default: return `Escalation level ${level} for ${label} did not act (${str(event.data.outcome) ?? 'unknown'})`
+      }
+    }
     case 'TASK_PROPOSED_UNAVAILABLE': {
       // S104: the person named on the request item cannot decide it; the email is never in the event.
       const item = str(event.data.itemLabel)

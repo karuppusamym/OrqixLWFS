@@ -101,6 +101,8 @@ export const routes: RouteObject[] = [
   },
   // CG-F05 (docs/build/S140): the guest response page; no sign-in, the link token is in the URL fragment.
   { path: '/guest/:workspaceId', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/guest/GuestResponsePage')).GuestResponsePage }) },
+  // S141 (CG-T01): the signed action link of an actionable task email; no workspace shell and no sign-in.
+  { path: '/act/:token', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/tasks/TaskActionLinkPage')).TaskActionLinkPage }) },
   { path: '/forbidden', element: <ForbiddenPage />, errorElement: <RouteErrorPage /> },
   { path: '/not-found', element: <NotFoundPage /> },
   { path: '*', element: <NotFoundPage /> },

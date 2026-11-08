@@ -30,7 +30,9 @@ public class NotificationService {
         /** PL02a: the recipient's promotion request was approved or rejected (points at the source workflow). */
         PROMOTION_DECISION("promotionDecision"),
         /** CG-M01 (docs/build/S135): a pinned MCP tool changed or disappeared and is refused. */
-        AGENT_TOOL_CHANGED("agentToolChanged");
+        AGENT_TOOL_CHANGED("agentToolChanged"),
+        /** CG-T04 (docs/build/S141): a level of an approval's escalation policy told the recipient about a waiting task. */
+        TASK_ESCALATED("taskEscalated");
 
         private final String value;
 

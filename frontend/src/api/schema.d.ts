@@ -6098,6 +6098,254 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/task-actions/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Actionable task settings of this workspace (CG-T01, S141)
+         * @description Whether new approval tasks send actionable messages (email with a signed link, Teams and Slack cards), how
+         *     long a link is valid, and the channels. Off until switched on (version 0 means never saved). Delivery goes to
+         *     the local stub transports in this build.
+         */
+        get: operations["getTaskActionSettings"];
+        /**
+         * Switch actionable tasks on or off and set the channels (S141)
+         * @description Replaces the channel list. Email needs a sender and 1-20 exact recipient domains (no wildcards; checked again
+         *     at every send). Teams and Slack need only the reference of the secret that signs their interactions (Teams
+         *     outgoing-webhook HMAC key, Slack signing secret); never a secret value. `expectedVersion` is 0 for the first save.
+         */
+        put: operations["updateTaskActionSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/task-actions/identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Teams and Slack users mapped to Orqix people (S141) */
+        get: operations["listChatIdentities"];
+        /**
+         * Map a Teams (AAD object id) or Slack user to an Orqix person (S141)
+         * @description One platform user per person and one person per platform user; a new mapping replaces both old ones.
+         */
+        put: operations["linkChatIdentity"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/task-actions/identities/{platform}/{platformUserId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                platform: "teams" | "slack";
+                platformUserId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a chat identity mapping (S141) */
+        delete: operations["unlinkChatIdentity"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/task-actions/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Latest actionable messages, newest first (S141)
+         * @description Who, which channel, why, and whether it was sent or skipped (with the reason code). Never content.
+         */
+        get: operations["listTaskActionMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/task-actions/slack/interactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack interactivity request URL (no session or token; Slack signature)
+         * @description Authenticated by `X-Slack-Signature: v0=<hex HMAC-SHA256(signing secret, "v0:" + timestamp + ":" + rawBody)>`
+         *     with `X-Slack-Request-Timestamp` within 5 minutes. The Slack user must be mapped to an Orqix person; the press
+         *     then runs as that person through the task service (claim at once; approve or reject first answers with a
+         *     5-minute confirmation, which the person's Confirm press executes once). The answer is a Slack message.
+         */
+        post: operations["receiveSlackInteraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/task-actions/teams/interactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Teams outgoing-webhook URL for card submits (no session or token; Teams HMAC)
+         * @description Authenticated by `Authorization: HMAC <base64 HMAC-SHA256(base64-decoded secret, rawBody)>`. The activity's
+         *     `from.aadObjectId` must be mapped to an Orqix person; `value` carries `orqixAction` (claim, approve, reject,
+         *     confirm, cancel), `taskId`, `version`, `confirmationId` and `reason`. Same rules as Slack.
+         */
+        post: operations["receiveTeamsInteraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/task-action-links/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * The confirmation page of a signed action link (no session; the link is the credential)
+         * @description A link is signed, expires (workspace setting, at most 7 days) and is bound to one task and one person. It shows
+         *     the task's label, workflow, request reference and due date and what the person may do now; never request
+         *     values. Unknown, tampered, expired or revoked links and tasks the person can no longer see are 404.
+         */
+        get: operations["getTaskActionLink"];
+        put?: never;
+        /**
+         * Execute the confirmed action of a signed link as its person
+         * @description `confirm` must be true. Runs through the task service as the person (claiming first when the task waits in
+         *     their queue), so eligibility, separation of duties, self-approval, versions and idempotency are those of the
+         *     task API. A link decides at most once; posting the same decision again replays it.
+         */
+        post: operations["useTaskActionLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/step-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Workspace step templates, own and shared from the organization (CG-S03, S141)
+         * @description Latest versions of this workspace's templates and the active templates other workspaces of the organization
+         *     share. `q` matches name, description, step type and operation (for example the connection and operation of a
+         *     Call a system step).
+         */
+        get: operations["listStepTemplates"];
+        put?: never;
+        /**
+         * Save a configured step as a template (S141)
+         * @description Keeps the step's type, label, description and config (no id, position or routes), checked against the
+         *     workflow schema. References are checked where the template is used. Start and end steps are refused.
+         */
+        post: operations["createStepTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/step-templates/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                key: string;
+            };
+            cookie?: never;
+        };
+        /** One of this workspace's templates with its version history (S141) */
+        get: operations["getStepTemplate"];
+        /** Rename, share or archive a template (S141) */
+        put: operations["updateStepTemplate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/step-templates/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                key: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a new immutable version of a template (S141)
+         * @description The step type stays the same. Earlier versions are kept; readers get the latest.
+         */
+        post: operations["addStepTemplateVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/mcp-server": {
         parameters: {
             query?: never;
@@ -9674,6 +9922,183 @@ export interface components {
         WorkspaceFeatures: {
             items: components["schemas"]["WorkspaceFeatureState"][];
         };
+        TaskActionChannel: {
+            /** @enum {string} */
+            channel: "email" | "teams" | "slack";
+            enabled: boolean;
+            /** @description email: sender, recipientDomains; teams and slack: empty */
+            config: {
+                [key: string]: unknown;
+            };
+            /** @description teams and slack: the secret that signs interactions */
+            secretRef?: string | null;
+        };
+        TaskActionSettings: {
+            enabled: boolean;
+            linkHours: number;
+            /** @description 0 until first saved */
+            version: number;
+            channels: components["schemas"]["TaskActionChannel"][];
+            updatedBy?: components["schemas"]["SubjectRef"] | null;
+            updatedAt?: components["schemas"]["Timestamp"] | null;
+        };
+        UpdateTaskActionSettings: {
+            enabled: boolean;
+            linkHours: number;
+            expectedVersion: number;
+            channels: {
+                /** @enum {string} */
+                channel: "email" | "teams" | "slack";
+                enabled: boolean;
+                config?: {
+                    [key: string]: unknown;
+                };
+                secretRef?: string | null;
+            }[];
+        };
+        ChatIdentity: {
+            /** @enum {string} */
+            platform: "teams" | "slack";
+            platformUserId: string;
+            person: components["schemas"]["SubjectRef"];
+            linkedBy: components["schemas"]["SubjectRef"];
+            linkedAt: components["schemas"]["Timestamp"];
+        };
+        ChatIdentityList: {
+            items: components["schemas"]["ChatIdentity"][];
+        };
+        LinkChatIdentity: {
+            /** @enum {string} */
+            platform: "teams" | "slack";
+            platformUserId: string;
+            subjectId: components["schemas"]["Uuid"];
+        };
+        TaskActionMessage: {
+            id: components["schemas"]["Uuid"];
+            taskId: string;
+            person: components["schemas"]["SubjectRef"];
+            /** @enum {string} */
+            channel: "email" | "teams" | "slack";
+            /** @description created, or escalated-<level> after an escalation moved the task */
+            reason: string;
+            /** @enum {string} */
+            status: "queued" | "sent" | "skipped";
+            /** @description TASK_NOT_OPEN, TASK_ALREADY_CLAIMED, NOT_ELIGIBLE, CHANNEL_OFF, RECIPIENT_NOT_ALLOWED or NO_CHAT_IDENTITY */
+            skipCode?: string | null;
+            createdAt: components["schemas"]["Timestamp"];
+            sentAt?: components["schemas"]["Timestamp"] | null;
+        };
+        TaskActionMessageList: {
+            items: components["schemas"]["TaskActionMessage"][];
+        };
+        /** @description Slack: response_type, replace_original, text, blocks. Teams: type, text, attachments (Adaptive Card). */
+        ChatInteractionReply: {
+            text?: string;
+        };
+        TaskActionLink: {
+            workspaceId: components["schemas"]["Uuid"];
+            taskId: string;
+            label: string;
+            workflowName?: string | null;
+            runReference: string;
+            status: string;
+            dueAt?: components["schemas"]["Timestamp"] | null;
+            version: number;
+            person: components["schemas"]["SubjectRef"];
+            /** @enum {string} */
+            channel: "email" | "teams" | "slack";
+            expiresAt: components["schemas"]["Timestamp"];
+            rejectReasonRequired: boolean;
+            actions: {
+                claim: components["schemas"]["ActionAvailability"];
+                approve: components["schemas"]["ActionAvailability"];
+                reject: components["schemas"]["ActionAvailability"];
+            };
+        };
+        UseTaskActionLink: {
+            /** @enum {string} */
+            action: "claim" | "approve" | "reject";
+            expectedVersion: number;
+            reason?: string | null;
+            comment?: string | null;
+            /** @description Must be true: the person confirmed on the link page */
+            confirm: boolean;
+        };
+        TaskActionResult: {
+            /** @enum {string} */
+            action: "claim" | "approve" | "reject";
+            /** @enum {string} */
+            outcome: "done" | "replayed";
+            taskId: string;
+            taskStatus: string;
+            version: number;
+            /** @enum {string|null} */
+            decision?: "approved" | "rejected" | null;
+        };
+        StepTemplate: {
+            id: components["schemas"]["Uuid"];
+            workspaceId: components["schemas"]["Uuid"];
+            workspaceKey: string;
+            key: string;
+            name: string;
+            description?: string | null;
+            stepType: string;
+            /** @description What the step does, for palette search (connection, operation, topic, adapter, decision, group) */
+            operation?: string | null;
+            /** @description Offered to the organization's other workspaces */
+            shared: boolean;
+            /** @description false for a template another workspace shares (read-only here) */
+            own: boolean;
+            /** @enum {string} */
+            status: "active" | "archived";
+            latestVersion: number;
+            /** @description type, label, optional description and config of the step */
+            step: {
+                [key: string]: unknown;
+            };
+            sha256: string;
+            updatedBy?: components["schemas"]["SubjectRef"] | null;
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        StepTemplateList: {
+            items: components["schemas"]["StepTemplate"][];
+        };
+        StepTemplateDetail: {
+            template: components["schemas"]["StepTemplate"];
+            versions: {
+                version: number;
+                sha256: string;
+                note?: string | null;
+                createdBy?: components["schemas"]["SubjectRef"] | null;
+                createdAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        CreateStepTemplate: {
+            key: string;
+            name: string;
+            description?: string | null;
+            /** @default false */
+            shared: boolean;
+            step: {
+                [key: string]: unknown;
+            };
+            note?: string | null;
+        };
+        AddStepTemplateVersion: {
+            expectedVersion: number;
+            step: {
+                [key: string]: unknown;
+            };
+            note?: string | null;
+        };
+        UpdateStepTemplate: {
+            expectedVersion: number;
+            name: string;
+            description?: string | null;
+            shared: boolean;
+            /** @enum {string} */
+            status: "active" | "archived";
+        };
         McpServer: {
             /** @description false until a workspace administrator switches it on */
             enabled: boolean;
@@ -11683,10 +12108,10 @@ export interface components {
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
             /**
-             * @description agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
+             * @description taskEscalated: a level of an approval escalation policy (S141) told you about a waiting task; agentToolChanged: a pinned MCP tool changed or disappeared and agents no longer use it (S135); promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
              * @enum {string}
              */
-            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision" | "agentToolChanged";
+            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision" | "agentToolChanged" | "taskEscalated";
             /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
@@ -13880,6 +14305,15 @@ export interface components {
                     /** @enum {unknown} */
                     policy: "leastLoaded" | "roundRobin";
                 };
+                /** @description CG-T04 (S141): escalation levels counted from task creation, in working hours of the step's calendar when it has one, otherwise elapsed hours. notify tells the eligible members of a group, reassign moves the task to a group's queue, alertOperators tells the workspace's operators. The due date (SLA) is not changed. */
+                escalationPolicy?: {
+                    levels: {
+                        afterHours: number;
+                        /** @enum {unknown} */
+                        action: "notify" | "reassign" | "alertOperators";
+                        groupRef?: components["schemas"]["key"];
+                    }[];
+                };
                 /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
                 escalation?: {
                     intervalHours: number;
@@ -14751,6 +15185,15 @@ export interface components {
                         dispatch?: {
                             /** @enum {unknown} */
                             policy: "leastLoaded" | "roundRobin";
+                        };
+                        /** @description CG-T04 (S141): escalation levels counted from task creation, in working hours of the step's calendar when it has one, otherwise elapsed hours. notify tells the eligible members of a group, reassign moves the task to a group's queue, alertOperators tells the workspace's operators. The due date (SLA) is not changed. */
+                        escalationPolicy?: {
+                            levels: {
+                                afterHours: number;
+                                /** @enum {unknown} */
+                                action: "notify" | "reassign" | "alertOperators";
+                                groupRef?: components["schemas"]["key"];
+                            }[];
                         };
                         /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
                         escalation?: {
@@ -26341,6 +26784,445 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getTaskActionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActionSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateTaskActionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskActionSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActionSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listChatIdentities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mappings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatIdentityList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    linkChatIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkChatIdentity"];
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatIdentity"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    unlinkChatIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                platform: "teams" | "slack";
+                platformUserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTaskActionMessages: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The messages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActionMessageList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    receiveSlackInteraction: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Slack-Request-Timestamp": string;
+                "X-Slack-Signature": string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    /** @description Block Kit interaction payload (JSON) */
+                    payload?: string;
+                };
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The message shown to the person (ephemeral) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatInteractionReply"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    receiveTeamsInteraction: {
+        parameters: {
+            query?: never;
+            header: {
+                Authorization: string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The reply activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatInteractionReply"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getTaskActionLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the person may do */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActionLink"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    useTaskActionLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseTaskActionLink"];
+            };
+        };
+        responses: {
+            /** @description Done or replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskActionResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listStepTemplates: {
+        parameters: {
+            query?: {
+                q?: string;
+                includeArchived?: boolean;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepTemplateList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createStepTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStepTemplate"];
+            };
+        };
+        responses: {
+            /** @description Created as version 1 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getStepTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The template */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepTemplateDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateStepTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStepTemplate"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    addStepTemplateVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddStepTemplateVersion"];
+            };
+        };
+        responses: {
+            /** @description The new version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getMcpServer: {

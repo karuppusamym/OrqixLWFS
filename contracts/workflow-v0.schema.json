@@ -1449,6 +1449,46 @@
                 }
               }
             },
+            "escalationPolicy": {
+              "description": "CG-T04 (S141): escalation levels counted from task creation, in working hours of the step's calendar when it has one, otherwise elapsed hours. notify tells the eligible members of a group, reassign moves the task to a group's queue, alertOperators tells the workspace's operators. The due date (SLA) is not changed.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "levels"
+              ],
+              "properties": {
+                "levels": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "afterHours",
+                      "action"
+                    ],
+                    "properties": {
+                      "afterHours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2160
+                      },
+                      "action": {
+                        "enum": [
+                          "notify",
+                          "reassign",
+                          "alertOperators"
+                        ]
+                      },
+                      "groupRef": {
+                        "$ref": "#/$defs/key"
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "escalation": {
               "description": "Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment.",
               "type": "object",

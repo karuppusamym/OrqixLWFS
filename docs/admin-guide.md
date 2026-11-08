@@ -383,3 +383,14 @@ A worker can end a job with a business error: `POST /workspaces/{id}/external-jo
 People can use Orqix from an AI assistant that supports the Model Context Protocol (Claude, VS Code and other MCP hosts) once a workspace administrator (`workspace.manage-access`) switches it on in **Settings → AI assistants** ([S136](build/S136-orqix-mcp-server.md)). It is off in every workspace until then. The panel shows the server address to give the assistant (`https://<orqix>/mcp`) and the sign-in metadata URL; the assistant signs the person in through the identity provider (authorization code with PKCE) and receives a token for the Orqix MCP resource (audience `orqix-mcp` or the `/mcp` address). The assistant can then do only what the person can do in Orqix: list the workflows they may start, find requests and tasks, explain where a request is, and prepare a start, a task decision or a message. Nothing is changed until the person confirms the summary (in the assistant's own confirmation dialog, or by telling the assistant to confirm within 5 minutes). Only workflows marked **Offer to AI assistants** in Studio (workflow settings) can be started this way, and not if their form needs a file. Every call is audited (`mcp.tool-called`: tool, step, outcome and IDs, never values) and listed under **Recent calls**; each person may make 60 calls a minute. Switching off cuts assistants off at once and lapses pending confirmations.
 
 **Identity provider.** Register a client for the assistant host (public, authorization code with PKCE S256), map the audience `orqix-mcp` into its access tokens and include the groups claim, as for the browser client. The local Keycloak realm has this as `orqix-mcp-client`. Server settings: `ORQIX_MCP_RESOURCE_URI` (the public `/mcp` address behind a proxy), `ORQIX_MCP_AUDIENCES`, `ORQIX_MCP_ISSUER` and `ORQIX_MCP_JWK_SET_URI` (default: the API's issuer and keys), `ORQIX_MCP_ALLOWED_ORIGINS` (browser origins allowed to call `/mcp`).
+
+## Actionable tasks in email, Teams and Slack - 6 November 2026
+
+Settings → Actionable tasks (`workspace.manage-access`) switches on messages for new approval tasks. Off until
+switched on. Email needs a sender and exact recipient domains (people outside them get no email); Teams and Slack need
+only the reference of the secret that signs their interactions (Teams outgoing-webhook HMAC key, Slack signing
+secret). Link Teams (AAD object id) and Slack (member id) accounts to Orqix people under Linked chat accounts: a press
+from an unlinked account does nothing. Point Slack interactivity at `/api/v1/workspaces/<id>/task-actions/slack/interactions`
+and the Teams outgoing webhook at `/api/v1/workspaces/<id>/task-actions/teams/interactions`. Recent messages show
+who was sent what channel, or why nothing was sent. In this build messages go to local stubs only; live mail servers
+and tenants are an external step. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).

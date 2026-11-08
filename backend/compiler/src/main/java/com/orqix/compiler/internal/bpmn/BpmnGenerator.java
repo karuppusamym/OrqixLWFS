@@ -298,6 +298,7 @@ public final class BpmnGenerator {
                 if (!a.requiredSkills().isEmpty()) x.attr("requiredSkills", String.join(",", a.requiredSkills()));
                 if (a.calendar() != null) x.attr("calendar", a.calendar().toString());
                 if (a.escalation() != null) x.attr("escalation", a.escalation().toString());
+                if (a.escalationPolicy() != null) x.attr("escalationPolicy", a.escalationPolicy().toString());
                 if (a.listDriven()) {
                     x.leaf("orqix", "perItem", ORQIX_NS).attr("itemsRef", a.perItem().itemsRef());
                     if (a.perItem().itemLabel() != null) x.attr("itemLabel", a.perItem().itemLabel());

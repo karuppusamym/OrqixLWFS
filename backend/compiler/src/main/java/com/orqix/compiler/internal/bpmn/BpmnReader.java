@@ -590,6 +590,7 @@ public final class BpmnReader {
         }
         jsonAttribute(id, a, "calendar", config);
         jsonAttribute(id, a, "escalation", config);
+        jsonAttribute(id, a, "escalationPolicy", config);
         El loop = el.child(BPMN_NS, "multiInstanceLoopCharacteristics");
         El perItem = ext == null ? null : ext.child(ORQIX_NS, "perItem");
         if (perItem != null) {

@@ -197,7 +197,8 @@ public final class ModelReader {
                             c.get("perItem").path("quorum").isIntegralNumber() ? c.get("perItem").get("quorum").intValue() : null,
                             c.get("perItem").has("assigneeFrom") ? c.get("perItem").get("assigneeFrom").stringValue() : null) : null,
                     c.has("fieldAccess") ? stringMap(c.get("fieldAccess")) : Map.of(),
-                    c.has("capture") ? readForm("/nodes/" + index + "/config/capture", c.get("capture")) : null);
+                    c.has("capture") ? readForm("/nodes/" + index + "/config/capture", c.get("capture")) : null,
+                    c.get("escalationPolicy"));
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),

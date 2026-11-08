@@ -120,9 +120,18 @@ export function userById(id: string): MockUser | undefined {
 /** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S74). */
 export const promotionApprovers = new Set<string>()
 
+/**
+ * Grant-only AI permissions of the demo personas (S134; S146 part D): Dana designs and runs evaluations, Paul approves
+ * skill versions and promotions (never his own), so the four-eyes flow of the AI skills Studio works in mock mode.
+ */
+const AI_GRANTS: Record<string, Permission[]> = {
+  'dana.designer': ['ai.evaluate'],
+  'paul.publisher': ['ai.approve-skill'],
+}
+
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(roles.length > 0 ? AI_GRANTS[user.username] ?? [] : []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {

@@ -36,6 +36,11 @@ export const routes: RouteObject[] = [
           { path: 'cases/:instanceId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDetailPage')).CaseDetailPage }) },
           { path: 'case-designs', lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignsPage')).CaseDesignsPage }) },
           { path: 'case-designs/:draftId', handle: { fullBleed: true }, lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignerPage')).CaseDesignerPage }) },
+          // S146 part D: the AI skills Studio over the S134 AiSkills API.
+          { path: 'ai-skills', lazy: async () => ({ Component: (await import('@/features/aiskills/AiSkillsPage')).AiSkillsPage }) },
+          { path: 'ai-skills/:skillKey', lazy: async () => ({ Component: (await import('@/features/aiskills/AiSkillDetailPage')).AiSkillDetailPage }) },
+          { path: 'ai-review', lazy: async () => ({ Component: (await import('@/features/aiskills/AiReviewPage')).AiReviewPage }) },
+          { path: 'ai-policy', lazy: async () => ({ Component: (await import('@/features/aiskills/AiPolicyPage')).AiPolicyPage }) },
           { path: 'decisions', lazy: async () => ({ Component: (await import('@/features/decisions/DecisionsPage')).DecisionsPage }) },
           { path: 'views', lazy: async () => ({ Component: (await import('@/features/views/ViewLibraryPage')).ViewLibraryPage }) },
           { path: 'views/:viewId', lazy: async () => ({ Component: (await import('@/features/views/ViewEditorPage')).ViewEditorPage }) },

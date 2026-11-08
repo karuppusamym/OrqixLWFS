@@ -35,13 +35,13 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     signInAs('olga.operator')
     const first = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows', 'Decisions', 'Views', 'Runs', 'Insights', 'Agents', 'Agent writes', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows', 'Decisions', 'AI skills', 'Views', 'Runs', 'Insights', 'AI review', 'Agents', 'Agent writes', 'Settings'])
     first.unmount()
 
     signInAs('wade.admin')
     const second = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Apps', 'Assistant', 'Agents', 'Promotions', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Apps', 'Assistant', 'Agents', 'Promotions', 'AI policy', 'Settings'])
     second.unmount()
 
     signInAs('otto.outsider')

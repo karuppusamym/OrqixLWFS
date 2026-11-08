@@ -1,4 +1,4 @@
-import { Activity, AppWindow, BarChart3, Bot, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Table2, Workflow, X } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bot, BrainCircuit, ClipboardCheck, ShieldCheck, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Table2, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -85,6 +85,10 @@ export function Shell() {
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },
     { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: isOn('cases') && can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
     { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: isOn('apps') },
+    // S146 part D: AI skills (authoring, approval, evaluation), the AI review queue and the workspace AI policy.
+    { to: `${base}/ai-skills`, label: 'AI skills', icon: BrainCircuit, visible: can('workflow.read', 'ai.evaluate', 'ai.approve-skill') },
+    { to: `${base}/ai-review`, label: 'AI review', icon: ClipboardCheck, visible: can('ai.evaluate', 'run.operate') },
+    { to: `${base}/ai-policy`, label: 'AI policy', icon: ShieldCheck, visible: can('workspace.manage-access', 'ai.approve-skill', 'ai.evaluate') },
     { to: `${base}/views`, label: 'Views', icon: PanelsTopLeft, visible: can('workflow.read') },
     { to: `${base}/insights`, label: 'Insights', icon: BarChart3, visible: can('run.read') },
     // S135: durable agents, tool servers, kill switches, trace, tests and the agents' questions for people.
@@ -96,9 +100,9 @@ export function Shell() {
 
   const navigationGroups = [
     { label: 'My workspace', labels: ['Home', 'My tasks', 'My requests', 'Cases', 'Apps', 'Assistant', ...(!can('workflow.edit') ? ['Workflows'] : [])] },
-    { label: 'Design', labels: [...(can('workflow.edit') ? ['Workflows'] : []), 'Case types', 'Decisions', 'Views'] },
-    { label: 'Operate', labels: ['Runs', 'Insights', 'Agents', 'Agent writes'] },
-    { label: 'Manage', labels: ['Promotions', 'Settings'] },
+    { label: 'Design', labels: [...(can('workflow.edit') ? ['Workflows'] : []), 'Case types', 'Decisions', 'AI skills', 'Views'] },
+    { label: 'Operate', labels: ['Runs', 'Insights', 'AI review', 'Agents', 'Agent writes'] },
+    { label: 'Manage', labels: ['Promotions', 'AI policy', 'Settings'] },
   ].map(group => ({ ...group, items: group.labels.flatMap(label => items.filter(item => item.visible && item.label === label)) })).filter(group => group.items.length > 0)
 
   const navVisible = rail || navOpen

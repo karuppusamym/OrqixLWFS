@@ -56,7 +56,7 @@ class RunFactsTest {
     }
 
     private static RunFacts.Input stuck(Set<Permission> perms, boolean dataVisible, List<RuntimeDtos.Effect> effects) {
-        var attention = new RuntimeDtos.Attention("EFFECT_REJECTED", "ticket", EFFECT, SECRET_VALUE, FAILED);
+        var attention = new RuntimeDtos.Attention("EFFECT_REJECTED", "ticket", EFFECT, SECRET_VALUE, FAILED, null);
         var events = List.of(
                 new RunFacts.Event(5, "EFFECT_FAILED", "ticket", FAILED, JSON.readTree(
                         "{\"errorCode\":\"HTTP_403\",\"httpStatus\":403,\"attempt\":1,\"detail\":\"" + SECRET_VALUE + "\"}")),

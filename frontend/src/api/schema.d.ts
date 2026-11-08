@@ -4295,6 +4295,208 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/migration-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry run of moving a request to another release with a step mapping
+         * @description Computes the per-request plan (which waiting step continues as which step, which finished step's data is copied under a new id) and every reason the move would be refused. Changes nothing. Without mappings, steps keep their ids and `suggestedMappings` proposes pairs for steps the target release no longer has.
+         */
+        post: operations["planRunMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a request to another release of its workflow with explicit step mappings
+         * @description Extends migrateRun (docs/build/S143). The request must be suspended, or wait only for running child requests. Waiting steps keep their kind and settings (an approval may continue under another id); the history may differ when every step ahead still finds its data. Refused with 409 RUN_NOT_MIGRATABLE and `findings`.
+         */
+        post: operations["migrateRunWithMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migration-batches/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry run of a batch migration with one step mapping
+         * @description The plan of each listed request, or of the newest 100 active top-level requests on the source release when `runIds` is omitted (`truncated` says whether more exist). Changes nothing.
+         */
+        post: operations["previewMigrationBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migration-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move the listed requests to another release with one step mapping
+         * @description At most 100 requests; `expectedCount` must equal the number listed. Each request is moved by itself (its own transaction, checks, audit and timeline entry) and keeps its own result. With `suspendDuring` a running request is suspended for the move and resumed afterwards.
+         */
+        post: operations["createMigrationBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migration-batches/{batchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                batchId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** A migration batch with the result of each request */
+        get: operations["getMigrationBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/move-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry run of moving a request to another step of its release
+         * @description Classifies the move (move, skip or rerun), lists the steps it passes over or runs again (calls recorded in the effect journal reuse their result) and every reason it would be refused. Says whether a second operator must approve. Changes nothing.
+         */
+        post: operations["planRunMove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/moves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Moves of a request (newest first, at most 50) */
+        get: operations["listRunMoves"];
+        put?: never;
+        /**
+         * Move, skip or re-run a step of a request
+         * @description Refused with 409 RUN_NOT_MOVABLE and `findings` when the plan does not allow it. In a production or regulated workspace the move waits for a second operator (`state` pendingApproval); otherwise it runs at once (`state` executed).
+         */
+        post: operations["moveRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                moveId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a move as the second operator
+         * @description Another operator than the requester (403 MOVE_SAME_OPERATOR). The move is planned again under the run lock; when the request changed since it was planned, or the move waited more than 24 hours, the answer is the move with `state` stale or expired and nothing runs.
+         */
+        post: operations["approveRunMove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                moveId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a move that waits for approval (withdraw it when you requested it) */
+        post: operations["rejectRunMove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/external-jobs/fetch-and-lock": {
         parameters: {
             query?: never;
@@ -10070,7 +10272,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "BULK_COUNT_MISMATCH" | "BULK_PREVIEW_EXPIRED" | "BULK_OPERATION_STATE_CONFLICT" | "BULK_LIMIT_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "RUN_NOT_MOVABLE" | "MOVE_NOT_PENDING" | "MOVE_SAME_OPERATOR" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "BULK_COUNT_MISMATCH" | "BULK_PREVIEW_EXPIRED" | "BULK_OPERATION_STATE_CONFLICT" | "BULK_LIMIT_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -12310,7 +12512,7 @@ export interface components {
         };
         MigrationFinding: {
             /** @enum {string} */
-            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "MULTI_INSTANCE" | "PER_ITEM" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "SUBPROCESSES" | "INPUT_INVALID";
+            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "MULTI_INSTANCE" | "PER_ITEM" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "SUBPROCESSES" | "INPUT_INVALID" | "POLL_CHANGED" | "LOOP_CHANGED" | "TIER1_PINNED_RELEASE" | "MAPPING_INVALID" | "MAPPING_MERGE" | "RENAME_UNSUPPORTED" | "EFFECT_IN_FLIGHT" | "LOOP_IN_PROGRESS" | "INCLUSIVE_REGION" | "JOIN_UNREACHABLE" | "DATA_MISSING" | "SAME_RELEASE" | "NOT_ON_RELEASE" | "NOT_VISIBLE" | "RUN_ENDED" | "RUN_SUSPENDED" | "CHILD_RUNNING" | "FROM_NOT_CURRENT" | "MOVE_FROM_KIND" | "MOVE_TARGET_KIND" | "MOVE_KIND_MISMATCH" | "EFFECT_WOULD_REPEAT";
             message: string;
             nodeId?: string | null;
         };
@@ -12333,6 +12535,182 @@ export interface components {
             ready: boolean;
             notReadyReason?: string | null;
             options: components["schemas"]["MigrationOption"][];
+        };
+        /** @description The request at (or the data of) step `from` of the current release continues as step `to` of the target. */
+        StepMapping: {
+            from: string;
+            to: string;
+        };
+        MigrationPlanRequest: {
+            targetReleaseId: components["schemas"]["Uuid"];
+            mappings?: components["schemas"]["StepMapping"][];
+        };
+        MigrationPlanStep: {
+            from: string;
+            to: string;
+            kind: string;
+            /** @enum {string} */
+            action: "keep" | "rename";
+            label: string;
+        };
+        MigrationDataCopy: {
+            from: string;
+            to: string;
+        };
+        MigrationPlan: {
+            runId: components["schemas"]["Uuid"];
+            reference?: string | null;
+            current: components["schemas"]["MigrationReleaseRef"];
+            target: components["schemas"]["MigrationReleaseRef"];
+            /** @description Nothing can change the request now (it is suspended or held by its child requests). */
+            ready: boolean;
+            notReadyReason?: string | null;
+            /** @enum {string|null} */
+            hold?: "suspended" | "childRequests" | "suspendDuring" | null;
+            /** @description Ready and no finding. */
+            allowed: boolean;
+            runVersion: number;
+            steps: components["schemas"]["MigrationPlanStep"][];
+            dataCopies: components["schemas"]["MigrationDataCopy"][];
+            findings: components["schemas"]["MigrationFinding"][];
+            suggestedMappings: components["schemas"]["StepMapping"][];
+        };
+        MigrationReleaseRef: {
+            id: components["schemas"]["Uuid"];
+            releaseNumber: number;
+        };
+        MappedMigrationRequest: {
+            targetReleaseId: components["schemas"]["Uuid"];
+            mappings?: components["schemas"]["StepMapping"][];
+            reason: string;
+            expectedVersion: number;
+        };
+        MigrationBatchPreviewRequest: {
+            sourceReleaseId: components["schemas"]["Uuid"];
+            targetReleaseId: components["schemas"]["Uuid"];
+            mappings?: components["schemas"]["StepMapping"][];
+            runIds?: components["schemas"]["Uuid"][];
+            suspendDuring?: boolean;
+        };
+        MigrationBatchPreview: {
+            source: components["schemas"]["MigrationReleaseRef"];
+            target: components["schemas"]["MigrationReleaseRef"];
+            total: number;
+            allowed: number;
+            refused: number;
+            truncated: boolean;
+            items: components["schemas"]["MigrationPlan"][];
+        };
+        CreateMigrationBatchRequest: {
+            sourceReleaseId: components["schemas"]["Uuid"];
+            targetReleaseId: components["schemas"]["Uuid"];
+            mappings?: components["schemas"]["StepMapping"][];
+            runIds: components["schemas"]["Uuid"][];
+            reason: string;
+            suspendDuring?: boolean;
+            expectedCount: number;
+        };
+        MigrationBatchItem: {
+            runId: components["schemas"]["Uuid"];
+            reference?: string | null;
+            /** @enum {string} */
+            state: "pending" | "migrated" | "refused" | "failed";
+            message?: string | null;
+            findings: components["schemas"]["MigrationFinding"][];
+            /** Format: date-time */
+            finishedAt?: string | null;
+        };
+        MigrationBatch: {
+            id: components["schemas"]["Uuid"];
+            workflowId: components["schemas"]["Uuid"];
+            source: components["schemas"]["MigrationReleaseRef"];
+            target: components["schemas"]["MigrationReleaseRef"];
+            mappings: components["schemas"]["StepMapping"][];
+            /** @enum {string} */
+            state: "running" | "completed";
+            suspendDuring: boolean;
+            itemCount: number;
+            migrated: number;
+            refused: number;
+            failed: number;
+            createdBy: components["schemas"]["Uuid"];
+            createdAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            finishedAt?: string | null;
+            items: components["schemas"]["MigrationBatchItem"][];
+        };
+        MovePlanRequest: {
+            /** @enum {string} */
+            kind: "move" | "skip" | "rerun";
+            fromStepId: string;
+            toStepId: string;
+        };
+        MoveAffected: {
+            nodeId: string;
+            label: string;
+            kind: string;
+            /**
+             * @description reuseRecorded means the call is answered from the effect journal and nothing is sent again.
+             * @enum {string}
+             */
+            handling: "notRun" | "runsAgain" | "reuseRecorded" | "wouldRepeat";
+        };
+        MovePlan: {
+            /** @enum {string} */
+            kind: "move" | "skip" | "rerun";
+            fromStepId: string;
+            fromLabel?: string | null;
+            toStepId: string;
+            toLabel?: string | null;
+            allowed: boolean;
+            runVersion: number;
+            approvalRequired: boolean;
+            approvalReason?: string | null;
+            skipped: components["schemas"]["MoveAffected"][];
+            rerun: components["schemas"]["MoveAffected"][];
+            findings: components["schemas"]["MigrationFinding"][];
+        };
+        MoveRunRequest: {
+            /** @enum {string} */
+            kind: "move" | "skip" | "rerun";
+            fromStepId: string;
+            toStepId: string;
+            reason: string;
+            expectedVersion: number;
+        };
+        DecideMoveRequest: {
+            note?: string | null;
+        };
+        RunMove: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            kind: "move" | "skip" | "rerun";
+            fromStepId: string;
+            fromLabel?: string | null;
+            toStepId: string;
+            toLabel?: string | null;
+            reason: string;
+            /** @enum {string} */
+            state: "pendingApproval" | "executed" | "rejected" | "withdrawn" | "stale" | "expired";
+            approvalRequired: boolean;
+            expectedVersion: number;
+            requestedBy: components["schemas"]["Uuid"];
+            requestedAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: uuid */
+            decidedBy?: string | null;
+            /** Format: date-time */
+            decidedAt?: string | null;
+            decisionNote?: string | null;
+            /** Format: date-time */
+            executedAt?: string | null;
+            skipped: components["schemas"]["MoveAffected"][];
+            rerun: components["schemas"]["MoveAffected"][];
+        };
+        RunMoveList: {
+            items: components["schemas"]["RunMove"][];
         };
         ResumeRunRequest: {
             reason: string;
@@ -24423,6 +24801,320 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    planRunMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationPlan"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    migrateRunWithMapping: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MappedMigrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Migrated (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    previewMigrationBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationBatchPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The plan of each request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatchPreview"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    createMigrationBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMigrationBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description The finished batch with a result per request (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatch"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getMigrationBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                batchId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The batch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatch"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    planRunMove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MovePlanRequest"];
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovePlan"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRunMoves: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Moves */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMoveList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    moveRun: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The move (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMove"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    approveRunMove: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                moveId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description The move (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMove"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    rejectRunMove: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                moveId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description The move (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMove"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

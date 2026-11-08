@@ -284,6 +284,17 @@ public class TaskStore {
                 .param("label", label).param("ws", workspaceId).param("run", runId).param("node", nodeId).update();
     }
 
+    /** S143: the open task of a step continues as another step of the target release (a mapped migration). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int renameOpenForNode(UUID workspaceId, UUID runId, String nodeId, String newNodeId, String label) {
+        return jdbc.sql("""
+                UPDATE task_context SET node_id = :to, label = :label, version = version + 1
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
+                """)
+                .param("to", newNodeId).param("label", label).param("ws", workspaceId).param("run", runId)
+                .param("node", nodeId).update();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public int cancelOpenForRun(UUID workspaceId, UUID runId, Instant endedAt) {
         int count = jdbc.sql("""

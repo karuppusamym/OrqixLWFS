@@ -42,6 +42,14 @@ public class RunMigrations {
         }
         List<ReleaseCompatibility.Finding> findings = new ArrayList<>(
                 ReleaseCompatibility.check(source.definition(), target.definition(), active));
+        findings.addAll(releaseFindings(run, source, target));
+        return findings;
+    }
+
+    /** Rules about the two releases and the request's answers that every migration keeps (S38, S143). */
+    public List<ReleaseCompatibility.Finding> releaseFindings(RunStore.RunRow run, ReleaseQueries.ReleaseView source,
+            ReleaseQueries.ReleaseView target) {
+        List<ReleaseCompatibility.Finding> findings = new ArrayList<>();
         if ("tier1".equals(source.definition().path("acceptanceProfile").asString()) || "tier1".equals(target.definition().path("acceptanceProfile").asString()))
             findings.add(new ReleaseCompatibility.Finding("TIER1_PINNED_RELEASE", "Tier-1 cases retain their original release; in-place migration is excluded.", null));
 

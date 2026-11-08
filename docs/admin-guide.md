@@ -404,3 +404,16 @@ revoking either stops a running batch. Limits: `orqix.bulk.max-items` (default 1
 and end is audited (`run.bulk-*`), and each changed request keeps its usual audit record and timeline entry with the
 reason. Settings → Operations (`run.operate`) reads counts only; connection call figures need `connection.read`.
 Details: [S142](build/S142-bulk-search-job-dashboard.md).
+
+## Moving requests between versions and steps - 8 November 2026
+
+Operators (`run.operate`) can move a suspended request to another version of its workflow with a **step mapping**
+(Run detail → Move with step mapping): a waiting approval may continue under a renamed step, and the version may
+change steps the request already passed as long as every step ahead still finds its data. The dialog shows the plan
+and every reason a move is refused before anything changes, and can preview and move up to 100 requests of the same
+version at once (each suspended and resumed around its move). **Move to another step** skips the current step, runs
+a step again or moves the request to another step; calls recorded in the effect journal are never sent twice, and
+steps with other effects (notices, documents, child requests) are not run again. In a production workspace (any
+workspace without an explicit non-production stage) or a regulated one, a second operator must approve each move;
+the move lapses if the request changes first or nobody approves it within 24 hours. Details:
+[S143](build/S143-instance-migration-and-move.md).

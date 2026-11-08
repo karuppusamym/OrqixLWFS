@@ -32,6 +32,11 @@ public final class DefaultDecisionEvaluator implements DecisionEvaluator {
 
     @Override
     public Result evaluate(String definitionJson, String decisionKey, Map<String, Object> values) {
+        return evaluate(definitionJson, decisionKey, values, null);
+    }
+
+    @Override
+    public Result evaluate(String definitionJson, String decisionKey, Map<String, Object> values, String typesJson) {
         JsonNode root = StrictJson.parse(definitionJson);
         JsonNode decisions = root.path("decisions");
         if (!decisions.isArray()) {
@@ -48,20 +53,24 @@ public final class DefaultDecisionEvaluator implements DecisionEvaluator {
         if (table == null) {
             throw new IllegalArgumentException("Unknown decision table: " + decisionKey);
         }
-        return evaluate(table, values);
+        return evaluate(table, values, typesJson == null ? null : StrictJson.parse(typesJson));
     }
 
     /** Evaluates one typed table; shared with the decision table facade. */
     public static Result evaluate(DecisionTable table, Map<String, Object> values) {
-        Map<String, Object> input = values == null ? Map.of() : values;
-        java.time.LocalDate asOf = null;
-        if (table.dated()) {
-            Object given = input.get(AS_OF);
-            if (given == null) {
-                throw new IllegalArgumentException("No value for " + AS_OF);
-            }
-            asOf = given instanceof java.time.LocalDate d ? d : java.time.LocalDate.parse(given.toString());
+        return evaluate(table, values, null);
+    }
+
+    /**
+     * @param types pinned types of the expression entries (S146), or null to infer them from the values; unused for
+     *              tables without expressions, which keep the evaluation below unchanged
+     */
+    public static Result evaluate(DecisionTable table, Map<String, Object> values, JsonNode types) {
+        if (table.usesExpressions()) {
+            return ExpressionTable.evaluate(table, values, types);
         }
+        Map<String, Object> input = values == null ? Map.of() : values;
+        java.time.LocalDate asOf = asOf(table, input);
         // Single-result policies stop at the first match, as before; PRIORITY and COLLECT look at every row.
         boolean allRows = table.collect() || DecisionTable.PRIORITY.equals(table.hitPolicy());
         List<DecisionTable.Row> matching = new ArrayList<>();
@@ -97,6 +106,18 @@ public final class DefaultDecisionEvaluator implements DecisionEvaluator {
             }
         }
         return new Result(chosen.index(), false, output(chosen.then()), List.of(chosen.index()));
+    }
+
+    /** @return the day effective windows are judged by, or null for a table without dated rows */
+    static java.time.LocalDate asOf(DecisionTable table, Map<String, Object> input) {
+        if (!table.dated()) {
+            return null;
+        }
+        Object given = input.get(AS_OF);
+        if (given == null) {
+            throw new IllegalArgumentException("No value for " + AS_OF);
+        }
+        return given instanceof java.time.LocalDate d ? d : java.time.LocalDate.parse(given.toString());
     }
 
     /** Exact decimal combination; COUNT is the number of matching rows. */

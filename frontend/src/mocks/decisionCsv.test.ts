@@ -37,3 +37,37 @@ describe('mock decision CSV', () => {
     expect(exportCsv(any)).toHaveProperty('reasons')
   })
 })
+
+describe('mock decision CSV with formulas (docs/build/S146)', () => {
+  const formulas: DecisionTable = {
+    key: 'f', version: 1, hitPolicy: 'FIRST',
+    rows: [
+      { when: { all: [{ fieldRef: '/input/amount', expression: 'input.amount > input.limit' }, { fieldRef: '/input/due', expression: 'input.due < date("2026-06-30")' }] }, then: { fee: { expression: 'round(input.amount * 0.025, 2)' }, route: 'review' } },
+      { when: { fieldRef: '/input/amount', operator: 'gte', value: 0 }, then: { fee: 0, route: 'auto' } },
+    ],
+    default: { fee: 0, route: 'none' },
+  }
+
+  it('writes formula cells as =expression behind the injection escape and reads them back exactly', () => {
+    const csv = exportCsv(formulas) as string
+    expect(csv.split('\n')[0]).toBe('hitPolicy:FIRST,effectiveFrom,effectiveTo,in:number:/input/amount,in:expression:/input/due,out:number:fee,out:text:route')
+    expect(csv).toContain("'=input.amount > input.limit")
+    expect(csv).toContain('"\'=input.due < date(""2026-06-30"")"')
+    expect(csv).toContain('"\'=round(input.amount * 0.025, 2)"')
+    const back = parseCsv(csv)
+    expect(back.problems).toEqual([])
+    expect(back.table).toEqual({ hitPolicy: 'FIRST', rows: formulas.rows, default: formulas.default })
+  })
+
+  it('refuses formulas CSV cannot hold and formula cells where they do not belong', () => {
+    const tab: DecisionTable = { ...formulas, rows: [{ when: { fieldRef: '/input/amount', expression: 'input.amount >\t1' }, then: { fee: 1, route: 'x' } }] }
+    expect((exportCsv(tab) as { reasons: string[] }).reasons[0]).toMatch(/control character/)
+    const spaced: DecisionTable = { ...formulas, rows: [{ when: { fieldRef: '/input/amount', operator: 'gte', value: 1 }, then: { fee: { expression: ' input.amount' }, route: 'x' } }] }
+    expect((exportCsv(spaced) as { reasons: string[] }).reasons[0]).toMatch(/space/)
+    const head = 'hitPolicy:FIRST,effectiveFrom,effectiveTo,in:expression:/input/due,out:text:r\n'
+    expect(parseCsv(`${head}rule,,,eq 2026-01-01,x\ndefault,,,,y\n`).problems[0]!.code).toBe('condition')
+    expect(parseCsv(`${head}rule,,,'=input.due != null,x\ndefault,,,,'=input.r\n`).problems[0]!.code).toBe('defaultFormula')
+    expect(parseCsv(`${head}rule,,,'= input.due != null,x\ndefault,,,,y\n`).problems[0]!.code).toBe('formula')
+    expect(parseCsv(`${head}rule,,,'=input.due != null,x\ndefault,,,,y\n`).table?.rows[0]!.when).toEqual({ fieldRef: '/input/due', expression: 'input.due != null' })
+  })
+})

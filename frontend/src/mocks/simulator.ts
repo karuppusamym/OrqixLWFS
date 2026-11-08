@@ -2,12 +2,13 @@ import { isCalendarDate } from '@/lib/dates'
 import { describe as describePoll, offsets, scheduleOf, seconds as pollSeconds, type PollConfig } from '@/features/studio/model/pollSchedule'
 import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
-import { studioScope } from '@/features/studio/model/expressionScope'
+import { decisionTypes, studioScope } from '@/features/studio/model/expressionScope'
+import { decisionFields, evaluateExpressionTable, expressionEvidence } from '@/lib/expr/decision'
 import { compile } from '@/lib/expr'
 import { CalculationFailure, runCalculation, type CalculateConfig } from '@/lib/expr/calculate'
 import { applyComputed } from '@/lib/form/computed'
 import { parseFormSchema, parseFormUi } from '@/lib/form/schema'
-import { conditionTerms, isAtomicCondition, isExpressionCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { decisionTerms, isAtomicCondition, isExpressionCondition, isExpressionTerm, isOutputExpression, tableUsesExpressions, type AtomicCondition, type Condition, type ConditionValue, type DecisionCondition, type DecisionTable, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue } from '@/features/studio/model/decisionLogic'
 
 /**
@@ -463,9 +464,10 @@ class Run {
     }
     d.decisionKey = table.key
     d.version = table.version
+    if (tableUsesExpressions(table)) return this.expressionDecision(n, table, d)
     const values = new Map<string, unknown>()
     const inputs: Json[] = []
-    for (const term of table.rows.flatMap(row => conditionTerms(row.when))) {
+    for (const term of table.rows.flatMap(row => decisionTerms(row.when))) {
       const ref = term.fieldRef
       if (!values.has(ref)) {
         const v = this.resolve(ref)
@@ -481,8 +483,8 @@ class Run {
     try {
       const single = table.hitPolicy !== 'PRIORITY' && table.hitPolicy !== 'COLLECT'
       for (const [i, row] of table.rows.entries()) {
-        if (conditionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
-        if (single && this.evaluate(row.when, [])) {
+        if (decisionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
+        if (single && this.evaluate(row.when as Condition, [])) {
           matchedRow = i
           break
         }
@@ -506,9 +508,9 @@ class Run {
     let firstMatch: number | null = null
     for (const [i, row] of table.rows.entries()) {
       let m: boolean | null
-      try { m = this.evaluate(row.when, []) } catch { m = null }
+      try { m = this.evaluate(row.when as Condition, []) } catch { m = null }
       if (m === true && firstMatch === null) firstMatch = i
-      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRows.includes(i), outputs: sortedLiterals(row.then) })
+      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRows.includes(i), outputs: sortedLiterals(row.then as Record<string, Literal>) })
     }
     d.rows = rows
     d.usedDefault = matchedRow === null
@@ -594,6 +596,69 @@ class Run {
   /** Noon of the test's day in UTC: today() is the test's day (S137). */
   private now(): string {
     return `${this.ctx.today}T12:00:00Z`
+  }
+
+  /**
+   * A decision table with formulas (S146): the server's semantics (lib/expr/decision) with the pinned field types;
+   * today() is the simulated day at 12:00 UTC. A formula that stops the evaluation stops the request.
+   */
+  private expressionDecision(n: WorkflowNode, table: DecisionTable, d: Entry): Transition | null {
+    const dated = table.rows.some(row => row.effective)
+    const values: Record<string, unknown> = { $now: this.now(), ...(dated ? { $asOf: this.ctx.today } : {}) }
+    const inputs: Json[] = []
+    for (const ref of decisionFields(table)) {
+      const v = this.resolve(ref)
+      if (v !== null && v !== undefined) values[ref] = v
+      const fi = this.info(ref)
+      inputs.push({ fieldRef: ref, label: fi.label, value: (v ?? null) as Json, shown: v === null || v === undefined ? 'no value' : text.value(v, fi.money) })
+    }
+    d.inputs = inputs
+    let result
+    try {
+      result = evaluateExpressionTable(table, values, decisionTypes(this.def, table, n.id))
+    } catch (e) {
+      const message = (e as Error).message
+      this.stallWith(n, `${quote(n.label)} stops: ${message}`, d, 'DECISION_FAILED', message)
+      return null
+    }
+    const evidence = expressionEvidence(table, values, result, dated ? this.ctx.today : undefined)
+    d.rows = table.rows.map((row, i) => {
+      const computed = Object.fromEntries(result.expressions.filter(e => e.row === i && e.kind === 'output').map(e => [e.target, e.value]))
+      const outputs: Record<string, Json> = {}
+      for (const key of Object.keys(row.then).sort()) {
+        const v = row.then[key]
+        if (!isOutputExpression(v)) outputs[key] = v as Json
+        else if (key in computed) outputs[key] = computed[key] as Json
+      }
+      const ev = evidence.rows[i]!
+      return {
+        row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: ev.matched, selected: ev.selected, outputs,
+        ...(ev.expressions ? { expressions: ev.expressions as Json } : {}),
+        ...(ev.outputExpressions ? { outputExpressions: ev.outputExpressions as Json } : {}),
+      }
+    })
+    d.usedDefault = result.usedDefault
+    d.matchedRow = result.matchedRow === null ? null : result.matchedRow + 1
+    const collect = table.hitPolicy === 'COLLECT'
+    if (collect) {
+      d.matchedRows = result.matchedRows.map(i => i + 1)
+      d.aggregation = table.aggregation ?? null
+    }
+    const output: Record<string, Json> = {}
+    for (const key of Object.keys(result.output).sort()) output[key] = result.output[key] as Json
+    d.outputs = output
+    if (result.matchedRows.length === 0) this.matchedRules.add(`${table.key}#default`)
+    for (const i of result.matchedRows) this.matchedRules.add(`${table.key}#${i}`)
+    this.steps.set(n.id, { ...output })
+    const outputsText = outputsTextOf(output)
+    const sentence = result.matchedRow === null
+      ? `${quote(n.label)}: no rule applies, so the "otherwise" result is used: ${outputsText}.`
+      : collect
+        ? `${quote(n.label)}: ${result.matchedRows.length === 1 ? 'rule' : 'rules'} ${result.matchedRows.map(i => i + 1).join(', ')} apply, combined, so ${outputsText}.`
+        : `${quote(n.label)}: rule ${result.matchedRow + 1} applies because ${this.conditionText(table.rows[result.matchedRow]!.when, false, undefined)}, so ${outputsText}.`
+    const t = this.next(n, 'next')
+    this.add(n, sentence, d, output, t)
+    return t
   }
 
   /** Calculate (S137): the engine's expression language and rounding over this test's values. */
@@ -1377,13 +1442,16 @@ class Run {
     return null
   }
 
-  private conditionText(c: Condition, withValue: boolean, known: unknown): string {
-    if (isExpressionCondition(c)) return c.expression
-    if (!isAtomicCondition(c)) {
-      const all = 'all' in c
-      const parts = ((all ? c.all : c.any) ?? []).map((t) => this.conditionText(t, withValue, undefined))
+  private conditionText(c: Condition | DecisionCondition, withValue: boolean, known: unknown): string {
+    if (isExpressionTerm(c)) return `${this.info(c.fieldRef).label}: formula ${c.expression}`
+    if (isExpressionCondition(c as Condition)) return (c as { expression: string }).expression
+    if (!isAtomicCondition(c as Condition)) {
+      const g = c as { all?: Array<Condition | DecisionCondition>; any?: Array<Condition | DecisionCondition> }
+      const all = 'all' in g
+      const parts = ((all ? g.all : g.any) ?? []).map((t) => this.conditionText(t, withValue, undefined))
       return `${all ? 'all of these are true: ' : 'at least one of these is true: '}${parts.join('; ')}`
     }
+    c = c as AtomicCondition
     const f = this.info(c.fieldRef)
     const actual = known !== undefined && known !== null ? known : withValue ? this.resolve(c.fieldRef) : null
     const left = withValue && actual !== null && actual !== undefined ? `${f.label} (${text.value(actual, f.money)})` : f.label
@@ -1401,7 +1469,7 @@ class Run {
     for (const issue of this.ctx.issues) if (issue.severity === 'warning') this.warn(issue.code, issue.nodeId ?? null, issue.message)
     for (const table of this.def.decisions) {
       for (const [i, row] of table.rows.entries()) {
-        const why = isAtomicCondition(row.when) ? this.impossible(row.when) : null
+        const why = !isExpressionTerm(row.when) && isAtomicCondition(row.when as Condition) ? this.impossible(row.when as AtomicCondition) : null
         if (why !== null) this.warn('RULE_NEVER_MATCHES', this.decisionStep(table.key), `Rule ${i + 1} of ${quote(table.key)} can never apply: ${why}`)
       }
     }

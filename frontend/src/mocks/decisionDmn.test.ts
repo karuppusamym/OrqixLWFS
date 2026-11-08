@@ -1,7 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionTable } from '@/features/studio/model/types'
 import { exportCsv, parseCsv } from './decisionCsv'
-import { exportDmn, readDmn } from './decisionDmn'
+import { dmnRefusals, exportDmn, readDmn } from './decisionDmn'
+
+describe('mock decision DMN with formulas (docs/build/S146)', () => {
+  const formulas: DecisionTable = {
+    key: 'f', version: 1, hitPolicy: 'UNIQUE',
+    rows: [
+      { when: { fieldRef: '/input/due', expression: 'input.due < date("2026-06-30") and input.amount > 0' }, then: { fee: { expression: 'round(input.amount * 0.025, 2)' } } },
+      { when: { any: [{ fieldRef: '/input/amount', operator: 'gte', value: 9000 }, { fieldRef: '/input/amount', expression: 'input.amount < input.limit' }] }, then: { fee: 5 } },
+    ],
+    default: { fee: 0 },
+  }
+
+  it('writes formula entries with the Orqix expression language and reads the file back to the same table', () => {
+    const xml = exportDmn(formulas, 'f')
+    expect(xml).toContain('<inputEntry expressionLanguage="https://orqix.example/expression"><text>input.due &lt; date("2026-06-30") and input.amount &gt; 0</text></inputEntry>')
+    expect(xml).toContain('<outputEntry expressionLanguage="https://orqix.example/expression"><text>round(input.amount * 0.025, 2)</text></outputEntry>')
+    // A column used only by formulas has no typeRef; the Any row with a formula is one rule per alternative, so UNIQUE is written as ANY.
+    expect(xml).toContain('<inputExpression><text>due</text></inputExpression>')
+    expect(xml).toContain('<inputExpression typeRef="string"><text>amount</text></inputExpression>')
+    expect(xml).toContain('hitPolicy="ANY"')
+    expect(xml).toContain('<rule id="f_r2_1">')
+    expect(xml).toContain('<rule id="f_r2_2">')
+    expect(dmnRefusals(formulas)).toEqual([])
+    const read = readDmn(xml)
+    expect(read.problems).toEqual([])
+    expect(read.content).toEqual({ hitPolicy: 'UNIQUE', rows: formulas.rows, default: formulas.default })
+  })
+
+  it('refuses an Any row with a formula under COLLECT', () => {
+    expect(dmnRefusals({ ...formulas, hitPolicy: 'COLLECT' })[0]).toMatch(/Row 2 is an Any row with a formula/)
+  })
+})
 
 const table: DecisionTable = {
   key: 'fees', version: 1, hitPolicy: 'COLLECT', aggregation: 'SUM',

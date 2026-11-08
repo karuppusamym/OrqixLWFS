@@ -612,6 +612,9 @@ final class SimulationRun {
         if (asOf != null) {
             d.put("asOf", asOf.toString());
         }
+        if (table.usesExpressions()) {
+            return expressionDecision(n, table, d, asOf);
+        }
         ArrayNode inputs = d.putArray("inputs");
         for (DecisionTable.Row row : table.rows()) {
             for(Condition term:row.when().compound()?row.when().terms():List.of(row.when())) {
@@ -713,6 +716,127 @@ final class SimulationRun {
             DecisionTable.Row row = table.rows().get(result.matchedRow());
             sentence = Text.quote(n.label()) + ": rule " + (row.index() + 1) + " applies because "
                     + conditionText(row.when(), true, values.get(row.when().fieldRef())) + ", so " + outputsText + ".";
+        }
+        Transition t = next(n, Route.NEXT);
+        add(n, sentence, d, out, t);
+        return t;
+    }
+
+    /**
+     * A table with Orqix expression entries (S146): the engine's canonical evaluation with the compiler's types, every
+     * test's result per row ({@code expressions}) and the computed results ({@code outputExpressions}).
+     */
+    private Transition expressionDecision(Node.Decision n, DecisionTable table, ObjectNode d, java.time.LocalDate asOf) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        ArrayNode inputs = d.putArray("inputs");
+        for (String ref : com.orqix.compiler.internal.eval.ExpressionTable.fields(table)) {
+            Object v = resolve(ref);
+            values.put(ref, v);
+            ObjectNode in = inputs.addObject();
+            in.put("fieldRef", ref);
+            in.put("label", info(ref).label());
+            in.set("value", DefaultWorkflowSimulator.json(v));
+            in.put("shown", v == null ? "no value" : Text.value(v, info(ref).money()));
+        }
+        DecisionEvaluator.Result result;
+        try {
+            Map<String, Object> evaluated = new LinkedHashMap<>(values);
+            if (asOf != null) {
+                evaluated.put(com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.AS_OF, asOf);
+            }
+            evaluated.put(com.orqix.compiler.internal.eval.ExpressionTable.NOW, now(null));
+            result = com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.evaluate(table, evaluated,
+                    com.orqix.compiler.internal.rules.ExpressionRules.decisionTypes(analysis, table));
+        } catch (IllegalArgumentException e) {
+            String message = Text.quote(n.label()) + " stops: " + e.getMessage();
+            stallWith(n, message, d, "DECISION_FAILED", e.getMessage());
+            return null;
+        }
+        ArrayNode rows = d.putArray("rows");
+        for (DecisionTable.Row row : table.rows()) {
+            ObjectNode r = rows.addObject();
+            r.put("row", row.index() + 1);
+            r.put("condition", conditionText(row.when(), false, null));
+            if (row.effective() != null) {
+                r.put("effective", (row.effective().from() == null ? "until " : "from " + row.effective().from()
+                        + (row.effective().to() == null ? "" : " to ")) + (row.effective().to() == null ? ""
+                        : row.effective().to().toString()));
+            }
+            boolean any = row.when().isAny();
+            Boolean matched = !any;
+            ArrayNode tests = F.arrayNode();
+            List<Condition> terms = row.terms();
+            for (int i = 0; i < terms.size(); i++) {
+                Condition term = terms.get(i);
+                Boolean hit;
+                if (term.isExpression()) {
+                    final int at = i;
+                    Object value = result.expressions().stream().filter(e -> e.row() == row.index() && e.term() == at)
+                            .map(DecisionEvaluator.Entry::value).findFirst().orElse(null);
+                    hit = Boolean.TRUE.equals(value);
+                    ObjectNode t = tests.addObject();
+                    t.put("term", i);
+                    t.put("fieldRef", term.fieldRef());
+                    t.put("expression", term.expression());
+                    t.set("result", DefaultWorkflowSimulator.json(value));
+                } else {
+                    hit = Boolean.TRUE.equals(matches(term, values.get(term.fieldRef())));
+                }
+                matched = any ? matched || hit : matched && hit;
+            }
+            if (asOf != null && !row.appliesOn(asOf)) {
+                matched = Boolean.FALSE;
+            }
+            r.put("matched", matched);
+            r.put("selected", result.matchedRows().contains(row.index()));
+            ObjectNode outputs = (ObjectNode) literalMap(row.then());
+            ArrayNode computed = F.arrayNode();
+            for (DecisionEvaluator.Entry e : result.expressions()) {
+                if (e.row() == row.index() && e.term() < 0) {
+                    outputs.set(e.target(), DefaultWorkflowSimulator.json(e.value()));
+                    ObjectNode o = computed.addObject();
+                    o.put("output", e.target());
+                    o.put("expression", e.expression());
+                    o.set("value", DefaultWorkflowSimulator.json(e.value()));
+                }
+            }
+            row.thenExpressions().keySet().forEach(k -> { if (!outputs.has(k)) outputs.putNull(k); });
+            r.set("outputs", outputs);
+            if (!tests.isEmpty()) r.set("expressions", tests);
+            if (!computed.isEmpty()) r.set("outputExpressions", computed);
+        }
+        if (table.collect()) {
+            ArrayNode matchedRows = d.putArray("matchedRows");
+            result.matchedRows().forEach(i -> matchedRows.add(i + 1));
+            d.put("aggregation", table.aggregation());
+        }
+        d.put("usedDefault", result.usedDefault());
+        if (result.matchedRow() == null) {
+            d.putNull("matchedRow");
+        } else {
+            d.put("matchedRow", result.matchedRow() + 1);
+        }
+        d.set("outputs", DefaultWorkflowSimulator.json(result.output()));
+        if (result.matchedRows().isEmpty()) {
+            matchedRules.add(table.key() + "#default");
+        } else {
+            for (Integer i : result.matchedRows()) matchedRules.add(table.key() + "#" + i);
+        }
+        Map<String, Object> out = new LinkedHashMap<>(result.output());
+        steps.put(n.id(), out);
+        String outputsText = outputsText(out);
+        String sentence;
+        if (result.matchedRow() == null) {
+            sentence = Text.quote(n.label()) + ": no rule applies, so the \"otherwise\" result is used: " + outputsText + ".";
+        } else if (table.collect()) {
+            List<String> numbers = new ArrayList<>();
+            result.matchedRows().forEach(i -> numbers.add(String.valueOf(i + 1)));
+            sentence = Text.quote(n.label()) + ": " + (numbers.size() == 1 ? "rule " : "rules ") + String.join(", ", numbers)
+                    + " apply, combined as " + aggregationWords(table.aggregation()) + ", so " + outputsText + ".";
+        } else {
+            DecisionTable.Row row = table.rows().get(result.matchedRow());
+            sentence = Text.quote(n.label()) + ": rule " + (row.index() + 1) + " applies because "
+                    + conditionText(row.when(), true, null) + ", so " + outputsText + ".";
         }
         Transition t = next(n, Route.NEXT);
         add(n, sentence, d, out, t);
@@ -2555,7 +2679,7 @@ final class SimulationRun {
 
     /** @return why a condition on a request answer can never be true, or null */
     private String impossible(Condition c) {
-        if (c.compound()) {
+        if (c.compound() || c.isExpression()) {
             return null;
         }
         List<String> tokens;

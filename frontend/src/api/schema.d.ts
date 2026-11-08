@@ -10553,6 +10553,8 @@ export interface components {
             };
             /** @description Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied) */
             matchedRows?: number[];
+            /** @description S146: the evaluated formula entries of a table that uses them (every test of every row, the results of matching rows); absent otherwise */
+            expressions?: components["schemas"]["DecisionExpressionEntry"][];
         };
         /** @description Expression type notation: number, integer (a number), string, boolean, date or any; {"list": T}; {"row": {column: T}}. */
         ExpressionType: ("number" | "integer" | "string" | "boolean" | "date" | "any") | {
@@ -10618,6 +10620,19 @@ export interface components {
                 /** @description Zero-based offset of the part the problem is about. */
                 position: number;
             } | null;
+        };
+        DecisionExpressionEntry: {
+            /** @description Zero-based row index. */
+            row: number;
+            /** @description Zero-based term index of a test; -1 for a result */
+            term: number;
+            /** @enum {string} */
+            kind: "input" | "output";
+            /** @description The column (fieldRef) of a test, or the result name */
+            target: string;
+            expression: string;
+            /** @description A test gives true, false or null (does not match); a result its value */
+            value: string | number | boolean | null;
         };
         WorkflowTestCase: {
             id: string;
@@ -14093,8 +14108,13 @@ export interface components {
                 includeTo?: boolean;
             };
         };
-        /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
-        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+        /** @description An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date("2026-06-30"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available. */
+        decisionExpressionTerm: {
+            fieldRef: components["schemas"]["fieldRef"];
+            expression: components["schemas"]["expression"];
+        };
+        /** @description One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121). */
+        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"] | components["schemas"]["decisionExpressionTerm"];
         decisionCondition: components["schemas"]["decisionTerm"] | {
             all: components["schemas"]["decisionTerm"][];
         } | {
@@ -14214,6 +14234,12 @@ export interface components {
             calendarRef?: components["schemas"]["key"];
             /** @description check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload. */
             check?: components["schemas"]["fallbackCheck"];
+        };
+        /** @description The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results. */
+        decisionRowOutput: {
+            [key: string]: components["schemas"]["literal"] | {
+                expression: components["schemas"]["expression"];
+            };
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -14747,7 +14773,7 @@ export interface components {
             };
             rows: {
                 when: components["schemas"]["decisionCondition"];
-                then: components["schemas"]["decisionOutput"];
+                then: components["schemas"]["decisionRowOutput"];
                 /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
                 effective?: {
                     from?: components["schemas"]["calendarDate"];
@@ -15569,8 +15595,13 @@ export interface components {
                 } | {
                     any: components["schemas"]["decisionTerm"][];
                 };
-                /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
-                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+                /** @description One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121). */
+                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"] | components["schemas"]["decisionExpressionTerm"];
+                /** @description An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date("2026-06-30"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available. */
+                decisionExpressionTerm: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    expression: components["schemas"]["expression"];
+                };
                 /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
                 inCondition: {
                     fieldRef: components["schemas"]["fieldRef"];
@@ -15611,7 +15642,7 @@ export interface components {
                     };
                     rows: {
                         when: components["schemas"]["decisionCondition"];
-                        then: components["schemas"]["decisionOutput"];
+                        then: components["schemas"]["decisionRowOutput"];
                         /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
                         effective?: {
                             from?: components["schemas"]["calendarDate"];
@@ -15622,6 +15653,12 @@ export interface components {
                 };
                 decisionOutput: {
                     [key: string]: components["schemas"]["literal"];
+                };
+                /** @description The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results. */
+                decisionRowOutput: {
+                    [key: string]: components["schemas"]["literal"] | {
+                        expression: components["schemas"]["expression"];
+                    };
                 };
                 scalarFormField: {
                     /**

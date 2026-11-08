@@ -371,13 +371,27 @@ public final class BpmnGenerator {
                         .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixDecisionTask}");
                 WorkflowDefinition.DecisionTable table = d.decisions().stream()
                         .filter(t -> t.key().equals(dn.decisionRef())).findFirst().orElseThrow();
+                if (table.usesExpressions()) {
+                    // S146: a formula can fail on the request's data (two rows under UNIQUE, a result without a value),
+                    // so like a Calculate step it runs as its own job: a failure makes the request need attention
+                    // instead of undoing the step before it.
+                    x.attr("flowable", FLOWABLE_NS, "async", "true").attr("flowable", FLOWABLE_NS, "exclusive", "true");
+                }
                 x.open("", "extensionElements", BPMN_NS);
+                if (table.usesExpressions()) {
+                    x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                            RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                }
                 x.leaf("orqix", "decision", ORQIX_NS)
                         .attr("ref", table.key())
                         .attr("version", Integer.toString(table.version()))
                         .attr("resource", decisionResource.get(table.key()))
                         .attr("fieldRef", table.rows().get(0).when().compound()
                             ? table.rows().get(0).when().terms().get(0).fieldRef() : table.rows().get(0).when().fieldRef());
+                // S146: the pinned types of the table's expression entries; absent for tables without expressions.
+                if (table.usesExpressions()) {
+                    x.attr("typesBase64", scopes.expressionTypes.getOrDefault("node/" + dn.id(), EMPTY_TYPES));
+                }
                 x.close();
                 x.close();
             }

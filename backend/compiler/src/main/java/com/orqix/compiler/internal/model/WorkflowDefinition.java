@@ -224,9 +224,31 @@ public record WorkflowDefinition(
          * @param then sorted by key
          * @param effective null when the row always applies (docs/build/S41)
          */
-        public record Row(int index, Condition when, Map<String, Literal> then, Window effective) {
+        public record Row(int index, Condition when, Map<String, Literal> then, Window effective,
+                          Map<String, String> thenExpressions) {
+            public Row(int index, Condition when, Map<String, Literal> then, Window effective) {
+                this(index, when, then, effective, Map.of());
+            }
+
             public Row(int index, Condition when, Map<String, Literal> then) {
                 this(index, when, then, null);
+            }
+
+            /** @return every result key the row sets, literal or expression (S146 decision expressions), sorted */
+            public java.util.SortedSet<String> outputKeys() {
+                java.util.SortedSet<String> keys = new java.util.TreeSet<>(then.keySet());
+                keys.addAll(thenExpressions.keySet());
+                return keys;
+            }
+
+            /** @return the terms of the row: the condition itself or the terms of its group */
+            public List<Condition> terms() {
+                return when.compound() ? when.terms() : List.of(when);
+            }
+
+            /** @return true when an input or output entry of the row is an Orqix expression (S146) */
+            public boolean usesExpressions() {
+                return !thenExpressions.isEmpty() || terms().stream().anyMatch(Condition::isExpression);
             }
 
             /** True when the row applies on {@code asOf}. */
@@ -256,6 +278,11 @@ public record WorkflowDefinition(
 
         public boolean dated() {
             return rows.stream().anyMatch(r -> r.effective() != null);
+        }
+
+        /** @return true when an entry of a row is an Orqix expression (S146); only such tables produce new DMN content */
+        public boolean usesExpressions() {
+            return rows.stream().anyMatch(Row::usesExpressions);
         }
     }
 

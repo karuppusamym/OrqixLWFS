@@ -1,10 +1,13 @@
-import type { AtomicCondition, ConditionValue, DecisionTable, Literal } from '@/features/studio/model/types'
-import { conditionTerms } from '@/features/studio/model/types'
+import type { AtomicCondition, ConditionValue, DecisionTable, DecisionTerm, Literal, OutputEntry } from '@/features/studio/model/types'
+import { comparisonTerms, decisionTerms, isExpressionTerm, isOutputExpression } from '@/features/studio/model/types'
 
 /**
  * Mock double of decision-table CSV export and import (G3, docs/build/S89-decision-csv-io.md). It implements the same
  * column format and the same escape as the server, but is simpler: it reads the common faults with a line and column,
  * and leaves the compiler-level checks (overlap, field types) to the mock validation of the caller.
+ *
+ * Formulas (S146): an expression cell is `=` and the Orqix expression verbatim, written `'=...` by the formula-injection
+ * escape. A column with only formulas or empty cells has the type `expression`. Formula cells may hold 2001 characters.
  */
 export interface CsvProblem {
   line: number
@@ -15,6 +18,8 @@ export interface CsvProblem {
 
 const OPERATORS = ['eq', 'ne', 'gte', 'gt', 'lt', 'lte']
 const TYPES = ['text', 'number', 'boolean']
+const INPUT_TYPES = [...TYPES, 'expression']
+const MAX_FORMULA_CELL = 2001
 const RISKY = "=+-@\t\r'"
 const NUMBER = /^-?(0|[1-9][0-9]{0,17})(\.[0-9]{1,17})?$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -26,22 +31,35 @@ export function exportCsv(table: DecisionTable): string | { reasons: string[] } 
   const types = new Map<string, string>()
   // As on the server: a priority order or an aggregation, lists and ranges have no place in CSV (docs/build/S121).
   if (table.hitPolicy === 'PRIORITY' || table.hitPolicy === 'COLLECT') reasons.push(`The hit policy ${table.hitPolicy} has settings CSV cannot hold. Download the table as DMN instead.`)
+  const columns: string[] = []
+  const formula = (where: string, text: string) => {
+    if ([...text].some((ch) => ch < ' ' || ch === '\u007f')) reasons.push(`${where} has a formula with a line break, tab or other control character, which CSV cannot hold. Download the table as DMN instead.`)
+    else if (text !== text.trim()) reasons.push(`${where} has a formula that starts or ends with a space. Remove the space.`)
+  }
   table.rows.forEach((row, i) => {
-    if (conditionTerms(row.when).some(t => t.operator === 'in' || t.operator === 'between')) reasons.push(`Row ${i + 1} uses a list or a range (is one of, is between), which CSV cannot hold. Download the table as DMN instead.`)
+    for (const t of decisionTerms(row.when)) {
+      if (!columns.includes(t.fieldRef)) columns.push(t.fieldRef)
+      if (isExpressionTerm(t)) formula(`Row ${i + 1}`, t.expression)
+    }
+    for (const v of Object.values(row.then)) if (isOutputExpression(v)) formula(`Row ${i + 1}`, v.expression)
+    if (comparisonTerms(row.when).some(t => t.operator === 'in' || t.operator === 'between')) reasons.push(`Row ${i + 1} uses a list or a range (is one of, is between), which CSV cannot hold. Download the table as DMN instead.`)
     if ('any' in row.when) reasons.push(`Row ${i + 1} is an OR row (Any comparison). CSV holds one condition per field; split it into one row per alternative under the first-match policy.`)
-    for (const t of conditionTerms(row.when)) types.set(t.fieldRef, types.get(t.fieldRef) ?? kind(t.value))
+    for (const t of comparisonTerms(row.when)) types.set(t.fieldRef, types.get(t.fieldRef) ?? kind(t.value))
   })
   const outputs = Object.keys(table.default)
   if (reasons.length) return { reasons }
-  const inputs = [...types.keys()]
+  const inputs = columns
+  for (const r of inputs) if (!types.has(r)) types.set(r, 'expression')
   const cell = (s: string) => {
     const safe = s && RISKY.includes(s[0]!) ? `'${s}` : s
     return /[",]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
   }
   const lines: string[][] = [[`hitPolicy:${table.hitPolicy}`, 'effectiveFrom', 'effectiveTo', ...inputs.map((r) => `in:${types.get(r)}:${r}`), ...outputs.map((k) => `out:${kind(table.default[k]!)}:${k}`)]]
   for (const row of table.rows) {
-    const byRef = new Map<string, AtomicCondition>(conditionTerms(row.when).map((t) => [t.fieldRef, t]))
-    lines.push(['rule', row.effective?.from ?? '', row.effective?.to ?? '', ...inputs.map((r) => (byRef.has(r) ? `${byRef.get(r)!.operator} ${String(byRef.get(r)!.value)}` : '')), ...outputs.map((k) => String(row.then[k]))])
+    const byRef = new Map<string, DecisionTerm>(decisionTerms(row.when).map((t) => [t.fieldRef, t]))
+    const term = (t: DecisionTerm | undefined) => (!t ? '' : isExpressionTerm(t) ? `=${t.expression}` : `${t.operator} ${String(t.value)}`)
+    const result = (v: OutputEntry | undefined) => (isOutputExpression(v) ? `=${v.expression}` : String(v))
+    lines.push(['rule', row.effective?.from ?? '', row.effective?.to ?? '', ...inputs.map((r) => term(byRef.get(r))), ...outputs.map((k) => result(row.then[k]))])
   }
   lines.push(['default', '', '', ...inputs.map(() => ''), ...outputs.map((k) => String(table.default[k]))])
   return lines.map((l) => l.map(cell).join(',')).join('\n') + '\n'
@@ -49,10 +67,11 @@ export function exportCsv(table: DecisionTable): string | { reasons: string[] } 
 
 export function templateCsv(table: DecisionTable): string {
   const types = new Map<string, string>()
-  for (const row of table.rows) for (const t of conditionTerms(row.when)) types.set(t.fieldRef, types.get(t.fieldRef) ?? kind(t.value))
+  for (const row of table.rows) for (const t of decisionTerms(row.when)) if (!types.has(t.fieldRef)) types.set(t.fieldRef, 'expression')
+  for (const row of table.rows) for (const t of comparisonTerms(row.when)) if (types.get(t.fieldRef) === 'expression') types.set(t.fieldRef, kind(t.value))
   const inputs = [...types.keys()]
   const outputs = Object.keys(table.default)
-  const example = inputs.map((r, i) => (i > 0 ? '' : types.get(r) === 'number' ? 'gte 0' : types.get(r) === 'boolean' ? 'eq true' : 'eq example'))
+  const example = inputs.map((r, i) => (i > 0 ? '' : types.get(r) === 'expression' ? `'=${r.slice(1).split('/').join('.')} != null` : types.get(r) === 'number' ? 'gte 0' : types.get(r) === 'boolean' ? 'eq true' : 'eq example'))
   return [
     ['hitPolicy:' + table.hitPolicy, 'effectiveFrom', 'effectiveTo', ...inputs.map((r) => `in:${types.get(r)}:${r}`), ...outputs.map((k) => `out:${kind(table.default[k]!)}:${k}`)],
     ['rule', '', '', ...example, ...outputs.map((k) => String(table.default[k]))],
@@ -155,7 +174,7 @@ export function parseCsv(text: string): ParsedCsv {
       const input = h.startsWith('in:')
       const output = h.startsWith('out:')
       const parts = h.slice(input ? 3 : 4).split(/:(.*)/s)
-      if ((!input && !output) || !TYPES.includes(parts[0]!) || !parts[1]) problems.push({ line: 1, column: i + 4, code: 'header', message: `Unknown column "${h}". Use in:<type>:<field> columns, then out:<type>:<result> columns.` })
+      if ((!input && !output) || !(input ? INPUT_TYPES : TYPES).includes(parts[0]!) || !parts[1]) problems.push({ line: 1, column: i + 4, code: 'header', message: `Unknown column "${h}". Use in:<type>:<field> columns, then out:<type>:<result> columns.` })
       else if (input && outputs.length) problems.push({ line: 1, column: i + 4, code: 'header', message: 'Input columns (in:) must come before output columns (out:).' })
       else (input ? inputs : outputs).push({ type: parts[0]!, name: parts[1]! })
     })
@@ -165,6 +184,13 @@ export function parseCsv(text: string): ParsedCsv {
   const width = head.length
   const rows: DecisionTable['rows'] = []
   let def: Record<string, Literal> | undefined
+  /** A formula cell: the expression after `=`, or undefined (with a problem) when it is empty or has edge spaces. */
+  const formulaOf = (c: string, line: number, column: number): string | undefined => {
+    const text = c.slice(1)
+    if (c.length > MAX_FORMULA_CELL) { problems.push({ line, column, code: 'tooLong', message: `A formula cell may hold at most ${MAX_FORMULA_CELL} characters.` }); return undefined }
+    if (!text || text !== text.trim()) { problems.push({ line, column, code: 'formula', message: 'Write the formula right after =, without spaces at the start or the end.' }); return undefined }
+    return text
+  }
   for (const rec of recs.slice(1)) {
     if (def) { problems.push({ line: rec.line, column: 1, code: 'afterDefault', message: 'Nothing may follow the default line.' }); break }
     if (rec.cells.length !== width) { problems.push({ line: rec.line, column: Math.min(rec.cells.length, width) + 1, code: 'cellCount', message: `This line has ${rec.cells.length} cells, but the header has ${width}.` }); continue }
@@ -173,11 +199,17 @@ export function parseCsv(text: string): ParsedCsv {
     if (problems.length > before) continue
     if (cells[0] !== 'rule' && cells[0] !== 'default') { problems.push({ line: rec.line, column: 1, code: 'rowKind', message: 'The first cell must be rule or default.' }); continue }
     const isDefault = cells[0] === 'default'
-    const terms: AtomicCondition[] = []
+    const terms: DecisionTerm[] = []
     inputs.forEach((col, i) => {
       const c = cells[3 + i]!
       if (!c) return
       if (isDefault) { problems.push({ line: rec.line, column: 4 + i, code: 'defaultCell', message: 'The default line has no conditions; leave this cell empty.' }); return }
+      if (c.startsWith('=')) {
+        const expression = formulaOf(c, rec.line, 4 + i)
+        if (expression !== undefined) terms.push({ fieldRef: col.name, expression })
+        return
+      }
+      if (col.type === 'expression') { problems.push({ line: rec.line, column: 4 + i, code: 'condition', message: 'This column holds formulas only: start the cell with =, or leave it empty.' }); return }
       const space = c.indexOf(' ')
       const op = space < 0 ? '' : c.slice(0, space)
       if (space < 0) { problems.push({ line: rec.line, column: 4 + i, code: 'condition', message: 'Write a comparison and a value, for example gte 100 or eq approved.' }); return }
@@ -186,10 +218,16 @@ export function parseCsv(text: string): ParsedCsv {
       if (value !== undefined) terms.push({ fieldRef: col.name, operator: op as AtomicCondition['operator'], value })
     })
     if (!isDefault && !terms.length && problems.length === before) problems.push({ line: rec.line, column: 4, code: 'noCondition', message: 'A rule needs at least one condition.' })
-    const then: Record<string, Literal> = {}
+    const then: Record<string, OutputEntry> = {}
     outputs.forEach((col, i) => {
       const c = cells[3 + inputs.length + i]!
       if (!c) { problems.push({ line: rec.line, column: 4 + inputs.length + i, code: 'emptyResult', message: `Every result needs a value; ${col.name} is empty.` }); return }
+      if (c.startsWith('=')) {
+        if (isDefault) { problems.push({ line: rec.line, column: 4 + inputs.length + i, code: 'defaultFormula', message: 'The default results are plain values, not formulas.' }); return }
+        const expression = formulaOf(c, rec.line, 4 + inputs.length + i)
+        if (expression !== undefined) then[col.name] = { expression }
+        return
+      }
       const v = literal(col.type, c, rec.line, 4 + inputs.length + i, problems)
       if (v !== undefined) then[col.name] = v
     })
@@ -202,7 +240,7 @@ export function parseCsv(text: string): ParsedCsv {
       else effective[n === 1 ? 'from' : 'to'] = d
     })
     if (problems.length > before) continue
-    if (isDefault) { def = then; continue }
+    if (isDefault) { def = then as Record<string, Literal>; continue }
     if (rows.length >= 50) { problems.push({ line: rec.line, column: 1, code: 'tooManyRules', message: 'At most 50 rules are allowed.' }); continue }
     rows.push({ when: terms.length === 1 ? terms[0]! : { all: terms }, then, ...(Object.keys(effective).length ? { effective } : {}) })
     ruleLines.push(rec.line)

@@ -40,11 +40,18 @@ public final class DecisionCsv {
     public static final int MAX_INPUTS = 30;
     public static final int MAX_OUTPUTS = 10;
     public static final int MAX_CELL_CHARS = 120;
+    /**
+     * A formula cell (S146): {@code =} followed by an Orqix expression of at most 2000 characters, plus the
+     * spreadsheet-safety apostrophe.
+     */
+    public static final int MAX_FORMULA_CELL_CHARS = 2002;
     /** Most problems reported for one file. */
     public static final int MAX_PROBLEMS = 100;
 
     private static final List<String> OPERATORS = List.of("eq", "ne", "gte", "gt", "lt", "lte");
     private static final List<String> TYPES = List.of("text", "number", "boolean");
+    /** S146: the type of an input column whose cells are all formulas (or empty), e.g. a date field. */
+    private static final String EXPRESSION_TYPE = "expression";
     private static final Pattern FIELD_REF = Pattern.compile(
             "^/(input/[a-z][A-Za-z0-9]{0,63}(/count|/sum/[a-z][A-Za-z0-9]{0,63})?|steps/(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}/[a-z][A-Za-z0-9]{0,63})$");
     private static final Pattern OUTPUT_KEY = Pattern.compile("^[a-z][A-Za-z0-9]{0,63}$");
@@ -285,9 +292,12 @@ public final class DecisionCsv {
         }
         for (Rec r : records) {
             for (int i = 0; i < r.cells().size(); i++) {
-                if (r.cells().get(i).length() > MAX_CELL_CHARS) {
-                    problems.add(new Problem(r.line(), i + 1, "cellTooLong",
-                            "A cell is longer than " + MAX_CELL_CHARS + " characters."));
+                String cellText = r.cells().get(i);
+                boolean formula = cellText.startsWith("=") || cellText.startsWith("'=");
+                if (cellText.length() > (formula ? MAX_FORMULA_CELL_CHARS : MAX_CELL_CHARS)) {
+                    problems.add(new Problem(r.line(), i + 1, "cellTooLong", formula
+                            ? "A formula cell is longer than " + MAX_FORMULA_CELL_CHARS + " characters."
+                            : "A cell is longer than " + MAX_CELL_CHARS + " characters."));
                 }
             }
         }
@@ -347,9 +357,11 @@ public final class DecisionCsv {
                 continue;
             }
             String[] parts = h.substring(input ? 3 : 4).split(":", 2);
-            if (parts.length != 2 || !TYPES.contains(parts[0])) {
+            boolean formulaColumn = input && parts.length == 2 && EXPRESSION_TYPE.equals(parts[0]);
+            if (parts.length != 2 || !TYPES.contains(parts[0]) && !formulaColumn) {
                 problems.add(new Problem(1, c + 1, "header", "A column heading is " + (input ? "in" : "out")
-                        + ":<type>:<name> with the type text, number or boolean."));
+                        + ":<type>:<name> with the type text, number or boolean"
+                        + (input ? " (or expression for a column of formulas only)." : ".")));
                 continue;
             }
             boolean valid = input ? FIELD_REF.matcher(parts[1]).matches() : OUTPUT_KEY.matcher(parts[1]).matches();
@@ -479,7 +491,9 @@ public final class DecisionCsv {
                             + outputs.get(o).name() + " is empty."));
                     continue;
                 }
-                JsonNode literal = literal(outputs.get(o).type(), cell, rec.line(), col, problems);
+                JsonNode literal = cell.startsWith("=") && !isDefault
+                        ? formula(cell, rec.line(), col, problems)
+                        : literal(outputs.get(o).type(), cell, rec.line(), col, problems);
                 if (literal != null) {
                     then.set(outputs.get(o).name(), literal);
                     outCols.put(outputs.get(o).name(), col);
@@ -536,7 +550,32 @@ public final class DecisionCsv {
         return table;
     }
 
+    /** S146: {@code =<expression>}, read as the formula text exactly (the compiler checks it). */
+    private static ObjectNode formula(String cell, int line, int col, List<Problem> problems) {
+        String expression = cell.substring(1);
+        if (expression.isEmpty()) {
+            problems.add(new Problem(line, col, "formula", "Write the formula after the = sign."));
+            return null;
+        }
+        return JsonNodeFactory.instance.objectNode().put("expression", expression);
+    }
+
     private static ObjectNode condition(Column column, String cell, int line, int col, List<Problem> problems) {
+        if (cell.startsWith("=")) {
+            ObjectNode f = formula(cell, line, col, problems);
+            if (f == null) {
+                return null;
+            }
+            ObjectNode term = JsonNodeFactory.instance.objectNode();
+            term.put("fieldRef", column.name());
+            term.set("expression", f.get("expression"));
+            return term;
+        }
+        if (EXPRESSION_TYPE.equals(column.type())) {
+            problems.add(new Problem(line, col, "formula", "This column holds formulas only: start the cell with ="
+                    + " or leave it empty."));
+            return null;
+        }
         int space = cell.indexOf(' ');
         if (space < 0) {
             problems.add(new Problem(line, col, "condition", "Write a comparison and a value, for example gte 100 or eq approved."));
@@ -666,11 +705,18 @@ public final class DecisionCsv {
                     continue;
                 }
                 String ref = term.path("fieldRef").asString("");
+                if (term.has("expression")) {
+                    // S146: a formula fits a column of any type; a column of formulas only is of type expression.
+                    inputType.putIfAbsent(ref, EXPRESSION_TYPE);
+                    continue;
+                }
                 JsonNode value = term.path("value");
                 // A template still names the column type of a list (its values) or a range (numbers).
                 String type = value.isArray() ? typeOf(value.path(0)) : value.isObject() ? "number" : typeOf(value);
                 String known = inputType.putIfAbsent(ref, type);
-                if (known != null && !known.equals(type) && !template) {
+                if (EXPRESSION_TYPE.equals(known)) {
+                    inputType.put(ref, type);
+                } else if (known != null && !known.equals(type) && !template) {
                     reasons.add("Row " + (r + 1) + " compares " + ref + " with " + type + " but another row uses " + known + ".");
                 }
             }
@@ -708,7 +754,7 @@ public final class DecisionCsv {
                 continue;
             }
             for (Map.Entry<String, JsonNode> e : then.properties()) {
-                if (!outputType.get(e.getKey()).equals(typeOf(e.getValue()))) {
+                if (!e.getValue().isObject() && !outputType.get(e.getKey()).equals(typeOf(e.getValue()))) {
                     reasons.add("Row " + (r + 1) + " sets " + e.getKey() + " to a different kind of value than the default.");
                 }
             }
@@ -733,6 +779,7 @@ public final class DecisionCsv {
                 example.add(i == 0 ? switch (inputType.get(inputRefs.get(0))) {
                     case "number" -> "gte 0";
                     case "boolean" -> "eq true";
+                    case EXPRESSION_TYPE -> "=" + inputRefs.get(0).substring(1).replace('/', '.') + " != null";
                     default -> "eq example";
                 } : "");
             }
@@ -748,7 +795,8 @@ public final class DecisionCsv {
                 }
                 for (String ref : inputRefs) {
                     JsonNode term = byRef.get(ref);
-                    cells.add(term == null ? "" : term.path("operator").asString("") + " " + plain(term.path("value")));
+                    cells.add(term == null ? "" : term.has("expression") ? "=" + term.path("expression").asString("")
+                            : term.path("operator").asString("") + " " + plain(term.path("value")));
                 }
                 for (String key : outputKeys) {
                     cells.add(plain(row.path("then").path(key)));
@@ -849,6 +897,9 @@ public final class DecisionCsv {
     }
 
     private static String plain(JsonNode value) {
+        if (value.isObject() && value.has("expression")) {
+            return "=" + value.path("expression").asString(""); // S146: a result formula
+        }
         if (value.isNumber()) {
             return value.decimalValue().toPlainString();
         }
@@ -893,7 +944,10 @@ public final class DecisionCsv {
         if (!cell.equals(cell.strip())) {
             return "The value \"" + shorten(cell) + "\" starts or ends with a space, which CSV import would not accept.";
         }
-        if (cell.length() > MAX_CELL_CHARS) {
+        if (cell.startsWith("=") && cell.length() > MAX_FORMULA_CELL_CHARS - 1) {
+            return "A formula is longer than " + (MAX_FORMULA_CELL_CHARS - 2) + " characters.";
+        }
+        if (!cell.startsWith("=") && cell.length() > MAX_CELL_CHARS) {
             return "A value is longer than " + MAX_CELL_CHARS + " characters.";
         }
         return null;

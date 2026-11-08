@@ -1,7 +1,8 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
 import { evaluateTable, inWindow, matchValue, rowMatches } from '@/features/studio/model/decisionLogic'
-import { conditionTerms, isAtomicCondition, isExpressionCondition, type Condition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
-import { studioScope } from '@/features/studio/model/expressionScope'
+import { decisionTerms, isAtomicCondition, isExpressionCondition, tableUsesExpressions, type Condition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { decisionTypes, studioScope } from '@/features/studio/model/expressionScope'
+import { decisionFields, evaluateExpressionTable, expressionEvidence } from '@/lib/expr/decision'
 import { compile } from '@/lib/expr'
 import { runCalculation, type CalculateConfig } from '@/lib/expr/calculate'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
@@ -294,10 +295,38 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       case 'decision': {
         const table = def.decisions.find((d) => d.key === node.config.decisionRef)
         if (!table) return
-        const values: Record<string, Literal | undefined> = {}
-        for (const row of table.rows) for (const term of conditionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
         // Dated rows are judged by the day the request was submitted (S41).
         const asOf = table.rows.some(row => row.effective) ? run.createdAt.slice(0, 10) : undefined
+        if (tableUsesExpressions(table)) {
+          // S146: formulas as row tests and results, with the server's semantics and the pinned field types.
+          const values: Record<string, unknown> = { $now: clock.iso(), ...(asOf ? { $asOf: asOf } : {}) }
+          for (const ref of decisionFields(table)) { const v = resolveRef(run, ref); if (v !== undefined) values[ref] = v }
+          let result
+          try {
+            result = evaluateExpressionTable(table, values, decisionTypes(def, table, node.id))
+          } catch (e) {
+            const message = e instanceof Error ? e.message : 'The decision could not be evaluated.'
+            run.lifecycle = 'needsAttention'
+            run.attention = { reason: 'DECISION_FAILED', nodeId: node.id, effectId: null, message, since: clock.iso() }
+            addEvent(run, 'RUN_NEEDS_ATTENTION', { nodeId: node.id, data: { label: node.label, reason: 'DECISION_FAILED' } })
+            return
+          }
+          run.steps[node.id] = result.output as MockRun['steps'][string]
+          addEvent(run, 'DECISION_EVALUATED', {
+            nodeId: node.id,
+            data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : result.matchedRows.map(i => `r${i + 1}`).join(','), outputs: result.output, evidence: {
+              ...(asOf ? { asOf } : {}),
+              ...expressionEvidence(table, values, result, asOf),
+              hitPolicy: table.hitPolicy,
+              ...(table.aggregation ? { aggregation: table.aggregation } : {}),
+              defaultSelected: result.usedDefault,
+            } },
+          })
+          current = next('next')
+          break
+        }
+        const values: Record<string, Literal | undefined> = {}
+        for (const row of table.rows) for (const term of decisionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
         const result = evaluateTable(table, values, asOf)
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {

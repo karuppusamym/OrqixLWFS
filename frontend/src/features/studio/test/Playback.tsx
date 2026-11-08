@@ -51,6 +51,13 @@ export function StepDetails({ entry }: { entry: SimulationStep }) {
                 <li key={String(row.row)} className={cn('rounded border px-2 py-1', row.selected === true ? 'border-primary bg-primary/5' : 'border-border')}>
                   Rule {show(row.row)}: {show(row.condition)} — <MatchMark matched={row.matched} />
                   {row.selected === true ? <span className="font-semibold"> (used)</span> : null}
+                  {/* S146: what the formulas of the row gave. */}
+                  {asArr(row.expressions).length || asArr(row.outputExpressions).length ? (
+                    <ul className="mt-1 text-xs text-muted-foreground">
+                      {asArr(row.expressions).map((e, k) => <li key={`t${k}`}>Formula <span className="font-mono">{show(asObj(e).expression)}</span> gave {asObj(e).result === null ? 'no value' : show(asObj(e).result)}</li>)}
+                      {asArr(row.outputExpressions).map((e, k) => <li key={`o${k}`}>{show(asObj(e).output)} = <span className="font-mono">{show(asObj(e).expression)}</span> gave {asObj(e).value === null ? 'no value' : show(asObj(e).value)}</li>)}
+                    </ul>
+                  ) : null}
                 </li>
               )
             })}

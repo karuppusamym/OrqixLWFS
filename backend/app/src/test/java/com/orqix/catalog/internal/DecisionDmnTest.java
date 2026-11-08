@@ -31,6 +31,30 @@ class DecisionDmnTest {
     }
 
     @Test
+    void formulaEntriesReadBackExactlyAndForeignLanguagesAreRefused() {
+        // S146: tests and results written as Orqix expressions, a date column of formulas only (no typeRef).
+        String table = "{\"hitPolicy\":\"FIRST\",\"rows\":["
+                + "{\"when\":{\"all\":[{\"fieldRef\":\"/input/amount\",\"operator\":\"gte\",\"value\":1000},"
+                + "{\"fieldRef\":\"/input/due\",\"expression\":\"input.due < date(\\\"2026-06-30\\\") \"}]},"
+                + "\"then\":{\"route\":\"finance\",\"fee\":{\"expression\":\"round(input.amount * 0.025, 2)\"}}},"
+                + "{\"when\":{\"fieldRef\":\"/input/amount\",\"expression\":\"input.amount > 5 and input.amount < 10\"},"
+                + "\"then\":{\"route\":\"small\",\"fee\":0}}],"
+                + "\"default\":{\"route\":\"standard\",\"fee\":0}}";
+        String xml = DecisionTables.exportDmn(table, "fees", "Fees");
+        assertThat(xml).contains("expressionLanguage=\"https://orqix.example/expression\"",
+                "<text>input.amount &gt; 5 and input.amount &lt; 10</text>");
+        assertThat(roundTrip(table)).isEqualTo(content(table));
+
+        String foreign = xml.replace("https://orqix.example/expression", "https://example.com/js");
+        assertThatThrownBy(() -> DecisionDmn.read(foreign, null)).hasMessageContaining("expression language");
+        // FEEL beyond the subset stays refused.
+        String feel = xml.replaceFirst(" expressionLanguage=\"https://orqix.example/expression\"><text>input.amount &gt; 5 and input.amount &lt; 10</text>",
+                "><text>&gt; abs(-5)</text>");
+        assertThat(feel).isNotEqualTo(xml);
+        assertThatThrownBy(() -> DecisionDmn.read(feel, null)).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
     void exportedTablesReadBackToTheSameContent() {
         String[] tables = {
             // UNIQUE with a list, a range, a dated row and a not-equal.

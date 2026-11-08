@@ -320,13 +320,36 @@ public class WorkflowService {
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED).withFieldErrors(errors);
         }
+        // S146: a table with formula entries is evaluated with the types the compiler checked them with.
+        String types = null;
+        boolean formulas = false;
+        for (JsonNode table : json.parse(draft.definitionJson()).path("decisions")) {
+            if (decisionKey.equals(table.path("key").asString(null))) {
+                try {
+                    formulas = com.orqix.compiler.DecisionTables.usesExpressions(json.write(table));
+                } catch (IllegalArgumentException malformed) {
+                    formulas = false;
+                }
+            }
+        }
+        if (formulas) {
+            types = compiler.decisionTypes(draft.definitionJson(),
+                    contexts.create(visible.access().workspace(), draft.definitionJson()), decisionKey);
+            values.putIfAbsent("$now", java.time.Instant.now());
+        }
         try {
-            DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values);
+            DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values, types);
             Map<String, Object> output = new LinkedHashMap<>();
             result.output().forEach((k, v) -> output.put(k, v instanceof BigDecimal d ? d : v));
             return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output,
-                    result.matchedRows());
+                    result.matchedRows(), formulas ? result.expressions().stream()
+                            .map(e -> new CatalogDtos.DecisionExpressionEntry(e.row(), e.term(), e.kind(), e.target(),
+                                    e.expression(), e.value())).toList() : null);
         } catch (IllegalArgumentException e) {
+            if (formulas) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/values", "type", e.getMessage())));
+            }
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
                     .withFieldErrors(List.of(new ApiException.FieldError("/values", "type",
                             "A tested field is missing or has the wrong type")));

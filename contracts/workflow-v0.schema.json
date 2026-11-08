@@ -2770,7 +2770,7 @@
       ]
     },
     "decisionTerm": {
-      "description": "One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121).",
+      "description": "One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121).",
       "oneOf": [
         {
           "$ref": "#/$defs/atomicCondition"
@@ -2780,8 +2780,28 @@
         },
         {
           "$ref": "#/$defs/betweenCondition"
+        },
+        {
+          "$ref": "#/$defs/decisionExpressionTerm"
         }
       ]
+    },
+    "decisionExpressionTerm": {
+      "description": "An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date(\"2026-06-30\"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available.",
+      "type": "object",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        }
+      },
+      "required": [
+        "fieldRef",
+        "expression"
+      ],
+      "additionalProperties": false
     },
     "inCondition": {
       "type": "object",
@@ -2916,7 +2936,7 @@
                 "$ref": "#/$defs/decisionCondition"
               },
               "then": {
-                "$ref": "#/$defs/decisionOutput"
+                "$ref": "#/$defs/decisionRowOutput"
               },
               "effective": {
                 "description": "Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date.",
@@ -2962,6 +2982,34 @@
       },
       "additionalProperties": {
         "$ref": "#/$defs/literal"
+      }
+    },
+    "decisionRowOutput": {
+      "description": "The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 10,
+      "propertyNames": {
+        "$ref": "#/$defs/fieldKey"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/literal"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "$ref": "#/$defs/expression"
+              }
+            },
+            "required": [
+              "expression"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "scalarFormField": {

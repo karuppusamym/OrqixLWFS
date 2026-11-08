@@ -1,6 +1,7 @@
 import { humanize } from '@/lib/text'
 import { guaranteedBefore, nodeById } from './graph'
-import { conditionTerms, type Definition, type Literal, type WorkflowNode } from './types'
+import { decisionFields } from '@/lib/expr/decision'
+import { conditionTerms, decisionTerms, isOutputExpression, type Definition, type Literal, type WorkflowNode } from './types'
 
 /** `date` is a string field with format date: a calendar date YYYY-MM-DD. */
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'
@@ -93,7 +94,7 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       if (!table) return []
       const outputs: Record<string, Literal[]> = {}
       for (const out of [...table.rows.map((r) => r.then), table.default]) {
-        for (const [k, v] of Object.entries(out ?? {})) (outputs[k] ??= []).push(v)
+        for (const [k, v] of Object.entries(out ?? {})) if (!isOutputExpression(v)) (outputs[k] ??= []).push(v)
       }
       return Object.entries(outputs).map(([k, values]) => {
         const type = literalType(values[0] as Literal)
@@ -225,7 +226,7 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
   for (const condition of [...Object.values(def.inputUi?.visibleWhen ?? {}), ...Object.values(def.inputUi?.requiredWhen ?? {}), ...(def.inputUi?.layout?.sections ?? []).flatMap(section => section.visibleWhen ? [section.visibleWhen] : [])]) for (const term of conditionTerms(condition)) term.fieldRef = map(term.fieldRef)
   for (const t of def.transitions) if (t.condition) for (const term of conditionTerms(t.condition)) term.fieldRef = map(term.fieldRef)
   for (const d of def.decisions) {
-    for (const r of d.rows) for (const term of conditionTerms(r.when)) term.fieldRef = map(term.fieldRef)
+    for (const r of d.rows) for (const term of decisionTerms(r.when)) term.fieldRef = map(term.fieldRef)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string') n.config.correlationField = map(n.config.correlationField)
@@ -246,7 +247,7 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
     if (t.condition && conditionTerms(t.condition).some(term => predicate(term.fieldRef))) places.push(`the path "${t.label ?? t.id}" from ${nodeById(def, t.from)?.label ?? t.from}`)
   }
   for (const d of def.decisions) {
-    if (d.rows.some((r) => conditionTerms(r.when).some(term => predicate(term.fieldRef)))) places.push(`the rule table "${d.key}"`)
+    if (decisionFields(d).some(predicate)) places.push(`the rule table "${d.key}"`)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string' && predicate(n.config.correlationField)) places.push(`the step "${n.label}"`)

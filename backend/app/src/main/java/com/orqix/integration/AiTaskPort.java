@@ -61,6 +61,18 @@ public interface AiTaskPort {
     boolean recordOutcome(UUID workspaceId, UUID runId, UUID decisionId, HumanOutcome outcome);
 
     /**
+     * Records the verification of a document extraction (CG-A06): the human outcome of the decision ({@code accepted}
+     * when every field was confirmed, {@code overridden} when one was corrected) and, for corrections, a pending
+     * evaluation candidate whose expected fields are the verified values. Runs in the caller's transaction.
+     *
+     * @param finalFields the verified values by field name
+     * @param corrected   the names of the corrected fields
+     * @return false when the decision does not exist in this run
+     */
+    boolean recordVerification(UUID workspaceId, UUID runId, UUID decisionId, ObjectNode finalFields,
+            List<String> corrected, String reason, UUID decidedBy);
+
+    /**
      * Control facts of an evaluation run for the release evidence pack (status, profile, suite, cases, accuracy,
      * finish time); null when the run does not exist in the workspace.
      */
@@ -91,7 +103,11 @@ public interface AiTaskPort {
      *                {@code label:<key>}
      * @param outputs the step outputs ({@code /steps/<node>/...})
      */
-    record Outcome(String route, ObjectNode outputs, DecisionRecord record) {
+    record Outcome(String route, ObjectNode outputs, DecisionRecord record, ObjectNode verification) {
+
+        public Outcome(String route, ObjectNode outputs, DecisionRecord record) {
+            this(route, outputs, record, null);
+        }
     }
 
     /** Everything section 7.8 lists; written by {@link #record}. */

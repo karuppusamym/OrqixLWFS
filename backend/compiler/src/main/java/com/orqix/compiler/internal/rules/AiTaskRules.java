@@ -153,7 +153,8 @@ public final class AiTaskRules {
             if (resolved instanceof Resolved r) {
                 if (!compatible(type, r.type().kind())) {
                     rc.issues().blocker("WF_AI_INPUT_TYPE", path, ai.id(), null, "The input " + q(name) + " of "
-                            + q(skill.name()) + " is " + FieldKind.fromJson(type, null).description()
+                            + q(skill.name()) + " is " + ("attachment".equals(type) ? FieldKind.ATTACHMENT.description()
+                            : FieldKind.fromJson(type, null).description())
                             + ", but the mapped value is " + r.type().kind().description() + ".");
                 }
                 if (r.type().mayBeAbsent() && v.requiredInputs().contains(name)) {
@@ -178,6 +179,8 @@ public final class AiTaskRules {
             case "integer" -> actual == FieldKind.INTEGER;
             case "boolean" -> actual == FieldKind.BOOLEAN;
             case "date" -> actual == FieldKind.DATE;
+            // CG-A06: the document input of an extract skill takes a request file.
+            case "attachment" -> actual == FieldKind.ATTACHMENT;
             default -> false;
         };
     }

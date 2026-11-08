@@ -170,6 +170,9 @@ public final class Stub {
         if (path.startsWith("/servicenow/")) {
             return ServiceNowStub.handle(request);
         }
+        if (path.startsWith("/ocr/azure/")) {
+            return OcrStub.handle(request);
+        }
         if (path.startsWith("/reports/")) {
             return ReportJobStub.handle(request);
         }

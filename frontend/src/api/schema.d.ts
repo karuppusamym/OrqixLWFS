@@ -7077,6 +7077,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/ai-ocr-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The OCR provider of document extraction and the providers this deployment offers
+         * @description local (on this deployment) is always allowed. A cloud provider is allowed only when the workspace AI
+         *     policy's residency rule names one of its residency tags, or, in a workspace that is not regulated and has no
+         *     residency rule, once an administrator chooses it.
+         */
+        get: operations["getAiOcrSettings"];
+        /**
+         * Choose the OCR provider of document extraction
+         * @description expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT); a provider the residency rule does not
+         *     admit is 422.
+         */
+        put: operations["updateAiOcrSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-document-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Built-in document-type templates of extract skills (invoice, ID document, bank statement) */
+        get: operations["listAiDocumentTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Open verification tasks of document extractions in the workspace */
+        get: operations["listAiVerifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Verification tasks of a run */
+        get: operations["listRunAiVerifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A verification task: the document reference and the extracted fields with confidence and source
+         * @description Needs request-data visibility. sourceText comes from the file's OCR result while it exists (quarantine and
+         *     removal delete it).
+         */
+        get: operations["getAiVerification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm or correct the extracted fields; the step continues with the verified values
+         * @description verified continues on next with the verified values as the step outputs; escalated (reason required) takes
+         *     needsReview. Every field that needs attention must be confirmed or corrected. The decision record gets the
+         *     human outcome and corrections become a pending evaluation candidate. The initiator of the request cannot
+         *     verify (403 SELF_APPROVAL_DENIED); a stale expectedVersion or a closed task is 409 TASK_VERSION_CONFLICT.
+         */
+        post: operations["submitAiVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/ai/status": {
         parameters: {
             query?: never;
@@ -9035,7 +9174,7 @@ export interface components {
         };
         /** @description A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays. */
         WorkingCalendarContent: {
-            /** @description IANA time zone */
+            /** @description IANA time zone, for example Europe/London */
             zone?: string;
             weekdays?: number[];
             start?: string;
@@ -9146,7 +9285,7 @@ export interface components {
             endsAt?: string | null;
             /** @description Start only inside this working calendar's hours; the latest version is pinned when saved */
             calendarKey?: string | null;
-            /** @description The fixed request values */
+            /** @description The fixed request values, checked against the active release's request form */
             input?: {
                 [key: string]: unknown;
             };
@@ -11170,7 +11309,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai" | "verify";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -11657,7 +11796,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai" | "verify";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -13008,6 +13147,162 @@ export interface components {
             outcome: "accepted" | "overridden";
             value?: string;
             reason?: string;
+        };
+        AiOcrProvider: {
+            id: string;
+            /** @enum {string} */
+            kind: "local" | "azureDocumentIntelligence" | "textract";
+            label: string;
+            residency: string[];
+            allowed: boolean;
+            refusal: string | null;
+        };
+        AiOcrSettings: {
+            /** @description The provider in use (the deployment default until an administrator chooses one). */
+            provider: string;
+            chosen: boolean;
+            version: number;
+            updatedAt: components["schemas"]["Timestamp"] | null;
+            /** @description Why the provider in use is not allowed now (extractions then end on aiUnavailable). */
+            refusal: string | null;
+            providers: components["schemas"]["AiOcrProvider"][];
+        };
+        AiOcrSettingsUpdate: {
+            provider: string;
+            expectedVersion: number;
+        };
+        AiDocumentTemplateField: {
+            name: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            required: boolean;
+            description: string | null;
+            /** @enum {string|null} */
+            hint: "iban" | "currency" | "country" | "pastDate" | "futureDate" | null;
+        };
+        AiDocumentTemplate: {
+            /** @enum {string} */
+            type: "invoice" | "idDocument" | "bankStatement";
+            label: string;
+            fields: components["schemas"]["AiDocumentTemplateField"][];
+            checks: {
+                /** @enum {string} */
+                kind: "sum" | "after" | "lineItems";
+                target: string;
+                plus: string[];
+                minus: string[];
+                other: string | null;
+                tolerance: number;
+            }[];
+        };
+        AiDocumentTemplateList: {
+            items: components["schemas"]["AiDocumentTemplate"][];
+        };
+        AiVerificationSummary: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            nodeId: string;
+            occurrence: number;
+            decisionId: components["schemas"]["Uuid"];
+            skillKey: string;
+            skillVersion: number;
+            /** @enum {string} */
+            documentType: "invoice" | "idDocument" | "bankStatement" | "custom";
+            provider: string;
+            /** @enum {string} */
+            status: "open" | "verified" | "escalated" | "cancelled";
+            version: number;
+            fieldCount: number;
+            needsAttention: number;
+            createdAt: components["schemas"]["Timestamp"];
+            runReference?: string | null;
+            ownRequest?: boolean;
+        };
+        AiVerificationQueue: {
+            items: components["schemas"]["AiVerificationSummary"][];
+        };
+        AiVerificationList: {
+            items: components["schemas"]["AiVerificationSummary"][];
+            canVerify: boolean;
+        };
+        /** @description A rectangle normalized to the page (0..1 from the top left). */
+        AiBox: {
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+        };
+        AiVerificationField: {
+            name: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            required: boolean;
+            description?: string | null;
+            hint?: string | null;
+            /** @description The extracted value (null when not found). */
+            value: unknown;
+            confidence: number | null;
+            needsAttention: boolean;
+            problems: {
+                code: string;
+                message: string;
+            }[];
+            source: {
+                /** @enum {string} */
+                kind: "ocrLine" | "ocrKeyValue" | "none";
+                page?: number;
+                line?: number;
+                box?: components["schemas"]["AiBox"] | null;
+                span?: {
+                    start: number;
+                    end: number;
+                };
+            };
+            sourceText?: string | null;
+        };
+        AiVerification: components["schemas"]["AiVerificationSummary"] & {
+            threshold: number;
+            canSubmit: boolean;
+            attachment: {
+                id: components["schemas"]["Uuid"];
+                name: string;
+                contentType: string;
+                available: boolean;
+                /** @enum {string|null} */
+                unavailableReason: "removed" | "quarantined" | "scanBlocked" | null;
+            };
+            pages: {
+                number: number;
+                width: number;
+                height: number;
+                unit: string;
+            }[];
+            fields: components["schemas"]["AiVerificationField"][];
+            decision: {
+                decidedBy: string | null;
+                decidedAt: components["schemas"]["Timestamp"] | null;
+                corrected: string[];
+            };
+        };
+        AiVerificationSubmit: {
+            expectedVersion: number;
+            /**
+             * @default verified
+             * @enum {string}
+             */
+            outcome: "verified" | "escalated";
+            reason?: string;
+            /** @description Accept values that fail a validation hint or cross-field check. */
+            acknowledgeProblems?: boolean;
+            /** @description Field name to the person's answer: confirm keeps the value, correct sets value, clear removes it. */
+            fields?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    action: "confirm" | "correct" | "clear";
+                    /** @description The corrected value (correct only). */
+                    value?: unknown;
+                };
+            };
         };
         AiStatus: {
             enabled: boolean;
@@ -28438,6 +28733,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiOcrSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiOcrSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAiOcrSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiOcrSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiOcrSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAiDocumentTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDocumentTemplateList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAiVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerificationQueue"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRunAiVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerificationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAiVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerification"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitAiVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiVerificationSubmit"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerification"];
                 };
             };
             400: components["responses"]["BadRequest"];

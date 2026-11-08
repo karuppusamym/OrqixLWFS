@@ -4,6 +4,7 @@ import { GuestLinksPanel } from './GuestLinksPanel'
 import { WaitingForPanel } from './WaitingForPanel'
 import { AiDecisionsPanel } from './AiDecisionsPanel'
 import { ExplainRunPanel, type ExplainAction } from './ExplainRunPanel'
+import { DocumentVerificationsPanel } from './DocumentVerificationsPanel'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
@@ -385,6 +386,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           ) : null}
 
           {run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention' || run.lifecycle === 'running' ? <WaitingForPanel ws={ws} runId={run.id} /> : null}
+          {input ? <DocumentVerificationsPanel ws={ws} runId={run.id} /> : null}
           <AiDecisionsPanel ws={ws} runId={run.id} canRecord={can('run.operate') || can('task.act') || can('ai.evaluate')} />
           {can('run.operate') ? <CallbackWaitsPanel ws={ws} runId={run.id} /> : null}
           {can('run.operate') ? <GuestLinksPanel ws={ws} runId={run.id} /> : null}

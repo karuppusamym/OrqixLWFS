@@ -31,6 +31,23 @@ public interface OcrProvider {
 
     Result extract(byte[] content, String contentType);
 
+    /**
+     * Layout analysis for document extraction (CG-A06, docs/build/S146-parts/B-document-extraction.md): pages, lines
+     * and words with boxes and confidences, and the service's own key-value pairs where it has them. The default reads
+     * the plain text of {@link #extract} without geometry, so every existing provider keeps working.
+     *
+     * @param documentType the skill's document type ({@code invoice}, {@code idDocument}, {@code bankStatement},
+     *                     {@code custom}): cloud services choose their prebuilt model from it
+     * @throws OcrException when the file cannot be read (unsupported type, too large, service failure)
+     */
+    default OcrDocument analyze(byte[] content, String contentType, String documentType, java.time.Duration timeout) {
+        Result result = extract(content, contentType);
+        if (!result.supported()) {
+            throw new OcrException(OcrException.Kind.UNSUPPORTED, 0, id() + ": unsupported file type");
+        }
+        return OcrDocument.plainText(id(), result.text());
+    }
+
     @Configuration
     class Defaults {
 

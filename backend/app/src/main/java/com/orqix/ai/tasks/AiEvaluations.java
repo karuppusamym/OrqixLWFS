@@ -198,7 +198,25 @@ public class AiEvaluations {
             long started = System.nanoTime();
             ObjectNode input = c.path("input").isObject() ? (ObjectNode) c.path("input") : json.object();
             Minimizer.Result minimized = Minimizer.apply(json, skill.path("input"), input, policy, Map.of());
-            AiTaskEngine.Inference inf = engine.infer(workspaceId, v, profile, minimized.sent(), samples,
+            ObjectNode sent = minimized.sent();
+            String documentInput = com.orqix.compiler.DocumentTemplates.attachmentInput(skill);
+            if (documentInput != null && "extract".equals(mode)) {
+                // CG-A06: a document case gives the recognized text of the document; it reaches the model as the
+                // same numbered lines production sends.
+                String action = minimized.actions().getOrDefault(documentInput, "send");
+                String text = input.path(documentInput).asString("");
+                sent = sent.deepCopy();
+                if (Minimizer.maskText("", action) == null) {
+                    sent.remove(documentInput);
+                } else {
+                    ObjectNode doc = sent.putObject(documentInput);
+                    doc.put("documentType", com.orqix.compiler.DocumentTemplates.documentType(skill));
+                    doc.put("pages", 1);
+                    doc.put("lines", DocumentStage.render(com.orqix.integration.OcrDocument.plainText("evaluation",
+                            text), action));
+                }
+            }
+            AiTaskEngine.Inference inf = engine.infer(workspaceId, v, profile, sent, samples,
                     clock.instant().plusSeconds(timeout), maxCost, null, null);
             latencies.add((System.nanoTime() - started) / 1_000_000);
             cost = cost.add(inf.costUsd());

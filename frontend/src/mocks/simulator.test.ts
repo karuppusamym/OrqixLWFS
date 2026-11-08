@@ -89,6 +89,27 @@ describe('mock dry run behaviour', () => {
     expect(r.warnings.map((w: Loose) => w.code)).toContain('SCENARIO_UNKNOWN_STEP')
   })
 
+  it('evaluates formulas in rule rows with the server semantics and reports what they gave (docs/build/S146)', () => {
+    const def = definition(purchase)
+    const table = def.decisions[0]!
+    table.hitPolicy = 'FIRST'
+    table.rows = [
+      { when: { fieldRef: '/input/amount', expression: 'input.amount >= 5000 and today() >= date("2000-01-01")' }, then: { route: 'financeReview' } },
+      { when: { fieldRef: '/input/amount', expression: 'input.amount > 0' }, then: { route: { expression: 'lower(input.costCenter) + "-standard"' } } },
+    ]
+    const high = simulateDefinition(def, { ...base, amount: 6000 }, {}, context())
+    if (high.status !== 'ok') throw new Error(JSON.stringify(high))
+    const decision = (high.body as Loose).trace.find((e: Loose) => e.stepId === 'amountPolicy')
+    expect(decision.details.outputs).toEqual({ route: 'financeReview' })
+    expect(decision.details.rows[0].expressions).toEqual([{ term: 0, fieldRef: '/input/amount', expression: 'input.amount >= 5000 and today() >= date("2000-01-01")', result: true }])
+    expect(decision.details.rows[1]).toMatchObject({ matched: true, selected: false })
+    const formula = simulateDefinition(def, { ...base, amount: 10 }, {}, context())
+    if (formula.status !== 'ok') throw new Error(JSON.stringify(formula))
+    const step = (formula.body as Loose).trace.find((e: Loose) => e.stepId === 'amountPolicy')
+    expect(step.details.outputs).toEqual({ route: 'it-standard' })
+    expect(step.details.rows[1].outputExpressions).toEqual([{ output: 'route', expression: 'lower(input.costCenter) + "-standard"', value: 'it-standard' }])
+  })
+
   it('formats numbers and money for people', () => {
     expect(text.number(5000)).toBe('5,000')
     expect(text.number(1800.5)).toBe('1,800.5')

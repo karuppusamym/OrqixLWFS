@@ -43,6 +43,41 @@ public final class Expression {
         return new Expression(source, ast, type, checker);
     }
 
+    /**
+     * The request fields and step results an expression names, read without type checking (S146: the fields a decision
+     * table reads, so the caller can collect their values before the types are known).
+     *
+     * @return field references in first-use order ({@code /input/a}, {@code /steps/s/b})
+     * @throws ExpressionException for a syntax problem
+     */
+    public static Set<String> references(String source) throws ExpressionException {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        collect(Parser.parse(source), out);
+        return out;
+    }
+
+    private static void collect(Ast ast, Set<String> out) {
+        switch (ast) {
+            case Ast.Ref r when r.kind() == Ast.RefKind.INPUT -> out.add("/input/" + r.key());
+            case Ast.Ref r when r.kind() == Ast.RefKind.STEP -> out.add("/steps/" + r.step() + "/" + r.key());
+            case Ast.ListLit l -> l.items().forEach(i -> collect(i, out));
+            case Ast.Member m -> collect(m.target(), out);
+            case Ast.Neg n -> collect(n.operand(), out);
+            case Ast.Binary b -> {
+                collect(b.left(), out);
+                collect(b.right(), out);
+            }
+            case Ast.If i -> {
+                collect(i.condition(), out);
+                collect(i.then(), out);
+                collect(i.otherwise(), out);
+            }
+            case Ast.Call c -> c.args().forEach(a -> collect(a, out));
+            default -> {
+            }
+        }
+    }
+
     public String source() {
         return source;
     }

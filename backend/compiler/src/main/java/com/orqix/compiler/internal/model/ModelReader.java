@@ -359,8 +359,9 @@ public final class ModelReader {
         for (int r = 0; r < rows.size(); r++) {
             JsonNode row = rows.get(r);
             require(row.isObject(), "decision row must be an object");
-            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when"), true), outputMap(row.get("then")),
-                    readWindow(row.get("effective"))));
+            JsonNode then = row.get("then");
+            rowList.add(new DecisionTable.Row(r, readRowCondition(row.get("when")), outputMap(literalOutputs(then)),
+                    readWindow(row.get("effective")), outputExpressions(then)));
         }
         JsonNode policy = t.get("hitPolicy");
         require(policy == null || (policy.isString() && DecisionTable.HIT_POLICIES.contains(policy.stringValue())),
@@ -484,6 +485,62 @@ public final class ModelReader {
         } catch (java.time.format.DateTimeParseException e) {
             throw new IllegalArgumentException("effective dates must be real calendar dates (YYYY-MM-DD)");
         }
+    }
+
+    /** The literal results of a row; results written as {@code {"expression": ...}} are read by {@link #outputExpressions}. */
+    private static JsonNode literalOutputs(JsonNode o) {
+        require(o != null && o.isObject(), "decision output must be an object");
+        tools.jackson.databind.node.ObjectNode literals = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        o.properties().forEach(e -> {
+            if (!e.getValue().isObject()) literals.set(e.getKey(), e.getValue());
+        });
+        return literals;
+    }
+
+    /** S146: results of a row written as Orqix expressions, by result key (sorted). */
+    private static Map<String, String> outputExpressions(JsonNode o) {
+        Map<String, String> map = new TreeMap<>();
+        for (Map.Entry<String, JsonNode> e : o.properties()) {
+            JsonNode v = e.getValue();
+            if (v.isObject()) {
+                require(v.size() == 1 && v.path("expression").isString() && !v.get("expression").stringValue().isEmpty(),
+                        "a decision result written as an expression has only its expression text");
+                map.put(e.getKey(), v.get("expression").stringValue());
+            }
+        }
+        return Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * A decision row condition: like {@link #readCondition(JsonNode, boolean)} with {@code in} and {@code between},
+     * and a term may be an input entry written as an Orqix expression, {@code {"fieldRef": ..., "expression": ...}}
+     * (S146), on its own or inside {@code all}/{@code any}.
+     */
+    public static Condition readRowCondition(JsonNode c) {
+        require(c != null && c.isObject(), "condition must be an object");
+        if (c.has("all") || c.has("any")) {
+            String group = c.has("all") ? "all" : "any";
+            require(c.size() == 1 && c.path(group).isArray() && c.path(group).size() >= 2 && c.path(group).size() <= 8,
+                    "logical conditions require 2 to 8 atomic terms");
+            List<Condition> terms = new ArrayList<>();
+            for (JsonNode term : c.path(group)) {
+                require(term.isObject() && !term.has("all") && !term.has("any"), "nested logical conditions are not supported");
+                terms.add(rowTerm(term));
+            }
+            return new Condition(null, null, null, group, List.copyOf(terms));
+        }
+        return rowTerm(c);
+    }
+
+    private static Condition rowTerm(JsonNode c) {
+        if (c.has("expression")) {
+            require(c.size() == 2 && c.path("fieldRef").isString() && c.get("expression").isString()
+                    && !c.get("expression").stringValue().isEmpty(),
+                    "a decision row test written as an expression has its column fieldRef and its expression text only");
+            return new Condition(c.get("fieldRef").stringValue(), null, null, null, List.of(), List.of(), null,
+                    c.get("expression").stringValue());
+        }
+        return readCondition(c, true);
     }
 
     private static Map<String, Literal> outputMap(JsonNode o) {

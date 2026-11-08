@@ -176,6 +176,10 @@ final class BindingRules {
                 var table = rc.types().table(d.decisionRef());
                 if (table != null) {
                     table.rows().forEach(row -> conditionRefs(row.when(), refs));
+                    // S146: the fields named inside expression entries are read too.
+                    if (table.usesExpressions()) {
+                        ExpressionRules.decisionExpressions(rc, table).forEach(e -> refs.addAll(e.fieldRefs()));
+                    }
                 }
             }
             default -> {

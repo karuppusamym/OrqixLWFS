@@ -25,6 +25,17 @@ import com.orqix.compiler.internal.model.WorkflowDefinition.DecisionTable;
  */
 public final class DmnExport {
 
+    /**
+     * The {@code expressionLanguage} of an entry written as an Orqix expression (S146): the standard DMN way to say
+     * that the entry's text is not FEEL. The text is the Orqix expression exactly, so the upload reads it back as it
+     * was; other DMN tools see an expression language they do not know instead of a FEEL test that would mean
+     * something else.
+     */
+    public static final String ORQIX_EXPRESSION_LANGUAGE = "https://orqix.example/expression";
+
+    /** Marks a cell that holds an Orqix expression (never part of a FEEL text). */
+    private static final String EXPRESSION = "\u0001";
+
     /** Input expression of the effective-window column. */
     public static final String SUBMISSION_DATE = "submissionDate";
 
@@ -43,8 +54,12 @@ public final class DmnExport {
     public static String export(DecisionTable table, String name) {
         String key = table.key();
         List<String> fields = DmnGenerator.inputFields(table);
-        boolean multiFieldAny = table.rows().stream().anyMatch(r -> r.when().isAny()
-                && r.when().terms().stream().map(Condition::fieldRef).distinct().count() > 1);
+        boolean multiFieldAny = table.rows().stream().anyMatch(DmnExport::split);
+        if (table.collect() && table.rows().stream().anyMatch(r -> r.when().isAny()
+                && r.when().terms().stream().anyMatch(Condition::isExpression))) {
+            throw new IllegalArgumentException("A COLLECT table with an Any row that uses a formula cannot be written"
+                    + " as standard DMN: each match must count once and a formula cannot be negated in DMN.");
+        }
         String policy = DecisionTable.UNIQUE.equals(table.hitPolicy()) && multiFieldAny ? DecisionTable.ANY : table.hitPolicy();
 
         XmlOut x = new XmlOut();
@@ -67,8 +82,14 @@ public final class DmnExport {
         for (int i = 0; i < fields.size(); i++) {
             String field = fields.get(i);
             x.open("", "input", ns).attr("id", key + "_in" + (i + 1)).attr("label", feelName(field));
-            x.inline("", "inputExpression", ns, "text", feelName(field), false, "id", key + "_inexpr" + (i + 1),
-                    "typeRef", typeOf(table, field));
+            String type = typeOf(table, field);
+            if (type == null) {
+                // S146: a column tested only by formulas has no literal to take its type from.
+                x.inline("", "inputExpression", ns, "text", feelName(field), false, "id", key + "_inexpr" + (i + 1));
+            } else {
+                x.inline("", "inputExpression", ns, "text", feelName(field), false, "id", key + "_inexpr" + (i + 1),
+                        "typeRef", type);
+            }
             x.close();
         }
         if (table.dated()) {
@@ -93,15 +114,15 @@ public final class DmnExport {
                 String rule = key + "_r" + (row.index() + 1) + (rules.size() > 1 ? "_" + (k + 1) : "");
                 x.open("", "rule", ns).attr("id", rule);
                 for (int i = 0; i < fields.size(); i++) {
-                    x.inline("", "inputEntry", ns, "text", rules.get(k).getOrDefault(fields.get(i), "-"), false,
-                            "id", rule + "_in" + (i + 1));
+                    entry(x, "inputEntry", rules.get(k).getOrDefault(fields.get(i), "-"), rule + "_in" + (i + 1));
                 }
                 if (table.dated()) {
                     x.inline("", "inputEntry", ns, "text", window(row.effective()), false, "id", rule + "_inDate");
                 }
                 for (String output : table.defaultOutput().keySet()) {
-                    x.inline("", "outputEntry", ns, "text", literal(row.then().get(output)), false,
-                            "id", rule + "_" + output);
+                    String computed = row.thenExpressions().get(output);
+                    entry(x, "outputEntry", computed != null ? EXPRESSION + computed : literal(row.then().get(output)),
+                            rule + "_" + output);
                 }
                 x.close();
             }
@@ -110,6 +131,22 @@ public final class DmnExport {
         x.close();
         x.close();
         return x.finish();
+    }
+
+    /** An entry; one marked as an expression carries {@link #ORQIX_EXPRESSION_LANGUAGE}. */
+    private static void entry(XmlOut x, String element, String text, String id) {
+        if (text.startsWith(EXPRESSION)) {
+            x.inline("", element, DmnGenerator.DMN_NS, "text", text.substring(EXPRESSION.length()), false, "id", id,
+                    "expressionLanguage", ORQIX_EXPRESSION_LANGUAGE);
+        } else {
+            x.inline("", element, DmnGenerator.DMN_NS, "text", text, false, "id", id);
+        }
+    }
+
+    /** An Any row written as one rule per field (several fields) or per alternative (with a formula, S146). */
+    private static boolean split(DecisionTable.Row r) {
+        return r.when().isAny() && (r.when().terms().stream().map(Condition::fieldRef).distinct().count() > 1
+                || r.when().terms().stream().anyMatch(Condition::isExpression));
     }
 
     /** The cells (field to unary tests) of the rule or rules one row becomes. */
@@ -121,6 +158,16 @@ public final class DmnExport {
                 cells.put(t.fieldRef(), test(t));
             }
             return List.of(cells);
+        }
+        if (when.terms().stream().anyMatch(Condition::isExpression)) {
+            // S146: a formula cannot join a FEEL list, so every alternative is a rule of its own (same results).
+            List<Map<String, String>> rules = new ArrayList<>();
+            for (Condition t : when.terms()) {
+                Map<String, String> cells = new LinkedHashMap<>();
+                cells.put(t.fieldRef(), test(t));
+                rules.add(cells);
+            }
+            return rules;
         }
         // Group the alternatives by field, in order of first appearance; one field's tests join as a FEEL list.
         Map<String, List<String>> byField = new LinkedHashMap<>();
@@ -144,6 +191,7 @@ public final class DmnExport {
 
     /** One comparison as a FEEL unary test. */
     static String test(Condition c) {
+        if (c.isExpression()) return EXPRESSION + c.expression();
         return switch (c.operator()) {
             case EQ -> literal(c.value());
             case NE -> "not(" + literal(c.value()) + ")";
@@ -180,6 +228,8 @@ public final class DmnExport {
                 }
             }
         }
-        return "string";
+        // S146: a column tested only by formulas has no literal type.
+        return table.rows().stream().flatMap(r -> r.terms().stream())
+                .anyMatch(t -> t.fieldRef().equals(field) && t.isExpression()) ? null : "string";
     }
 }

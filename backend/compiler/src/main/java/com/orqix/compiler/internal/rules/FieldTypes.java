@@ -517,7 +517,7 @@ public final class FieldTypes {
     public static Set<String> outputKeys(DecisionTable table) {
         Set<String> keys = new TreeSet<>(table.defaultOutput().keySet());
         for (DecisionTable.Row row : table.rows()) {
-            keys.addAll(row.then().keySet());
+            keys.addAll(row.outputKeys());
         }
         return keys;
     }
@@ -542,6 +542,15 @@ public final class FieldTypes {
         values.forEach(v -> typeNames.add(v.typeName()));
         if (typeNames.size() != 1) {
             return null;
+        }
+        // S146: a result computed by a formula has the default's type but no known set of values, and a number may
+        // have decimals.
+        if (table.rows().stream().anyMatch(r -> r.thenExpressions().containsKey(key))) {
+            return switch (values.get(0)) {
+                case Literal.Str s -> FieldType.of(FieldKind.STRING);
+                case Literal.Bool b -> FieldType.of(FieldKind.BOOLEAN);
+                case Literal.Num n -> FieldType.of(FieldKind.NUMBER);
+            };
         }
         return switch (values.get(0)) {
             case Literal.Str s -> {

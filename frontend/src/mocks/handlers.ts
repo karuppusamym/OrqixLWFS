@@ -11,7 +11,9 @@ import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
 import { disabledFeaturesOf } from './features'
-import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
+import { normalizeDefinition, tableUsesExpressions, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
+import { decisionTypes } from '@/features/studio/model/expressionScope'
+import { DecisionEvaluationError, evaluateExpressionTable } from '@/lib/expr/decision'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
 import { applyComputed } from '@/lib/form/computed'
@@ -20,7 +22,7 @@ import { validateDefinition, type ValidationContext } from './validate'
 import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
-import { exportDmn, readDmn } from './decisionDmn'
+import { dmnRefusals, exportDmn, readDmn } from './decisionDmn'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
 import {
@@ -130,6 +132,15 @@ function problem(status: number, code: ProblemCode, title: string, extra: Record
 
 const notFound = () => problem(404, 'NOT_FOUND', 'Not found', { detail: 'The resource does not exist or is not visible to you.' })
 const forbidden = (detail = 'You do not have permission to do this.') => problem(403, 'FORBIDDEN', 'Forbidden', { detail })
+/** 422 when the table cannot be written as DMN (S146: an Any row with a formula under COLLECT), else null. */
+function dmnNotRepresentable(table: DecisionTable): Response | null {
+  const reasons = dmnRefusals(table)
+  if (!reasons.length) return null
+  return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+    detail: `This decision table cannot be written as DMN: ${reasons[0]}`,
+    fieldErrors: reasons.map((message) => ({ pointer: `/decisions/${table.key}`, code: 'notRepresentable', message })),
+  })
+}
 
 type Guard = { ok: true; user: MockUser; perms: Permission[] } | { ok: false; res: Response }
 
@@ -707,6 +718,8 @@ export function createHandlers(): HttpHandler[] {
       const table = draft?.definition.decisions.find((d) => d.key === str(params.key))
       if (!wf || !draft || !table) return notFound()
       const label = draft.definition.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === table.key)?.label
+      const refused = dmnNotRepresentable(table)
+      if (refused) return refused
       return new HttpResponse(exportDmn(table, table.key, label), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-draft-${draft.revision}.dmn"` } })
     }),
     http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/decisions/:key/dmn`, async ({ params }) => {
@@ -717,6 +730,8 @@ export function createHandlers(): HttpHandler[] {
       const rel = wf?.releases.find((r) => r.id === str(params.rid))
       const table = rel?.definition.decisions.find((d) => d.key === str(params.key))
       if (!wf || !rel || !table) return notFound()
+      const refused = dmnNotRepresentable(table)
+      if (refused) return refused
       return new HttpResponse(exportDmn(table, table.key), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-r${rel.releaseNumber}.dmn"` } })
     }),
     http.put(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params, request }) => {
@@ -772,6 +787,16 @@ export function createHandlers(): HttpHandler[] {
       if (!draft || !table) return notFound()
       const { ['$asOf']: given, ...values } = (input.values ?? {}) as Record<string, Literal>
       const asOf = typeof given === 'string' ? given : clock.now().toISOString().slice(0, 10)
+      if (tableUsesExpressions(table)) {
+        // S146: formulas with the server's semantics and the field types the compiler pins; dates are YYYY-MM-DD text.
+        try {
+          const r = evaluateExpressionTable(table, { ...values, $asOf: asOf, $now: clock.iso() }, decisionTypes(draft.definition, table))
+          return HttpResponse.json({ matchedRow: r.matchedRow, usedDefault: r.usedDefault, output: r.output, matchedRows: r.matchedRows, expressions: r.expressions })
+        } catch (e) {
+          if (!(e instanceof DecisionEvaluationError)) throw e
+          return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: e.message })
+        }
+      }
       const result = evaluateTable(table, values, asOf)
       return HttpResponse.json(result)
     }),

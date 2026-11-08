@@ -58,6 +58,18 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
     }
 
     @Override
+    public String decisionTypes(String definitionJson, CompileContext context, String decisionKey) {
+        Pipeline.Outcome outcome = pipeline.run(definitionJson, context);
+        if (outcome.analysis() == null || outcome.definition() == null) {
+            return null;
+        }
+        return outcome.definition().decisions().stream()
+                .filter(t -> t.key().equals(decisionKey) && t.usesExpressions()).findFirst()
+                .map(t -> Jcs.canonicalize(com.orqix.compiler.internal.rules.ExpressionRules.decisionTypes(outcome.analysis(), t)))
+                .orElse(null);
+    }
+
+    @Override
     public CompiledWorkflow compile(String definitionJson, CompileContext context) throws CompilationException {
         Pipeline.Outcome outcome = pipeline.run(definitionJson, context);
         ValidationReport report = outcome.report();

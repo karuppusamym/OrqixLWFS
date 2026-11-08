@@ -13,6 +13,8 @@ import com.orqix.compiler.expr.Scope;
 import com.orqix.compiler.expr.Values;
 import com.orqix.compiler.internal.model.Enums.FieldKind;
 import com.orqix.compiler.internal.model.Node;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Condition;
+import com.orqix.compiler.internal.model.WorkflowDefinition.DecisionTable;
 import com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema;
 import com.orqix.compiler.internal.model.WorkflowDefinition.InputUi;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
@@ -52,6 +54,126 @@ public final class ExpressionRules {
             }
         }
         form(rc);
+        for (DecisionTable table : rc.definition().decisions()) {
+            if (table.usesExpressions()) decision(rc, table);
+        }
+    }
+
+    // ---------------------------------------------------------------- decision tables (S146, CG-D04)
+
+    /**
+     * What a decision entry may read: request fields and step results (whether a step result is available at each
+     * decision step that uses the table is checked separately). There are no locals, so a result cannot use another
+     * result of the table.
+     */
+    static Scope decisionScope(RuleContext rc) {
+        return new Scope() {
+            @Override
+            public ExprType input(String key) {
+                FormSchema.Field f = rc.definition().inputSchema().properties().get(key);
+                return f == null ? null : ofField(f);
+            }
+
+            @Override
+            public ExprType step(String stepId, String key) {
+                return rc.types().resolve("/steps/" + stepId + "/" + key) instanceof Resolved r ? ofFieldType(r.type()) : null;
+            }
+        };
+    }
+
+    private static void decision(RuleContext rc, DecisionTable table) {
+        java.util.List<Node> users = rc.definition().nodes().stream()
+                .filter(n -> n instanceof Node.Decision dn && dn.decisionRef().equals(table.key()) && !rc.graph().isShadowed(n))
+                .toList();
+        Scope scope = decisionScope(rc);
+        for (DecisionTable.Row row : table.rows()) {
+            String base = table.path() + "/rows/" + row.index();
+            java.util.List<Condition> terms = row.terms();
+            for (int i = 0; i < terms.size(); i++) {
+                Condition term = terms.get(i);
+                if (!term.isExpression()) continue;
+                String path = base + "/when" + (row.when().compound() ? "/" + row.when().group() + "/" + i : "") + "/expression";
+                Expression e = expression(rc, term.expression(), scope, null, path, null, ExprType.BOOLEAN);
+                if (e == null) continue;
+                if (!e.fieldRefs().contains(term.fieldRef())) {
+                    rc.issues().blocker("WF_DECISION_EXPRESSION_COLUMN", path, null, null, "The formula of rule "
+                            + (row.index() + 1) + " is in the column " + term.fieldRef() + ", so it must use that field ("
+                            + name(term.fieldRef()) + ").");
+                }
+                decisionEntry(rc, e, scope, users, path);
+            }
+            for (Map.Entry<String, String> out : row.thenExpressions().entrySet()) {
+                String path = base + "/then/" + out.getKey() + "/expression";
+                com.orqix.compiler.internal.model.Literal reference = table.defaultOutput().get(out.getKey());
+                if (table.priority() != null && out.getKey().equals(table.priority().output())) {
+                    rc.issues().blocker("WF_DECISION_EXPRESSION_UNSUPPORTED", path, null, null, "The result "
+                            + q(out.getKey()) + " decides the priority between rows, so it must be a fixed value, not a formula.");
+                    continue;
+                }
+                ExprType wanted = reference == null ? null : switch (reference) {
+                    case com.orqix.compiler.internal.model.Literal.Num n -> ExprType.NUMBER;
+                    case com.orqix.compiler.internal.model.Literal.Str s -> ExprType.STRING;
+                    case com.orqix.compiler.internal.model.Literal.Bool b -> ExprType.BOOLEAN;
+                };
+                Expression e = expression(rc, out.getValue(), scope, null, path, null, null);
+                if (e == null) continue;
+                if (wanted != null && !fits(e.type(), wanted)) {
+                    rc.issues().blocker("WF_EXPRESSION_TYPE", path, null, null, "The result " + q(out.getKey())
+                            + " of rule " + (row.index() + 1) + " must be " + wanted.describe()
+                            + " like the default, but its formula gives " + e.type().describe() + ".");
+                }
+                decisionEntry(rc, e, scope, users, path);
+            }
+        }
+    }
+
+    private static String name(String fieldRef) {
+        String[] parts = fieldRef.split("/");
+        return parts.length == 3 && "input".equals(parts[1]) ? "input." + parts[2]
+                : parts.length == 4 ? "steps." + parts[2] + "." + parts[3] : fieldRef;
+    }
+
+    /** Only single values (no lists or rows), and step results that always come before every step using the table. */
+    private static void decisionEntry(RuleContext rc, Expression e, Scope scope, java.util.List<Node> users, String path) {
+        for (String ref : e.fieldRefs()) {
+            String[] parts = ref.split("/");
+            ExprType t = ref.startsWith("/input/") ? scope.input(parts[2]) : scope.step(parts[2], parts[3]);
+            if (!(t == ExprType.NUMBER || t == ExprType.STRING || t == ExprType.BOOLEAN || t == ExprType.DATE)) {
+                rc.issues().blocker("WF_DECISION_EXPRESSION_FIELD", path, null, null, "A rule table formula can use"
+                        + " single values only (a number, text, true or false, or a date); " + name(ref) + " is "
+                        + (t == null ? "not available" : t.describe()) + ".");
+                continue;
+            }
+            if (!ref.startsWith("/steps/") || !(rc.types().resolve(ref) instanceof Resolved r) || r.producer() == null) {
+                continue;
+            }
+            for (Node user : users) {
+                if (r.producer() == user) {
+                    rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, user.id(), null, q(user)
+                            + " cannot use its own result in its rule table.");
+                } else if (rc.graph().hasDominators() && rc.graph().isReachable(user)
+                        && !rc.graph().dominates(r.producer(), user)) {
+                    rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, user.id(), null, q(r.producer())
+                            + " does not always happen before " + q(user) + ", so its result cannot be used in its rule table.");
+                }
+            }
+        }
+    }
+
+    /** @return the expressions of a table's entries, compiled with the decision scope (those with problems left out) */
+    static java.util.List<Expression> decisionExpressions(RuleContext rc, DecisionTable table) {
+        java.util.List<Expression> list = new java.util.ArrayList<>();
+        Scope scope = decisionScope(rc);
+        for (DecisionTable.Row row : table.rows()) {
+            row.terms().stream().filter(Condition::isExpression).forEach(t -> compiled(t.expression(), scope, list));
+            row.thenExpressions().values().forEach(v -> compiled(v, scope, list));
+        }
+        return list;
+    }
+
+    /** @return the pinned types (S137 notation) of the expressions of a table that uses them */
+    public static tools.jackson.databind.node.ObjectNode decisionTypes(RuleContext rc, DecisionTable table) {
+        return com.orqix.compiler.expr.PinnedTypes.of(decisionExpressions(rc, table), decisionScope(rc));
     }
 
     /**
@@ -302,6 +424,12 @@ public final class ExpressionRules {
             }
             if (!list.isEmpty() || n instanceof Node.Calculate) {
                 out.put("node/" + n.id(), base64(com.orqix.compiler.expr.PinnedTypes.of(list, scope(rc, n, locals))));
+            }
+            if (n instanceof Node.Decision dn) {
+                // S146: only a decision step whose table uses expressions gets pinned types.
+                rc.definition().decisions().stream().filter(t -> t.key().equals(dn.decisionRef())).findFirst()
+                        .filter(DecisionTable::usesExpressions)
+                        .ifPresent(t -> out.put("node/" + n.id(), base64(decisionTypes(rc, t))));
             }
         }
         for (Transition t : rc.definition().transitions()) {

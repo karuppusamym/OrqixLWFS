@@ -3,7 +3,7 @@
  * comparisons, lists (`in`), ranges (`between`) and the five hit policies. Used by the mock server, the mock simulator
  * and wording in the studio; the server stays authoritative.
  */
-import { conditionTerms, isRangeValue, type AtomicCondition, type ConditionValue, type DecisionRow, type DecisionTable, type Literal } from './types'
+import { decisionTerms, isExpressionTerm, isOutputExpression, isRangeValue, type ConditionValue, type DecisionRow, type DecisionTable, type DecisionTerm, type Literal } from './types'
 
 const SCALAR = new Set(['eq', 'ne', 'gte', 'gt', 'lt', 'lte'])
 
@@ -56,7 +56,9 @@ export function inWindow(row: DecisionRow, asOf: string | undefined): boolean {
   return (!w.from || asOf >= w.from) && (!w.to || asOf <= w.to)
 }
 
-function termMatches(term: AtomicCondition, values: Record<string, Literal | undefined>): boolean {
+/** A formula test (S146) never matches here: tables with formulas are evaluated by lib/expr/decision. */
+function termMatches(term: DecisionTerm, values: Record<string, Literal | undefined>): boolean {
+  if (isExpressionTerm(term)) return false
   const actual = values[term.fieldRef]
   if (actual === undefined) return false
   try {
@@ -67,7 +69,7 @@ function termMatches(term: AtomicCondition, values: Record<string, Literal | und
 }
 
 export function rowMatches(row: DecisionRow, values: Record<string, Literal | undefined>, asOf?: string): boolean {
-  const terms = conditionTerms(row.when)
+  const terms = decisionTerms(row.when)
   const hit = 'any' in row.when ? terms.some(t => termMatches(t, values)) : terms.every(t => termMatches(t, values))
   return hit && inWindow(row, asOf)
 }
@@ -99,29 +101,37 @@ function combine(aggregation: string | undefined, numbers: number[]): number {
   }
 }
 
-/** The canonical evaluation: UNIQUE, FIRST and ANY take the first match, PRIORITY the highest ranked, COLLECT combines all. */
+/** A literal result; a formula result (S146) has none until it is evaluated. */
+const literalOf = (v: unknown): Literal | undefined => (isOutputExpression(v) ? undefined : (v as Literal | undefined))
+
+/** The literal results of a row (formula results left out). */
+export function literalThen(row: DecisionRow): Record<string, Literal> {
+  return Object.fromEntries(Object.entries(row.then).filter(([, v]) => !isOutputExpression(v))) as Record<string, Literal>
+}
+
+/** The canonical evaluation of a table without formulas: UNIQUE, FIRST and ANY take the first match, PRIORITY the highest ranked, COLLECT combines all. */
 export function evaluateTable(table: DecisionTable, values: Record<string, Literal | undefined>, asOf?: string): TableResult {
   const matching = table.rows.flatMap((row, i) => (rowMatches(row, values, asOf) ? [i] : []))
   if (matching.length === 0) return { matchedRow: null, usedDefault: true, output: table.default, matchedRows: [] }
   if (table.hitPolicy === 'COLLECT') {
     const key = Object.keys(table.default)[0] ?? 'result'
-    const numbers = matching.map(i => Number(table.rows[i]?.then[key] ?? 0))
+    const numbers = matching.map(i => Number(literalOf(table.rows[i]?.then[key]) ?? 0))
     return { matchedRow: matching[0] ?? null, usedDefault: false, output: { [key]: combine(table.aggregation, numbers) }, matchedRows: matching }
   }
   let chosen = matching[0] as number
   if (table.hitPolicy === 'PRIORITY' && table.priority) {
     const output = table.priority.output
     for (const i of matching) {
-      if (priorityRank(table, table.rows[i]?.then[output]) < priorityRank(table, table.rows[chosen]?.then[output])) chosen = i
+      if (priorityRank(table, literalOf(table.rows[i]?.then[output])) < priorityRank(table, literalOf(table.rows[chosen]?.then[output]))) chosen = i
     }
   }
-  return { matchedRow: chosen, usedDefault: false, output: (table.rows[chosen] as DecisionRow).then, matchedRows: [chosen] }
+  return { matchedRow: chosen, usedDefault: false, output: literalThen(table.rows[chosen] as DecisionRow), matchedRows: [chosen] }
 }
 
 /** Values a result field takes in the rows and the default, in first-seen order (to seed a priority order). */
 export function outputValues(table: DecisionTable, output: string): Literal[] {
   const seen: Literal[] = []
-  for (const v of [...table.rows.map(r => r.then[output]), table.default[output]]) {
+  for (const v of [...table.rows.map(r => literalOf(r.then[output])), table.default[output]]) {
     if (v !== undefined && !seen.includes(v)) seen.push(v)
   }
   return seen

@@ -110,7 +110,18 @@ public final class CatalogDtos {
 
     /** {@code matchedRows}: every row that applies (several only under COLLECT, docs/build/S121). */
     public record DecisionEvaluateResult(Integer matchedRow, boolean usedDefault, Map<String, Object> output,
-            java.util.List<Integer> matchedRows) {
+            java.util.List<Integer> matchedRows,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            java.util.List<DecisionExpressionEntry> expressions) {
+        public DecisionEvaluateResult(Integer matchedRow, boolean usedDefault, Map<String, Object> output,
+                java.util.List<Integer> matchedRows) {
+            this(matchedRow, usedDefault, output, matchedRows, null);
+        }
+    }
+
+    /** S146: one evaluated formula entry of a decision table ({@code term} -1 for a result). */
+    public record DecisionExpressionEntry(int row, int term, String kind, String target, String expression,
+            Object value) {
     }
 
     /** Dry run of a draft revision (default: the current draft) or of the active release. */

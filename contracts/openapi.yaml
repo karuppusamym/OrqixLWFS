@@ -14469,6 +14469,11 @@ components:
           type: array
           description: Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied)
           items: { type: integer, minimum: 0 }
+        expressions:
+          type: array
+          description: 'S146: the evaluated formula entries of a table that uses them (every test of every row, the results of matching rows); absent otherwise'
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/DecisionExpressionEntry' }
 
     # ---------------------------------------------------------------- Expressions (CG-X01, docs/build/S137)
     ExpressionType:
@@ -14533,6 +14538,20 @@ components:
             message: { type: string }
             position: { type: integer, minimum: 0, description: Zero-based offset of the part the problem is about. }
     # ---------------------------------------------------------------- end of Expressions
+
+    # ---------------------------------------------------------------- S146 part A: decision expressions
+    DecisionExpressionEntry:
+      type: object
+      additionalProperties: false
+      required: [row, term, kind, target, expression, value]
+      properties:
+        row: { type: integer, minimum: 0, description: Zero-based row index. }
+        term: { type: integer, minimum: -1, description: 'Zero-based term index of a test; -1 for a result' }
+        kind: { type: string, enum: [input, output] }
+        target: { type: string, description: 'The column (fieldRef) of a test, or the result name' }
+        expression: { type: string }
+        value: { type: [string, number, boolean, 'null'], description: 'A test gives true, false or null (does not match); a result its value' }
+    # ---------------------------------------------------------------- end of S146 part A schemas
 
     WorkflowTestCase:
       type: object

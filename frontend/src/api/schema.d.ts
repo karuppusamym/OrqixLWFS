@@ -2940,6 +2940,197 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/lookups/{fieldKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: string;
+                fieldKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Options of a lookup question of the request form, searched as the person types (CG-F02)
+         * @description Runs the question's pinned read-only connection operation for a person who may start the workflow, through the
+         *     binding, egress policy, circuit breaker and request limit of the connection (S131). Answers are kept only in a
+         *     short-lived memory cache (default 60 seconds), never in the database or logs. Below minSearchLength characters
+         *     the list is empty and nothing is called. Searches are limited per person and workflow (default 60 a minute; 429
+         *     with Retry-After); a busy or open circuit answers 429 with Retry-After, an unavailable system 503. The value
+         *     chosen is checked again when the request is submitted (field error code lookup).
+         */
+        post: operations["searchLookupOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Guest response links of waits, newest first (CG-F05)
+         * @description States, send state and expiry only; never a token or an email address. At most 200 rows; filter by runId.
+         */
+        get: operations["listGuestLinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-links/{linkId}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue the one-time guest link of an open wait (shown once; replaces any earlier link)
+         * @description The link carries its token in the URL fragment, which browsers never send to a server. Orqix keeps only the
+         *     token's SHA-256. The link works until it is used, revoked, replaced or expires (the step's linkValidFor).
+         */
+        post: operations["issueGuestLink"];
+        /** Revoke the current guest link and its unsent files; the wait goes on (409 after the guest answered) */
+        delete: operations["revokeGuestLink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-links/{linkId}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email a new guest link to the request's address field (again)
+         * @description Only for a step with recipientFrom. The address is read from the request when the link is sent and its domain
+         *     must then be one of the workspace's approved guest domains (D-CG7); otherwise the send state becomes refused.
+         */
+        post: operations["sendGuestLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Email domains guest links may be sent to (D-CG7) */
+        get: operations["listGuestDomains"];
+        /** Replace the approved guest domains (at most 50; checked each time a link is sent) */
+        put: operations["replaceGuestDomains"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The guest response form a link belongs to (no session; the link token is the credential)
+         * @description Title, instructions, questions, file rules and the files added so far; never the request's own data. States
+         *     open, submitted, expired or closed. An unknown, revoked, replaced or purged token, or a token of another
+         *     workspace, is 404. Calls are limited per link (60 a minute on each server; 429 with Retry-After).
+         */
+        get: operations["getGuestForm"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-response/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a file to the guest response (sent with the form; at most the step's maxFiles)
+         * @description The step's file types and size apply; files are checked by type and bytes and scanned. Ten uploads a minute per link.
+         */
+        post: operations["uploadGuestFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/guest-response/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the guest's answers and files (once; a repeat with the same key and body returns the original answer)
+         * @description The answers must match the waiting step's declared values; the files must be ones added through this link. The
+         *     files are attached to the request, then the wait is resumed through the same path as sendMessage. 409
+         *     GUEST_RESPONSE_SUBMITTED for a different key or body after a submit, GUEST_RESPONSE_CLOSED when the wait closed
+         *     or the link expired, RUN_SUSPENDED while an operator suspended the request.
+         */
+        post: operations["submitGuestResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/waits": {
         parameters: {
             query?: never;
@@ -8260,6 +8451,120 @@ export interface components {
             type: string;
             required: boolean;
         };
+        LookupSearch: {
+            /** @description Typed text; below the question's minSearchLength nothing is called */
+            search?: string;
+            /**
+             * Format: uuid
+             * @description The release whose form is shown (default the active release; a canary is allowed)
+             */
+            releaseId?: string;
+        };
+        LookupOption: {
+            /** @description Stored in the request when chosen */
+            value: string;
+            label: string;
+            detail?: string | null;
+        };
+        LookupOptions: {
+            options: components["schemas"]["LookupOption"][];
+            /** @description More rows matched; type more to narrow the list */
+            truncated: boolean;
+            cached: boolean;
+            minSearchLength: number;
+        };
+        GuestLink: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            nodeId: string;
+            stepLabel: string;
+            title?: string | null;
+            /** @enum {string} */
+            state: "waiting" | "submitted" | "expired" | "revoked" | "cancelled";
+            /** @enum {string|null} */
+            reason?: "timedOut" | "requestEnded" | "answeredElsewhere" | null;
+            /** @enum {string} */
+            sendState: "manual" | "pending" | "sent" | "refused" | "failed";
+            /** @description Domain of the address the link was emailed to (never the address) */
+            sentDomain?: string | null;
+            tokenIssued: boolean;
+            /** Format: date-time */
+            tokenExpiresAt?: string | null;
+            tokensIssued: number;
+            linkValidFor: string;
+            /** Format: date-time */
+            firstViewedAt?: string | null;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        GuestLinkList: {
+            items: components["schemas"]["GuestLink"][];
+        };
+        GuestLinkIssued: {
+            /** Format: uuid */
+            linkId: string;
+            /** @description The only time the link is shown; its token is in the fragment */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        GuestQuestion: {
+            name: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            title: string;
+            required: boolean;
+        };
+        GuestFileRules: {
+            maxFiles: number;
+            required: boolean;
+            /** @description Empty means every allowed type */
+            acceptTypes: string[];
+            /** Format: int64 */
+            maxFileBytes: number;
+        };
+        GuestFile: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            contentType: string;
+            /** Format: int64 */
+            sizeBytes: number;
+        };
+        GuestForm: {
+            title: string;
+            /** @description Plain text */
+            instructions?: string | null;
+            /** @enum {string} */
+            state: "open" | "submitted" | "expired" | "closed";
+            /** Format: date-time */
+            expiresAt?: string | null;
+            questions: components["schemas"]["GuestQuestion"][];
+            files?: components["schemas"]["GuestFileRules"] | null;
+            uploaded: components["schemas"]["GuestFile"][];
+        };
+        GuestSubmit: {
+            /** @description Answers by question name (flat values) */
+            result: {
+                [key: string]: unknown;
+            };
+            files?: string[];
+        };
+        GuestSubmitted: {
+            /** @enum {string} */
+            state: "submitted";
+            /** Format: date-time */
+            submittedAt: string;
+            fileCount: number;
+        };
+        GuestDomains: {
+            domains: string[];
+        };
         CallbackWait: {
             /** Format: uuid */
             id: string;
@@ -9295,7 +9600,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -13114,8 +13419,8 @@ export interface components {
         };
         fieldKey: string;
         label: string;
-        /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
-        calendarDate: string;
+        /** @description A bound of a date, time or date-time field (docs/build/S140); the compiler checks that it is written like the field (WF_FORM_INVALID). */
+        formatBound: string;
         scalarFormField: {
             /**
              * @description Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only.
@@ -13127,18 +13432,36 @@ export interface components {
             title: string;
             description?: string;
             /**
-             * @description date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
+             * @description date: a calendar date written YYYY-MM-DD, without time or time zone. time: a time of day written HH:MM or HH:MM:SS (24-hour, no zone). date-time: an instant written as RFC 3339 with its offset, for example 2026-11-06T14:30:00+01:00 (docs/build/S140). attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
              * @enum {unknown}
              */
-            format?: "date" | "attachment";
+            format?: "date" | "time" | "date-time" | "attachment";
+            /** @description Only with format date-time: the IANA time zone the form uses to enter and show the value, for example Europe/Berlin (docs/build/S140). The stored value always carries its offset. */
+            timeZone?: string;
+            /** @description Options from a pinned read-only connection operation (docs/build/S140, CG-F02). Request form text fields only. The form searches as the person types; the server runs the operation with the requester's access, keeps no answers at rest and checks the chosen value again when the request is submitted. */
+            lookup?: {
+                /** @description Key of a connection declared in dependencies.connections (its pinned version is used). */
+                connection: string;
+                operation: string;
+                /** @description The operation input that receives the typed search text. */
+                searchInput: string;
+                /** @description The operation input that receives the chosen value when the server checks it at submit (default: searchInput). */
+                valueInput?: string;
+                /** @description Result pointer of the operation's rows, for example /result/[*]. */
+                rows: string;
+                valueColumn: string;
+                labelColumn: string;
+                detailColumn?: string;
+                minSearchLength?: number;
+            };
             /** @description Only with format attachment: the file types this field accepts (default: all allowed types). */
             acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
             /** @description Only with format attachment: the largest file this field accepts, in bytes (at most 10 MiB, the platform limit). */
             maxFileBytes?: number;
-            /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
-            formatMinimum?: components["schemas"]["calendarDate"];
-            /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
-            formatMaximum?: components["schemas"]["calendarDate"];
+            /** @description Earliest allowed value (inclusive), written like the field: a date YYYY-MM-DD, a time HH:MM[:SS] or a date-time with offset. Only with format date, time or date-time. */
+            formatMinimum?: components["schemas"]["formatBound"];
+            /** @description Latest allowed value (inclusive), written like the field. Only with format date, time or date-time. */
+            formatMaximum?: components["schemas"]["formatBound"];
             enum?: string[];
             minLength?: number;
             maxLength?: number;
@@ -13190,6 +13513,11 @@ export interface components {
             items: components["schemas"]["scalarFormField"] | components["schemas"]["objectRowField"];
             minItems: number;
             maxItems: number;
+            /**
+             * @description Each value at most once (checklists and tag lists, docs/build/S140). Scalar items only.
+             * @constant
+             */
+            uniqueItems?: true;
         };
         formField: unknown;
         /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
@@ -13237,6 +13565,8 @@ export interface components {
         id: string;
         /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
         duration: string;
+        /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
+        calendarDate: string;
         nodeBase: {
             id: components["schemas"]["id"];
             type: string;
@@ -13738,6 +14068,21 @@ export interface components {
                 externalCallback?: {
                     tokenValidFor: components["schemas"]["duration"];
                 };
+                /** @description Answered by a person outside the organization through a guest response form (docs/build/S140, CG-F05). When the request reaches this step a one-time link that expires after linkValidFor (PT1H to P30D) can be issued by an operator with run.operate, or is emailed to the address in recipientFrom when that address is in the workspace's approved guest domains (checked when it is sent). The form asks for the declared payload fields and, with attachments, files; submitting it resumes the wait like a message. One answer per link. */
+                guestResponse?: {
+                    linkValidFor: components["schemas"]["duration"];
+                    title: string;
+                    /** @description Plain text shown above the form (no HTML or links). */
+                    instructions?: string;
+                    /** @description A request text field or guaranteed earlier text output holding the guest's email address. */
+                    recipientFrom?: components["schemas"]["fieldRef"];
+                    attachments?: {
+                        maxFiles: number;
+                        required?: boolean;
+                        acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
+                        maxFileBytes?: number;
+                    };
+                };
                 /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
                 fallbackCheck?: components["schemas"]["fallbackCheck"];
                 /** @description S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). */
@@ -14051,7 +14396,7 @@ export interface components {
                 submitLabel?: string;
                 order?: components["schemas"]["fieldKey"][];
                 widgets?: {
-                    [key: string]: "text" | "textarea" | "number" | "money" | "select" | "radio" | "checkbox";
+                    [key: string]: "text" | "textarea" | "number" | "money" | "select" | "radio" | "checkbox" | "checklist" | "tags";
                 };
                 /** @constant */
                 currency?: "USD";
@@ -14715,6 +15060,21 @@ export interface components {
                         externalCallback?: {
                             tokenValidFor: components["schemas"]["duration"];
                         };
+                        /** @description Answered by a person outside the organization through a guest response form (docs/build/S140, CG-F05). When the request reaches this step a one-time link that expires after linkValidFor (PT1H to P30D) can be issued by an operator with run.operate, or is emailed to the address in recipientFrom when that address is in the workspace's approved guest domains (checked when it is sent). The form asks for the declared payload fields and, with attachments, files; submitting it resumes the wait like a message. One answer per link. */
+                        guestResponse?: {
+                            linkValidFor: components["schemas"]["duration"];
+                            title: string;
+                            /** @description Plain text shown above the form (no HTML or links). */
+                            instructions?: string;
+                            /** @description A request text field or guaranteed earlier text output holding the guest's email address. */
+                            recipientFrom?: components["schemas"]["fieldRef"];
+                            attachments?: {
+                                maxFiles: number;
+                                required?: boolean;
+                                acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
+                                maxFileBytes?: number;
+                            };
+                        };
                         /** @description Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed. */
                         fallbackCheck?: components["schemas"]["fallbackCheck"];
                         /** @description S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). */
@@ -14831,18 +15191,36 @@ export interface components {
                     title: string;
                     description?: string;
                     /**
-                     * @description date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
+                     * @description date: a calendar date written YYYY-MM-DD, without time or time zone. time: a time of day written HH:MM or HH:MM:SS (24-hour, no zone). date-time: an instant written as RFC 3339 with its offset, for example 2026-11-06T14:30:00+01:00 (docs/build/S140). attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
                      * @enum {unknown}
                      */
-                    format?: "date" | "attachment";
+                    format?: "date" | "time" | "date-time" | "attachment";
+                    /** @description Only with format date-time: the IANA time zone the form uses to enter and show the value, for example Europe/Berlin (docs/build/S140). The stored value always carries its offset. */
+                    timeZone?: string;
+                    /** @description Options from a pinned read-only connection operation (docs/build/S140, CG-F02). Request form text fields only. The form searches as the person types; the server runs the operation with the requester's access, keeps no answers at rest and checks the chosen value again when the request is submitted. */
+                    lookup?: {
+                        /** @description Key of a connection declared in dependencies.connections (its pinned version is used). */
+                        connection: string;
+                        operation: string;
+                        /** @description The operation input that receives the typed search text. */
+                        searchInput: string;
+                        /** @description The operation input that receives the chosen value when the server checks it at submit (default: searchInput). */
+                        valueInput?: string;
+                        /** @description Result pointer of the operation's rows, for example /result/[*]. */
+                        rows: string;
+                        valueColumn: string;
+                        labelColumn: string;
+                        detailColumn?: string;
+                        minSearchLength?: number;
+                    };
                     /** @description Only with format attachment: the file types this field accepts (default: all allowed types). */
                     acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
                     /** @description Only with format attachment: the largest file this field accepts, in bytes (at most 10 MiB, the platform limit). */
                     maxFileBytes?: number;
-                    /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
-                    formatMinimum?: components["schemas"]["calendarDate"];
-                    /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
-                    formatMaximum?: components["schemas"]["calendarDate"];
+                    /** @description Earliest allowed value (inclusive), written like the field: a date YYYY-MM-DD, a time HH:MM[:SS] or a date-time with offset. Only with format date, time or date-time. */
+                    formatMinimum?: components["schemas"]["formatBound"];
+                    /** @description Latest allowed value (inclusive), written like the field. Only with format date, time or date-time. */
+                    formatMaximum?: components["schemas"]["formatBound"];
                     enum?: string[];
                     minLength?: number;
                     maxLength?: number;
@@ -14855,6 +15233,8 @@ export interface components {
                     /** @enum {unknown} */
                     multipleOf?: 0.01 | 1;
                 } & unknown;
+                /** @description A bound of a date, time or date-time field (docs/build/S140); the compiler checks that it is written like the field (WF_FORM_INVALID). */
+                formatBound: string;
                 /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
                 calendarDate: string;
                 externalTaskNode: {
@@ -14889,6 +15269,11 @@ export interface components {
                     items: components["schemas"]["scalarFormField"] | components["schemas"]["objectRowField"];
                     minItems: number;
                     maxItems: number;
+                    /**
+                     * @description Each value at most once (checklists and tag lists, docs/build/S140). Scalar items only.
+                     * @constant
+                     */
+                    uniqueItems?: true;
                 };
                 objectRowField: {
                     /** @constant */
@@ -20886,6 +21271,304 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CallbackResumed"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    searchLookupOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: string;
+                fieldKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LookupSearch"];
+            };
+        };
+        responses: {
+            /** @description Matching options (at most 20) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookupOptions"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listGuestLinks: {
+        parameters: {
+            query?: {
+                runId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Guest links */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestLinkList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    issueGuestLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Link issued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestLinkIssued"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeGuestLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked (or there was no link) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    sendGuestLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued for sending */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestLink"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listGuestDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved domains, sorted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestDomains"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceGuestDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestDomains"];
+            };
+        };
+        responses: {
+            /** @description The approved domains now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestDomains"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getGuestForm: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The guest link token from the link's URL fragment; never put it in a URL path or query. */
+                "X-Orqix-Guest-Token"?: string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The form */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestForm"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    uploadGuestFile: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Orqix-Guest-Token"?: string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description File added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestFile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    submitGuestResponse: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Orqix-Guest-Token"?: string;
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestSubmit"];
+            };
+        };
+        responses: {
+            /** @description Sent (or the replay of the original submit, with Idempotent-Replayed true) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestSubmitted"];
                 };
             };
             400: components["responses"]["BadRequest"];

@@ -371,12 +371,20 @@ public sealed interface Node {
      * the request; {@code timeoutAfter} (ISO-8601 duration, may be null) adds a {@code timedOut} route; {@code payload}
      * declares the values the message may carry (outputs of this step), in authored order.
      * {@code callbackTokenValidFor} (S98, may be null) marks a wait answered by an external system through a callback
-     * token valid for that ISO-8601 duration.
+     * token valid for that ISO-8601 duration. {@code guestResponse} (S140, may be null) is the guest response form
+     * option as authored JSON.
      */
     record WaitForMessage(int index, String id, String label, String message, String correlationField,
                           String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
-                          FallbackCheck fallbackCheck)
+                          FallbackCheck fallbackCheck, tools.jackson.databind.JsonNode guestResponse)
             implements Node {
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
+                FallbackCheck fallbackCheck) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, callbackTokenValidFor,
+                    fallbackCheck, null);
+        }
 
         public WaitForMessage(int index, String id, String label, String message, String correlationField,
                 String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor) {

@@ -600,6 +600,10 @@ public final class BpmnGenerator {
                     // S98: only written when set, so BPMN of every other message wait is unchanged.
                     x.attr("callbackTokenValidFor", m.callbackTokenValidFor());
                 }
+                if (m.guestResponse() != null) {
+                    // S140: the guest response form option, as canonical JSON (only written when set).
+                    x.attr("guestResponseBase64", base64Json(m.guestResponse()));
+                }
                 if (m.fallbackCheck() != null) {
                     // S129: the safety-net check, as canonical JSON (only written when set).
                     String version = Integer.toString(d.dependencies().stream()

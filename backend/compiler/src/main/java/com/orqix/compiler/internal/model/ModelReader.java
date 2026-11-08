@@ -236,7 +236,8 @@ public final class ModelReader {
                     c.get("correlationField").stringValue(),
                     c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")),
                     c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null,
-                    c.has("fallbackCheck") ? readFallback(c.get("fallbackCheck")) : null);
+                    c.has("fallbackCheck") ? readFallback(c.get("fallbackCheck")) : null,
+                    c.has("guestResponse") ? c.get("guestResponse") : null);
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
             case RAISE_ERROR -> new Node.RaiseError(index, id, label, c.get("errorCode").stringValue());
@@ -532,7 +533,8 @@ public final class ModelReader {
                     intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")), decimalOrNull(f.get("maximum")),
                     decimalOrNull(f.get("multipleOf")), f.has("items") ? readField(e.getKey(), f.get("items")) : null,
                     intOrNull(f.get("minItems")), intOrNull(f.get("maxItems")), f.path("formatMinimum").asString(null),
-                    f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false)));
+                    f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false),
+                    List.of(), Map.of(), f));
         }
         return new FormSchema(path, List.copyOf(required), Collections.unmodifiableMap(fields));
     }
@@ -559,7 +561,8 @@ public final class ModelReader {
                 f.get("title").stringValue(),
                 enums, intOrNull(f.get("minLength")), intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")),
                 decimalOrNull(f.get("maximum")), decimalOrNull(f.get("multipleOf")), null, null, null,
-                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false));
+                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false),
+                List.of(), Map.of(), f);
     }
 
     private static InputUi readInputUi(JsonNode ui) {

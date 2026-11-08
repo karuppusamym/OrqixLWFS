@@ -152,6 +152,10 @@ public final class Enums {
         STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list"),
         /** A calendar date: JSON {@code type: string, format: date}, written YYYY-MM-DD (S12 section 10). */
         DATE("a date"),
+        /** A time of day: JSON {@code type: string, format: time}, written HH:MM or HH:MM:SS (S140). */
+        TIME("a time of day"),
+        /** An instant with its offset: JSON {@code type: string, format: date-time}, RFC 3339 (S140). */
+        DATETIME("a date and time"),
         /** A file: JSON {@code type: string, format: attachment}; the value is the ID of an uploaded file (S17). */
         ATTACHMENT("a file"),
         /** One row of a list of rows (S35); only as the item type of an array. */
@@ -176,10 +180,21 @@ public final class Enums {
             return this == NUMBER || this == INTEGER;
         }
 
+        /** @return true for dates, times of day and date-times (text values with a fixed shape) */
+        public boolean temporal() {
+            return this == DATE || this == TIME || this == DATETIME;
+        }
+
         /** @return DATE for a string with {@code format: date}, otherwise as {@link #fromJson(String)} */
         public static FieldKind fromJson(String type, String format) {
             if ("string".equals(type) && "date".equals(format)) {
                 return DATE;
+            }
+            if ("string".equals(type) && "time".equals(format)) {
+                return TIME;
+            }
+            if ("string".equals(type) && "date-time".equals(format)) {
+                return DATETIME;
             }
             return "string".equals(type) && "attachment".equals(format) ? ATTACHMENT : fromJson(type);
         }

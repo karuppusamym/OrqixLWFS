@@ -32,11 +32,14 @@ public class MessageWaits {
     private final Clock clock;
     private final CallbackService callbacks;
     private final PollWaits polls;
+    private final GuestResponseService guests;
 
     public MessageWaits(MessageStore store, RunStore runs, RunEvents events,
             @org.springframework.context.annotation.Lazy MessageDelivery delivery, Json json, Clock clock,
             @org.springframework.context.annotation.Lazy CallbackService callbacks,
-            @org.springframework.context.annotation.Lazy PollWaits polls) {
+            @org.springframework.context.annotation.Lazy PollWaits polls,
+            @org.springframework.context.annotation.Lazy GuestResponseService guests) {
+        this.guests = guests;
         this.callbacks = callbacks;
         this.polls = polls;
         this.store = store;
@@ -95,6 +98,8 @@ public class MessageWaits {
         events.append(workspaceId, runId, "WAIT_STARTED", nodeId, null, data);
         // S98: a wait answered by an external system gets its callback row (no token yet) in the same transaction.
         callbacks.waitStarted(run, nodeId, id);
+        // S140: a wait answered through a guest response form gets its link row (no token yet).
+        guests.waitStarted(run, nodeId, id);
         // S129: the wait page names what answers it, and a safety-net check starts with it.
         polls.waitStarted(run, nodeId, resolver);
         afterCommit(workspaceId, id);

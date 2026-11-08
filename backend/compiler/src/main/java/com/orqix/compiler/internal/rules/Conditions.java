@@ -68,6 +68,13 @@ final class Conditions {
                     + " decision table.");
             return null;
         }
+        if (type.kind() == FieldKind.TIME || type.kind() == FieldKind.DATETIME) {
+            // S140: comparing times needs a time zone rule the condition language does not have yet (CG-X01).
+            rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, c.fieldRef()
+                    + " is " + type.kind().description() + ". Times can be passed to other steps and shown, but"
+                    + " not (yet) used to choose a path or in a decision table.");
+            return null;
+        }
         if (Disjointness.ordering(c.operator()) && !type.kind().numeric()) {
             rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, "The comparison "
                     + q(c.operator().phrase()) + " works only on numbers, but " + c.fieldRef() + " is "
@@ -141,7 +148,7 @@ final class Conditions {
             case BOOLEAN -> literal instanceof Literal.Bool;
             case NUMBER -> literal instanceof Literal.Num;
             case INTEGER -> literal instanceof Literal.Num n && n.integral();
-            case ARRAY, DATE, ATTACHMENT, OBJECT -> false;
+            case ARRAY, DATE, TIME, DATETIME, ATTACHMENT, OBJECT -> false;
         };
     }
 

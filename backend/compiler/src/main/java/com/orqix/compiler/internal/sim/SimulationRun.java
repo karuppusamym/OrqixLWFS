@@ -582,6 +582,8 @@ final class SimulationRun {
             case INTEGER -> f.minimum() != null ? f.minimum().setScale(0, java.math.RoundingMode.CEILING).longValueExact() : 1L;
             case NUMBER -> f.minimum() != null ? f.minimum() : java.math.BigDecimal.ONE;
             case DATE -> f.formatMinimum() != null && f.formatMinimum().matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") ? f.formatMinimum() : "2026-01-01";
+            case TIME -> f.formatMinimum() != null ? f.formatMinimum() : "09:00";
+            case DATETIME -> f.formatMinimum() != null ? f.formatMinimum() : "2026-01-01T09:00:00Z";
             default -> f.enumValues() != null && !f.enumValues().isEmpty() ? f.enumValues().get(0)
                     : "Sample " + f.title().toLowerCase(java.util.Locale.ROOT);
         };
@@ -1534,6 +1536,12 @@ final class SimulationRun {
                 }
                 if ("date".equals(schema.path("format").asString(""))) {
                     return F.stringNode("2026-01-15");
+                }
+                if ("time".equals(schema.path("format").asString(""))) {
+                    return F.stringNode(schema.path("formatMinimum").asString("09:00"));
+                }
+                if ("date-time".equals(schema.path("format").asString(""))) {
+                    return F.stringNode(schema.path("formatMinimum").asString("2026-01-15T09:00:00Z"));
                 }
                 if (schema.path("pattern").isString()) {
                     String example = com.orqix.compiler.FormPattern.problem(schema.get("pattern").asString()) == null

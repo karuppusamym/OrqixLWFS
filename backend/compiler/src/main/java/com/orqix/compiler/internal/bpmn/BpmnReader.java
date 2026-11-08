@@ -1060,6 +1060,13 @@ public final class BpmnReader {
         if (callback != null) {
             config.putObject("externalCallback").put("tokenValidFor", callback);
         }
+        String guest = message.attr("guestResponseBase64");
+        if (guest != null) {
+            JsonNode settings = base64Json(id, guest);
+            if (settings != null) {
+                config.set("guestResponse", settings);
+            }
+        }
         String fallback = message.attr("fallbackCheckBase64");
         if (fallback != null) {
             JsonNode settings = base64Json(id, fallback);

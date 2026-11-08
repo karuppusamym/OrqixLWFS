@@ -99,6 +99,8 @@ export const routes: RouteObject[] = [
       },
     ],
   },
+  // CG-F05 (docs/build/S140): the guest response page; no sign-in, the link token is in the URL fragment.
+  { path: '/guest/:workspaceId', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/guest/GuestResponsePage')).GuestResponsePage }) },
   { path: '/forbidden', element: <ForbiddenPage />, errorElement: <RouteErrorPage /> },
   { path: '/not-found', element: <NotFoundPage /> },
   { path: '*', element: <NotFoundPage /> },

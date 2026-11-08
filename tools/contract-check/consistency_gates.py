@@ -35,6 +35,7 @@ PERMISSION_QUALIFIERS = {
     "currentAssignee", "assignee", "candidate", "recipient", "conversation.author", "requester",
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
     "callbackToken",  # EX10 (S98): possession of a one-wait callback token; no session
+    "guestToken",  # CG-F05 (S140): possession of a one-time guest response link token; no session
     "extensionFileToken",  # UI02 (S116): a short-lived signed file path minted by the frame endpoint; no session
     "packageTriggerVerification",  # CG-C05 (S133): the package trigger's HMAC, JWT or basic scheme; no session
 }

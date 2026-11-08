@@ -71,7 +71,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             // S124: the saved Ask AI conversation is text the editors wrote; it is never audited.
                             || "saveAiConversation".equals(operationId)
                             // S139: previews compute times and change nothing.
-                            || "previewSchedule".equals(operationId) || "previewWorkingCalendar".equals(operationId))
+                            || "previewSchedule".equals(operationId) || "previewWorkingCalendar".equals(operationId)
+                            // S140: a lookup search reads; its text must never reach the audit log.
+                            || "searchLookupOptions".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -421,7 +423,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             builder.contentType(MediaType.APPLICATION_JSON).content(json.write(body));
         }
         org.springframework.test.web.servlet.RequestBuilder request = builder;
-        if (List.of("uploadAttachment", "addRunAttachment").contains(operationId)) {
+        if (List.of("uploadAttachment", "addRunAttachment", "uploadGuestFile").contains(operationId)) {
             // Multipart operations (docs/build/S17): a well-formed upload, so a 404 cannot be explained by a bad body.
             request = MockMvcRequestBuilders.multipart(HttpMethod.POST, "/api/v1" + path)
                     .file(new org.springframework.mock.web.MockMultipartFile("file", "note.txt", "text/plain",
@@ -450,6 +452,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
                     "secretRef", "webhook-foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
             case "resumeCallbackWait" -> Map.of("result", Map.of());
+            // S140: lookups and guest response forms.
+            case "searchLookupOptions" -> Map.of("search", "ab");
+            case "replaceGuestDomains" -> Map.of("domains", List.of("foreign.example"));
+            case "submitGuestResponse" -> Map.of("result", Map.of());
             case "createKafkaTrigger" -> Map.of("key", "foreign-feed", "name", "Foreign", "cluster", "main", "topic", "orders",
                     "action", "start", "workflowId", ids.get("workflowId"), "mapping", Map.of("title", "/title"));
             case "updateKafkaTrigger" -> Map.of("name", "Foreign", "mapping", Map.of("title", "/title"), "batchSize", 1,

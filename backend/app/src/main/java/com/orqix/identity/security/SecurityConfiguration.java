@@ -80,6 +80,12 @@ public class SecurityConfiguration {
     private static final java.util.regex.Pattern CALLBACK_RESUME = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/callbacks/wait/resume$");
 
+    /** Guest response forms of S140: read (GET), add a file and submit (POST) with the guest link token alone. */
+    private static final java.util.regex.Pattern GUEST_FORM = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/guest-response$");
+    private static final java.util.regex.Pattern GUEST_POST = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/guest-response/(files|submit)$");
+
     /**
      * Signed inbound events (S47) and callback-token routes (S98): the only API routes that need neither a session nor
      * a bearer token. The inbound controller verifies an HMAC over the body with a per-trigger secret; the callback
@@ -92,8 +98,10 @@ public class SecurityConfiguration {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
                         && (INBOUND.matcher(request.getRequestURI()).matches()
                                 || PACKAGE_TRIGGER_EVENT.matcher(request.getRequestURI()).matches()
-                                || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
+                                || CALLBACK_RESUME.matcher(request.getRequestURI()).matches()
+                                || GUEST_POST.matcher(request.getRequestURI()).matches())
                         || "GET".equals(request.getMethod()) && (CALLBACK_POLL.matcher(request.getRequestURI()).matches()
+                                || GUEST_FORM.matcher(request.getRequestURI()).matches()
                                 || EXTENSION_FILE.matcher(request.getRequestURI()).matches()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(c -> c.disable())

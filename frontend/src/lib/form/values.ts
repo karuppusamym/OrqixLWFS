@@ -141,20 +141,30 @@ export function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: numb
     case 'rule': return 'This answer breaks a rule of the form.'
     case 'minItems': return `Add at least ${s.minItems} item${s.minItems === 1 ? '' : 's'}.`
     case 'maxItems': return `Use at most ${s.maxItems} items.`
+    case 'uniqueItems': return 'Choose each value only once.'
     case 'required':
       if (f.widget === 'select' || f.widget === 'radio') return 'Choose an option.'
       if (f.widget === 'checkbox') return 'Confirm this to continue.'
       if (f.widget === 'file') return 'Choose a file.'
+      if (f.widget === 'lookup') return 'Choose an option from the list.'
+      if (f.widget === 'checklist') return 'Tick at least one option.'
       return 'This field is required.'
     case 'type':
       return formatMessage(f, '')
     case 'enum':
       return 'Choose one of the listed options.'
     case 'format':
-      return f.widget === 'file' ? 'Choose a file.' : 'Enter a valid date, for example 14 Oct 2026.'
+      if (f.widget === 'file') return 'Choose a file.'
+      if (s.format === 'time') return 'Enter a time, for example 14:30.'
+      if (s.format === 'date-time') return 'Enter a date and a time.'
+      return 'Enter a valid date, for example 14 Oct 2026.'
     case 'formatMinimum':
+      if (s.format === 'time') return `Choose a time at or after ${s.formatMinimum}.`
+      if (s.format === 'date-time') return `Choose a time at or after ${formatZoned(s.formatMinimum, s.timeZone)}.`
       return `Choose a date on or after ${formatCalendarDate(s.formatMinimum)}.`
     case 'formatMaximum':
+      if (s.format === 'time') return `Choose a time at or before ${s.formatMaximum}.`
+      if (s.format === 'date-time') return `Choose a time at or before ${formatZoned(s.formatMaximum, s.timeZone)}.`
       return `Choose a date on or before ${formatCalendarDate(s.formatMaximum)}.`
     case 'minLength':
       return `Use at least ${s.minLength} character${s.minLength === 1 ? '' : 's'}.`
@@ -219,6 +229,19 @@ export function computedPreview(fields: FieldDef[], raw: RawValues): Record<stri
   const { payload } = buildPayload(visibleFields(fields, raw).filter(f => !f.computed), raw)
   const values = applyComputed(schema, { computed }, payload)
   return Object.fromEntries(Object.keys(computed).map(k => [k, values[k] === undefined ? '' : String(values[k])]))
+}
+
+/** "6 Nov 2026, 14:30 (Europe/Berlin)": a date-time shown in the field's zone, or the browser's when it has none. */
+export function formatZoned(value: string | undefined, timeZone?: string): string {
+  if (!value) return ''
+  const at = new Date(value)
+  if (Number.isNaN(at.getTime())) return value
+  try {
+    const text = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).format(at)
+    return timeZone ? `${text} (${timeZone})` : text
+  } catch {
+    return value
+  }
 }
 
 export function rowFields(schema: FormFieldSchema): FieldDef[] {

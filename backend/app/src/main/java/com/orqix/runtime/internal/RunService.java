@@ -64,12 +64,15 @@ public class RunService {
     private final RunStages stages;
     private final RunSuspensions suspensions;
     private final RunQuota quota;
+    private final FormLookups lookups;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
-            RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota) {
+            RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota,
+            FormLookups lookups) {
+        this.lookups = lookups;
         this.quota = quota;
         this.suspensions = suspensions;
         this.attachments = attachments;
@@ -116,6 +119,15 @@ public class RunService {
             throw ApiException.malformed("input is nested too deeply.");
         }
         String hash = idempotency.requestHash("startRun", Map.of("workspaceId", workspaceId.toString()), request);
+        // S140: lookup answers of a valid form are checked with the connected system before any lock is taken, so a
+        // slow system never holds the workflow row; the check after the lock below is then answered from the cache.
+        if (workflow.activeReleaseId() != null) {
+            ReleaseQueries.ReleaseView active = releases.require(workspaceId, workflow.activeReleaseId());
+            if (FormLookups.hasLookups(active) && formValidator.validate(json.write(active.inputSchema()),
+                    json.write(request.input()), json.write(active.inputUi())).isEmpty()) {
+                lookups.verify(workspaceId, active, request.input());
+            }
+        }
         IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "startRun", key, hash);
         if (claim.isReplay()) {
             RunStore.RunRow run = runs.find(workspaceId, UUID.fromString(claim.replay().resourceId())).orElseThrow();
@@ -152,6 +164,12 @@ public class RunService {
         if (errors.isEmpty()) {
             // A "wait until a date" step cannot wait further than its horizon (S12 section 10).
             errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
+        }
+        if (errors.isEmpty() && FormLookups.hasLookups(release)) {
+            // S140: every lookup answer must still be an option of the connected system (server-side, authoritative).
+            for (ApiException.FieldError e : lookups.verify(workspaceId, release, request.input())) {
+                errors.add(new FormValidator.FieldError(e.pointer(), e.code(), e.message()));
+            }
         }
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(
@@ -230,6 +248,11 @@ public class RunService {
                 json.write(release.inputSchema()), json.write(input), json.write(release.inputUi())));
         if (errors.isEmpty()) {
             errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
+        }
+        if (errors.isEmpty() && FormLookups.hasLookups(release)) {
+            for (ApiException.FieldError e : lookups.verify(workspaceId, release, input)) {
+                errors.add(new FormValidator.FieldError(e.pointer(), e.code(), e.message()));
+            }
         }
         return errors.stream().map(e -> new ApiException.FieldError("/input" + e.pointer(), e.code(), e.message()))
                 .toList();

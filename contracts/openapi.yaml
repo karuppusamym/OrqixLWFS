@@ -54,6 +54,7 @@ tags:
   - name: Conversation
   - name: Insights
   - name: Attachments
+  - name: FormsLookupGuest
   - name: Cases
   - name: Views
   - name: McpServer
@@ -3865,6 +3866,259 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ------------------------------------------------------------------ FormsLookupGuest (docs/build/S140, CG-F02, CG-F05)
+  /workspaces/{workspaceId}/workflows/{workflowId}/lookups/{fieldKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: fieldKey, in: path, required: true, schema: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' } }
+    post:
+      tags: [FormsLookupGuest]
+      operationId: searchLookupOptions
+      summary: Options of a lookup question of the request form, searched as the person types (CG-F02)
+      description: |
+        Runs the question's pinned read-only connection operation for a person who may start the workflow, through the
+        binding, egress policy, circuit breaker and request limit of the connection (S131). Answers are kept only in a
+        short-lived memory cache (default 60 seconds), never in the database or logs. Below minSearchLength characters
+        the list is empty and nothing is called. Searches are limited per person and workflow (default 60 a minute; 429
+        with Retry-After); a busy or open circuit answers 429 with Retry-After, an unavailable system 503. The value
+        chosen is checked again when the request is submitted (field error code lookup).
+      x-orqix-permission: workflow.start
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LookupSearch' }
+      responses:
+        '200':
+          description: Matching options (at most 20)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LookupOptions' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/guest-links:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [FormsLookupGuest]
+      operationId: listGuestLinks
+      summary: Guest response links of waits, newest first (CG-F05)
+      description: States, send state and expiry only; never a token or an email address. At most 200 rows; filter by runId.
+      x-orqix-permission: run.operate
+      parameters:
+        - { name: runId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Guest links
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestLinkList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/guest-links/{linkId}/token:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: linkId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [FormsLookupGuest]
+      operationId: issueGuestLink
+      summary: Issue the one-time guest link of an open wait (shown once; replaces any earlier link)
+      description: |
+        The link carries its token in the URL fragment, which browsers never send to a server. Orqix keeps only the
+        token's SHA-256. The link works until it is used, revoked, replaced or expires (the step's linkValidFor).
+      x-orqix-permission: run.operate
+      x-orqix-audit: guest.link-issued
+      responses:
+        '201':
+          description: Link issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestLinkIssued' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [FormsLookupGuest]
+      operationId: revokeGuestLink
+      summary: Revoke the current guest link and its unsent files; the wait goes on (409 after the guest answered)
+      x-orqix-permission: run.operate
+      x-orqix-audit: guest.link-revoked
+      responses:
+        '204': { description: Revoked (or there was no link) }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/guest-links/{linkId}/send:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: linkId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [FormsLookupGuest]
+      operationId: sendGuestLink
+      summary: Email a new guest link to the request's address field (again)
+      description: |
+        Only for a step with recipientFrom. The address is read from the request when the link is sent and its domain
+        must then be one of the workspace's approved guest domains (D-CG7); otherwise the send state becomes refused.
+      x-orqix-permission: run.operate
+      x-orqix-audit: guest.link-send-requested
+      responses:
+        '200':
+          description: Queued for sending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestLink' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/guest-domains:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [FormsLookupGuest]
+      operationId: listGuestDomains
+      summary: Email domains guest links may be sent to (D-CG7)
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Approved domains, sorted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestDomains' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [FormsLookupGuest]
+      operationId: replaceGuestDomains
+      summary: Replace the approved guest domains (at most 50; checked each time a link is sent)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: guest.domains.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GuestDomains' }
+      responses:
+        '200':
+          description: The approved domains now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestDomains' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/guest-response:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [FormsLookupGuest]
+      operationId: getGuestForm
+      summary: The guest response form a link belongs to (no session; the link token is the credential)
+      description: |
+        Title, instructions, questions, file rules and the files added so far; never the request's own data. States
+        open, submitted, expired or closed. An unknown, revoked, replaced or purged token, or a token of another
+        workspace, is 404. Calls are limited per link (60 a minute on each server; 429 with Retry-After).
+      security: []
+      x-orqix-permission: guestToken
+      parameters:
+        - name: X-Orqix-Guest-Token
+          in: header
+          required: false
+          description: The guest link token from the link's URL fragment; never put it in a URL path or query.
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: The form
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestForm' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/guest-response/files:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [FormsLookupGuest]
+      operationId: uploadGuestFile
+      summary: Add a file to the guest response (sent with the form; at most the step's maxFiles)
+      description: The step's file types and size apply; files are checked by type and bytes and scanned. Ten uploads a minute per link.
+      security: []
+      x-orqix-permission: guestToken
+      x-orqix-audit: guest.file-added
+      parameters:
+        - { name: X-Orqix-Guest-Token, in: header, required: false, schema: { type: string, maxLength: 100 } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: File added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestFile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/guest-response/submit:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [FormsLookupGuest]
+      operationId: submitGuestResponse
+      summary: Send the guest's answers and files (once; a repeat with the same key and body returns the original answer)
+      description: |
+        The answers must match the waiting step's declared values; the files must be ones added through this link. The
+        files are attached to the request, then the wait is resumed through the same path as sendMessage. 409
+        GUEST_RESPONSE_SUBMITTED for a different key or body after a submit, GUEST_RESPONSE_CLOSED when the wait closed
+        or the link expired, RUN_SUSPENDED while an operator suspended the request.
+      security: []
+      x-orqix-permission: guestToken
+      x-orqix-audit: guest.submitted
+      parameters:
+        - { name: X-Orqix-Guest-Token, in: header, required: false, schema: { type: string, maxLength: 100 } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GuestSubmit' }
+      responses:
+        '200':
+          description: Sent (or the replay of the original submit, with Idempotent-Replayed true)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestSubmitted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  # ------------------------------------------------------------------ end FormsLookupGuest
 
   # ------------------------------------------------------------------ Waits (docs/build/S129, CG-W01, CG-W03, CG-W08)
   /workspaces/{workspaceId}/runs/{runId}/waits:
@@ -11283,6 +11537,117 @@ components:
         name: { type: string }
         type: { type: string }
         required: { type: boolean }
+    # ---------------------------------------------------------------- FormsLookupGuest (docs/build/S140)
+    LookupSearch:
+      type: object
+      additionalProperties: false
+      properties:
+        search: { type: string, maxLength: 100, description: Typed text; below the question's minSearchLength nothing is called }
+        releaseId: { type: string, format: uuid, description: The release whose form is shown (default the active release; a canary is allowed) }
+    LookupOption:
+      type: object
+      required: [value, label]
+      properties:
+        value: { type: string, description: Stored in the request when chosen }
+        label: { type: string }
+        detail: { type: [string, 'null'] }
+    LookupOptions:
+      type: object
+      required: [options, truncated, cached, minSearchLength]
+      properties:
+        options: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/LookupOption' } }
+        truncated: { type: boolean, description: More rows matched; type more to narrow the list }
+        cached: { type: boolean }
+        minSearchLength: { type: integer, minimum: 0, maximum: 5 }
+    GuestLink:
+      type: object
+      required: [id, runId, runReference, nodeId, stepLabel, state, sendState, tokenIssued, tokensIssued, linkValidFor, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        stepLabel: { type: string }
+        title: { type: [string, 'null'] }
+        state: { type: string, enum: [waiting, submitted, expired, revoked, cancelled] }
+        reason: { type: [string, 'null'], enum: [timedOut, requestEnded, answeredElsewhere, null] }
+        sendState: { type: string, enum: [manual, pending, sent, refused, failed] }
+        sentDomain: { type: [string, 'null'], description: Domain of the address the link was emailed to (never the address) }
+        tokenIssued: { type: boolean }
+        tokenExpiresAt: { type: [string, 'null'], format: date-time }
+        tokensIssued: { type: integer, minimum: 0 }
+        linkValidFor: { type: string }
+        firstViewedAt: { type: [string, 'null'], format: date-time }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    GuestLinkList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GuestLink' } }
+    GuestLinkIssued:
+      type: object
+      required: [linkId, url, expiresAt]
+      properties:
+        linkId: { type: string, format: uuid }
+        url: { type: string, description: The only time the link is shown; its token is in the fragment }
+        expiresAt: { type: string, format: date-time }
+    GuestQuestion:
+      type: object
+      required: [name, type, title, required]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, integer, boolean, date] }
+        title: { type: string }
+        required: { type: boolean }
+    GuestFileRules:
+      type: object
+      required: [maxFiles, required, acceptTypes, maxFileBytes]
+      properties:
+        maxFiles: { type: integer, minimum: 1, maximum: 5 }
+        required: { type: boolean }
+        acceptTypes: { type: array, items: { type: string }, description: Empty means every allowed type }
+        maxFileBytes: { type: integer, format: int64 }
+    GuestFile:
+      type: object
+      required: [id, name, contentType, sizeBytes]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        contentType: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+    GuestForm:
+      type: object
+      required: [title, state, questions, uploaded]
+      properties:
+        title: { type: string }
+        instructions: { type: [string, 'null'], description: Plain text }
+        state: { type: string, enum: [open, submitted, expired, closed] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        questions: { type: array, items: { $ref: '#/components/schemas/GuestQuestion' } }
+        files: { oneOf: [{ $ref: '#/components/schemas/GuestFileRules' }, { type: 'null' }] }
+        uploaded: { type: array, items: { $ref: '#/components/schemas/GuestFile' } }
+    GuestSubmit:
+      type: object
+      required: [result]
+      additionalProperties: false
+      properties:
+        result: { type: object, additionalProperties: true, description: Answers by question name (flat values) }
+        files: { type: array, maxItems: 5, items: { type: string, format: uuid } }
+    GuestSubmitted:
+      type: object
+      required: [state, submittedAt, fileCount]
+      properties:
+        state: { type: string, enum: [submitted] }
+        submittedAt: { type: string, format: date-time }
+        fileCount: { type: integer, minimum: 0 }
+    GuestDomains:
+      type: object
+      required: [domains]
+      additionalProperties: false
+      properties:
+        domains: { type: array, maxItems: 50, items: { type: string, maxLength: 253 } }
+    # ---------------------------------------------------------------- end FormsLookupGuest
     CallbackWait:
       type: object
       additionalProperties: false
@@ -12505,6 +12870,8 @@ components:
             - SIGNAL_NOT_AWAITED
             - CALLBACK_ALREADY_RESUMED
             - CALLBACK_NOT_WAITING
+            - GUEST_RESPONSE_CLOSED
+            - GUEST_RESPONSE_SUBMITTED
             - JOB_LEASE_LOST
             - JOB_NOT_OPEN
             - EFFECT_NOT_RECONCILED

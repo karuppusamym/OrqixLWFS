@@ -20,7 +20,8 @@ import tools.jackson.databind.JsonNode;
 /**
  * Request input validation against the approved form keyword subset (type, required, enum, minLength, maxLength,
  * minimum, maximum, multipleOf, additionalProperties, and for {@code format: date} the calendar date with
- * formatMinimum and formatMaximum) with exact {@link BigDecimal} arithmetic. Types are strict: the
+ * formatMinimum and formatMaximum; {@code format: time} and {@code format: date-time} with the same bounds, S140;
+ * {@code uniqueItems} on lists) with exact {@link BigDecimal} arithmetic. Types are strict: the
  * string {@code "1800"} is not a number. One error per failed keyword; a field with the wrong type reports only the
  * type error. Errors are ordered by pointer, then code.
  */
@@ -30,6 +31,11 @@ public final class DefaultFormValidator implements FormValidator {
     private static final Pattern UPLOAD_ID = Pattern.compile(
             "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     private static final Pattern DATE = Pattern.compile("^[0-9]{4}-[0-9]{2}-[0-9]{2}$");
+    /** HH:MM or HH:MM:SS, 24-hour, no fraction or zone (S140). */
+    private static final Pattern TIME = Pattern.compile("^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$");
+    /** RFC 3339 with an explicit offset; seconds optional, no fraction (S140). */
+    private static final Pattern DATE_TIME = Pattern.compile(
+            "^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$");
 
     @Override
     public List<FieldError> validate(String inputSchemaJson, String inputJson) {
@@ -118,6 +124,14 @@ public final class DefaultFormValidator implements FormValidator {
             if (value.size() > schema.path("maxItems").asInt(25))
                 errors.add(new FieldError(pointer, "maxItems", "Enter at most " + schema.path("maxItems").asInt(25) + " items."));
             for (int i = 0; i < value.size(); i++) field(pointer + "/" + i, schema.path("items"), value.get(i), errors);
+            if (schema.path("uniqueItems").asBoolean(false)) {
+                java.util.Set<JsonNode> seen = new java.util.HashSet<>();
+                for (int i = 0; i < value.size(); i++) {
+                    if (!seen.add(value.get(i))) {
+                        errors.add(new FieldError(pointer + "/" + i, "uniqueItems", "Choose each value only once."));
+                    }
+                }
+            }
         }
         if (value.isObject()) {
             JsonNode properties=schema.path("properties");
@@ -139,6 +153,14 @@ public final class DefaultFormValidator implements FormValidator {
         }
         if (value.isString() && "date".equals(schema.path("format").stringValue(""))) {
             date(pointer, schema, value.stringValue(), errors);
+            return;
+        }
+        if (value.isString() && "time".equals(schema.path("format").stringValue(""))) {
+            time(pointer, schema, value.stringValue(), errors);
+            return;
+        }
+        if (value.isString() && "date-time".equals(schema.path("format").stringValue(""))) {
+            dateTime(pointer, schema, value.stringValue(), errors);
             return;
         }
         if (value.isString()) {
@@ -232,6 +254,61 @@ public final class DefaultFormValidator implements FormValidator {
         }
         if (max != null && date.isAfter(max)) {
             errors.add(new FieldError(pointer, "formatMaximum", "Choose a date on or before " + show(max) + "."));
+        }
+    }
+
+    /** Times of day: HH:MM[:SS] within formatMinimum and formatMaximum (inclusive, same day). */
+    private static void time(String pointer, JsonNode schema, String text, List<FieldError> errors) {
+        java.time.LocalTime time = parseTime(text);
+        if (time == null) {
+            errors.add(new FieldError(pointer, "format", "Enter a time in the form HH:MM, for example 14:30."));
+            return;
+        }
+        java.time.LocalTime min = parseTime(schema.path("formatMinimum").stringValue(null));
+        java.time.LocalTime max = parseTime(schema.path("formatMaximum").stringValue(null));
+        if (min != null && time.isBefore(min)) {
+            errors.add(new FieldError(pointer, "formatMinimum", "Choose a time at or after " + min + "."));
+        }
+        if (max != null && time.isAfter(max)) {
+            errors.add(new FieldError(pointer, "formatMaximum", "Choose a time at or before " + max + "."));
+        }
+    }
+
+    /** Date-times with offset; bounds compare instants, so 10:00+01:00 equals 09:00Z. */
+    private static void dateTime(String pointer, JsonNode schema, String text, List<FieldError> errors) {
+        java.time.OffsetDateTime value = parseDateTime(text);
+        if (value == null) {
+            errors.add(new FieldError(pointer, "format",
+                    "Enter a date and time with its time zone offset, for example 2026-11-06T14:30:00+01:00."));
+            return;
+        }
+        java.time.OffsetDateTime min = parseDateTime(schema.path("formatMinimum").stringValue(null));
+        java.time.OffsetDateTime max = parseDateTime(schema.path("formatMaximum").stringValue(null));
+        if (min != null && value.toInstant().isBefore(min.toInstant())) {
+            errors.add(new FieldError(pointer, "formatMinimum", "Choose a time at or after " + min + "."));
+        }
+        if (max != null && value.toInstant().isAfter(max.toInstant())) {
+            errors.add(new FieldError(pointer, "formatMaximum", "Choose a time at or before " + max + "."));
+        }
+    }
+
+    /** @return the time, or null when the text is not HH:MM[:SS] */
+    public static java.time.LocalTime parseTime(String text) {
+        if (text == null || !TIME.matcher(text).matches()) {
+            return null;
+        }
+        return java.time.LocalTime.parse(text);
+    }
+
+    /** @return the date-time, or null when the text is not RFC 3339 with an offset or names a day that does not exist */
+    public static java.time.OffsetDateTime parseDateTime(String text) {
+        if (text == null || !DATE_TIME.matcher(text).matches()) {
+            return null;
+        }
+        try {
+            return java.time.OffsetDateTime.parse(text);
+        } catch (DateTimeParseException e) {
+            return null;
         }
     }
 

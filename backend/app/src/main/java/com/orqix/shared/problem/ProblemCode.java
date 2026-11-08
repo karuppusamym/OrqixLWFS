@@ -35,6 +35,10 @@ public enum ProblemCode {
     SIGNAL_NOT_AWAITED(409, "Nothing in the request is waiting for that signal"),
     CALLBACK_ALREADY_RESUMED(409, "The wait was already resumed with another request"),
     CALLBACK_NOT_WAITING(409, "The wait is no longer open for this token"),
+    /** S140 (CG-F05): the guest link expired, was revoked or its wait closed. */
+    GUEST_RESPONSE_CLOSED(409, "This response link is no longer open"),
+    /** S140: the guest form was already answered with another request. */
+    GUEST_RESPONSE_SUBMITTED(409, "This response was already sent"),
     JOB_LEASE_LOST(409, "You no longer hold this job"),
     JOB_NOT_OPEN(409, "The job has ended"),
     EFFECT_NOT_RECONCILED(409, "The outcome of the external call must be reconciled first"),

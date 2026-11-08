@@ -114,9 +114,15 @@ final class GraphRules {
                 // A raised error ends the path; the section or handler that catches it decides what happens (S59).
                 case RAISE_ERROR -> Set.of();
                 // S134: the routes of an AI task depend on its mode and autonomy; AiTaskRules counts them.
-                case AI_TASK -> AiTaskRules.allowed((Node.AiTask) n);
+                case AI_TASK -> rc.definition().execution().forEachOf(n.id()) != null ? Set.of(Route.NEXT)
+                        : AiTaskRules.allowed((Node.AiTask) n);
                 default -> Set.of(Route.NEXT);
             };
+            if (rc.leaving(n).stream().anyMatch(Transition::bounded)) {
+                // CG-E01 (S138): a step with a bounded loop path also continues on limitReached; LoopRules counts it.
+                allowed = new java.util.HashSet<>(allowed);
+                allowed.add(Route.LIMIT_REACHED);
+            }
             if (n.kind() == NodeKind.RAISE_ERROR) {
                 for (Transition t : rc.leaving(n)) {
                     rc.issues().blocker("WF_OUTGOING_INVALID", t.path() + "/from", n.id(), t.id(), q(n)
@@ -136,6 +142,10 @@ final class GraphRules {
                     rc.issues().blocker("WF_FAILURE_ROUTE_KIND", t.path() + "/on", n.id(), t.id(), n.label() + " ("
                             + n.kind().businessLabel() + ") cannot have a path for when it fails. Only a call to a"
                             + " system, an AI agent, an external worker or another workflow can.");
+                } else if (t.on() == Route.LIMIT_REACHED && !allowed.contains(t.on())) {
+                    rc.issues().blocker("WF_LOOP_LIMIT_ROUTE", t.path() + "/on", n.id(), t.id(), n.label()
+                            + " has no path back with a limit, so it cannot have a path for when the limit is reached."
+                            + " Give one of its paths back to an earlier step a limit, or remove this path.");
                 } else if (!allowed.contains(t.on())) {
                     String hint = t.on() == Route.TIMED_OUT ? (n.kind() == NodeKind.WAIT_FOR_MESSAGE
                             ? " Set a time limit on this step to add a path for when the message does not arrive in"
@@ -204,7 +214,13 @@ final class GraphRules {
                     }
                 }
                 case AI_TASK -> {
-                    // Counted by AiTaskRules (per label, lowConfidence, needsReview, aiUnavailable).
+                    // Counted by AiTaskRules (per label, lowConfidence, needsReview, aiUnavailable); a for-each AI
+                    // task (S138) continues on exactly one next step.
+                    if (rc.definition().execution().forEachOf(n.id()) != null
+                            && counts.getOrDefault(Route.NEXT, 0) != 1) {
+                        rc.issues().blocker("WF_OUTGOING_INVALID", n.path(), n.id(), null, n.label()
+                                + " runs for each item, so it needs exactly one next step.");
+                    }
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);
@@ -264,12 +280,18 @@ final class GraphRules {
         }
     }
 
+    /**
+     * CG-E01 (S138): a loop is allowed only through a declared "send back to" path with a limit; every cycle that no
+     * bounded path closes is refused. LoopRules checks the bounded paths themselves.
+     */
     private static void cycles(RuleContext rc) {
-        for (Transition t : rc.graph().backEdges()) {
+        for (Transition t : rc.graph().backEdges(true)) {
             Node from = rc.graph().node(t.from());
             Node to = rc.graph().node(t.to());
-            String message = from == to ? q(from) + " leads back to itself. Loops are not supported yet."
-                    : "The path from " + q(from) + " to " + q(to) + " creates a loop. Loops are not supported yet.";
+            String hint = " To send the request back on purpose, give this path a limit (\"Send back at most ... times\","
+                    + " maxTraversals 1 to 10) and add a path for when the limit is reached.";
+            String message = from == to ? q(from) + " leads back to itself without a limit." + hint
+                    : "The path from " + q(from) + " to " + q(to) + " creates a loop without a limit." + hint;
             rc.issues().blocker("WF_CYCLE", t.path(), null, t.id(), message);
         }
     }

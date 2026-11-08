@@ -19,6 +19,7 @@ import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { CallFailureErrorFields, UndoFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
+import { ForEachFields } from './ForEachFields'
 import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
 import { PollFields } from './PollFields'
 import { Button } from '@/components/ui/button'
@@ -323,6 +324,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
 
       <UndoFields node={node} />
       <CallFailureErrorFields node={node} />
+      {cfg(node, 'poll') ? null : <ForEachFields node={node} results={Object.keys(resultMapping)} parallel />}
 
       <Advanced>
         <FormField label="Timeout (seconds)" id={`http-timeout-${node.id}`} description={operation ? `At most ${operation.maxTimeoutSeconds} seconds for this operation.` : undefined}>

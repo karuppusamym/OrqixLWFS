@@ -52,7 +52,8 @@ public final class ModelReader {
         }
         JsonNode exec = root.get("execution");
         Execution execution = new Execution(exec.get("maxConcurrentRuns").intValue(),
-                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue(), stepRetry(nodeArray));
+                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue(), stepRetry(nodeArray),
+                stepForEach(nodeArray));
         List<Dependency> dependencies = new ArrayList<>();
         JsonNode deps = root.get("dependencies").get("connections");
         for (int i = 0; i < deps.size(); i++) {
@@ -107,6 +108,29 @@ public final class ModelReader {
     }
 
     /** Step-level retry policies (CG-W04, S131) of http, externalTask and sendAdapter steps, by step id. */
+    /** CG-E06 (S138): {@code config.forEach} of http, externalTask and aiTask steps, by step id. */
+    private static Map<String, StepForEach> stepForEach(JsonNode nodeArray) {
+        Map<String, StepForEach> policies = new TreeMap<>();
+        for (int i = 0; i < nodeArray.size(); i++) {
+            JsonNode node = nodeArray.get(i);
+            JsonNode f = node.path("config").path("forEach");
+            String type = node.path("type").asString("");
+            if (!f.isObject() || !java.util.Set.of("http", "externalTask", "aiTask").contains(type)) {
+                continue; // a child workflow's forEach is its own S14 policy (Node.ForEach)
+            }
+            JsonNode completion = f.path("completion");
+            boolean parallel = "parallel".equals(f.path("mode").asString("sequential"));
+            policies.putIfAbsent(node.get("id").stringValue(), new StepForEach("/nodes/" + i + "/config/forEach",
+                    f.get("itemsRef").stringValue(), f.has("itemInput") ? f.get("itemInput").stringValue() : null,
+                    f.has("itemMapping") ? stringMap(f.get("itemMapping")) : Map.of(), f.get("maxItems").intValue(),
+                    parallel, f.has("batchSize") ? f.get("batchSize").intValue() : StepForEach.MAX_BATCH,
+                    completion.path("when").asString(StepForEach.ALL),
+                    completion.has("count") ? completion.get("count").intValue() : null,
+                    f.has("collect") ? stringMap(f.get("collect")) : Map.of()));
+        }
+        return Collections.unmodifiableMap(policies);
+    }
+
     private static Map<String, StepRetry> stepRetry(JsonNode nodeArray) {
         Map<String, StepRetry> policies = new TreeMap<>();
         for (int i = 0; i < nodeArray.size(); i++) {
@@ -173,7 +197,7 @@ public final class ModelReader {
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
-                    c.get("operation").stringValue(), stringMap(c.get("inputMapping")),
+                    c.get("operation").stringValue(), inputsWithItem(c),
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
                     c.has("compensates") ? c.get("compensates").stringValue() : null,
                     "automatic".equals(c.path("compensation").asString("manual")),
@@ -182,7 +206,7 @@ public final class ModelReader {
             case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),
-                    stringMap(c.get("inputMapping")), payloadFields(c.get("result")),
+                    inputsWithItem(c), payloadFields(c.get("result")),
                     c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120,
                     c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
@@ -222,7 +246,7 @@ public final class ModelReader {
                     text(c, "key"), stringMap(c.get("inputMapping")));
             case AI_TASK -> new Node.AiTask(index, id, label, c.get("skillRef").stringValue(),
                     c.has("skillVersion") ? c.get("skillVersion").intValue() : null, c.get("mode").stringValue(),
-                    stringMap(c.get("inputMapping")), c.path("autonomy").asString(Node.AiTask.SUGGEST),
+                    inputsWithItem(c), c.path("autonomy").asString(Node.AiTask.SUGGEST),
                     c.has("minConfidence") ? c.get("minConfidence").decimalValue() : Node.AiTask.DEFAULT_MIN_CONFIDENCE,
                     c.path("reviewSamplePercent").asInt(Node.AiTask.DEFAULT_REVIEW_PERCENT),
                     c.has("redaction") ? stringMap(c.get("redaction")) : Map.of());
@@ -290,7 +314,8 @@ public final class ModelReader {
         return new Transition(index, t.get("id").stringValue(), t.get("from").stringValue(),
                 t.get("to").stringValue(), on, label == null ? null : label.stringValue(),
                 condition == null ? null : readCondition(condition),
-                t.has("aiLabel") ? t.get("aiLabel").stringValue() : null);
+                t.has("aiLabel") ? t.get("aiLabel").stringValue() : null,
+                t.has("maxTraversals") ? t.get("maxTraversals").intValue() : null);
     }
 
     /**
@@ -568,6 +593,28 @@ public final class ModelReader {
                     e.getValue().get("y").decimalValue()));
         }
         return new Layout(Collections.unmodifiableMap(positions));
+    }
+
+    /**
+     * The step's input mapping plus, for a for-each step (CG-E06, S138), the inputs that receive the current item:
+     * {@code /input/<list>/*} for a list of single values, {@code /input/<list>/*}{@code /<column>} for a row column.
+     * An explicit mapping of the same input wins (ForEachRules reports the clash).
+     */
+    private static Map<String, String> inputsWithItem(JsonNode c) {
+        Map<String, String> mapping = stringMap(c.get("inputMapping"));
+        JsonNode f = c.path("forEach");
+        if (!f.isObject()) {
+            return mapping;
+        }
+        Map<String, String> all = new TreeMap<>(mapping);
+        String list = f.get("itemsRef").stringValue() + "/*";
+        if (f.has("itemInput")) {
+            all.putIfAbsent(f.get("itemInput").stringValue(), list);
+        }
+        for (Map.Entry<String, JsonNode> e : f.path("itemMapping").properties()) {
+            all.putIfAbsent(e.getKey(), list + "/" + e.getValue().stringValue());
+        }
+        return Collections.unmodifiableMap(all);
     }
 
     private static Map<String, String> stringMap(JsonNode o) {

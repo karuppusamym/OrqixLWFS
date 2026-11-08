@@ -32,7 +32,10 @@ import tools.jackson.databind.JsonNode;
 @Component("orqixHttpTask")
 public class HttpTaskDelegate implements JavaDelegate {
 
-    /** Acyclic R0 graphs: every node runs at most once per run (S2 section 6). */
+    /**
+     * Occurrence of steps outside bounded loops (S2 section 6). Inside a loop (S138) the delegate uses the visit number
+     * of the step; a for-each item adds its position to the journal step key.
+     */
     static final int OCCURRENCE = 1;
 
     private final Json json;
@@ -43,11 +46,14 @@ public class HttpTaskDelegate implements JavaDelegate {
     private final JdbcClient jdbc;
     private final OrqixProperties properties;
     private final com.orqix.runtime.internal.AgentLoops agentLoops;
+    private final OrqixForEach forEach;
 
     public HttpTaskDelegate(Json json, EffectDispatcher dispatcher, RunStore runs, RunEvents events,
             RuntimeMetrics metrics, JdbcClient jdbc, OrqixProperties properties,
-            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.AgentLoops agentLoops) {
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.AgentLoops agentLoops,
+            @org.springframework.context.annotation.Lazy OrqixForEach forEach) {
         this.agentLoops = agentLoops;
+        this.forEach = forEach;
         this.json = json;
         this.dispatcher = dispatcher;
         this.runs = runs;
@@ -75,6 +81,17 @@ public class HttpTaskDelegate implements JavaDelegate {
 
         UUID workspaceId = ProcessData.workspaceId(execution);
         UUID runId = ProcessData.runId(execution);
+        // S138: the visit of the step inside a bounded loop, and the item of a for-each step, give each call its own
+        // effect key, so a later visit or another item is a new call while a retry reuses the recorded one.
+        int occurrence = ProcessData.occurrence(execution, element.getId());
+        if (execution.getVariable(ProcessData.FOR_EACH_BATCH) != null
+                && OrqixForEach.isForEach(execution.getProcessDefinitionId(), element.getId())) {
+            batch(execution, element, connection, connectionVersion, operation, timeoutSeconds, inputs, results, raise,
+                    workspaceId, runId, occurrence);
+            return;
+        }
+        String effectNode = ProcessData.effectNode(execution, json, element.getId());
+        var item = ProcessData.item(execution, json);
         Map<String, JsonNode> values = new LinkedHashMap<>();
         Map<String, String> expressionTypes = OrqixModel.childMap(http, "input", "typesBase64");
         inputs.forEach((name, fieldRef) -> {
@@ -90,16 +107,17 @@ public class HttpTaskDelegate implements JavaDelegate {
 
         // A previous job can crash after the independent journal transaction committed, but before the engine
         // committed its failure route. Reuse that exact known result rather than resending a rejected call.
-        EffectDispatcher.Failed recorded = recordedFailure(workspaceId, runId, element.getId(), connection,
+        EffectDispatcher.Failed recorded = recordedFailure(workspaceId, runId, effectNode, occurrence, connection,
                 connectionVersion, operation, json.canonicalSha256(dispatcher.body(values)));
         String recordedError = recorded == null ? null
-                : routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation, raise);
+                : routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation, raise,
+                        effectNode, occurrence);
         if (recordedError != null)
             throw new BpmnError(recordedError);
         extendJobLock(execution, dispatcher.leaseSeconds(workspaceId, connection, connectionVersion, operation,
                 timeoutSeconds));
         EffectDispatcher.DispatchRequest dispatchRequest = new EffectDispatcher.DispatchRequest(workspaceId,
-                runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
+                runId, effectNode, occurrence, connection, connectionVersion, operation, dispatcher.body(values),
                 results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution));
         // CG-M03 (S135): a durable agent runs one turn per job execution; between turns the job is deferred.
         EffectDispatcher.DispatchResult result = agentLoops.durable(workspaceId, connection, connectionVersion, operation)
@@ -109,7 +127,9 @@ public class HttpTaskDelegate implements JavaDelegate {
             if (!success.reused()) {
                 metrics.effectAttempt(success.effectClass(), "succeeded");
             }
-            execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(success.result()));
+            if (!forEach.record(execution, element.getId(), success.result(), true)) {
+                execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(success.result()));
+            }
             runs.mutate(workspaceId, runId, m -> {
                 m.removeStep(element.getId());
                 m.settle();
@@ -123,6 +143,10 @@ public class HttpTaskDelegate implements JavaDelegate {
             if (success.reused()) {
                 data.put("reusedRecordedResult", true);
             }
+            if (occurrence > 1) {
+                data.put("occurrence", occurrence);
+            }
+            item.ifPresent(i -> data.put("itemIndex", i.index()));
             if (success.summary() != null) {
                 data.put("summary", success.summary());
             }
@@ -138,7 +162,8 @@ public class HttpTaskDelegate implements JavaDelegate {
         }
         EffectDispatcher.Failed failed = (EffectDispatcher.Failed) result;
         metrics.effectAttempt(failed.effectClass(), failed.classification());
-        String error = routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation, raise);
+        String error = routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation, raise,
+                effectNode, occurrence);
         if (error != null) {
             // The engine catches this business error at the generated interrupting boundary (the step's failure path,
             // or with the S71 opt-in its section's error route) in the same transaction. Journal completion is already
@@ -151,18 +176,111 @@ public class HttpTaskDelegate implements JavaDelegate {
     }
 
     /**
+     * One batch of a parallel for-each call (CG-E06, S138): the items of the batch are sent at the same time, each
+     * through the effect journal under its own key ({@code <step>#i<position>}, this visit's occurrence), and their
+     * results are recorded in this job's transaction. When an item fails, the first failure (in item order) decides
+     * the job: a routed known failure takes the step's failed path, anything else fails the job, and its retry reuses
+     * every recorded success, so no item is ever sent twice.
+     */
+    private void batch(DelegateExecution execution, FlowElement element, String connection, int connectionVersion,
+            String operation, int timeoutSeconds, Map<String, String> inputs, Map<String, String> results, String raise,
+            UUID workspaceId, UUID runId, int occurrence) {
+        if (agentLoops.durable(workspaceId, connection, connectionVersion, operation)) {
+            throw new IllegalStateException("A durable agent operation cannot run for several items in parallel");
+        }
+        String nodeId = element.getId();
+        UUID initiator = ProcessData.initiator(execution);
+        java.util.List<ProcessData.Item> items = forEach.batchItems(execution, nodeId);
+        record Prepared(ProcessData.Item item, String effectNode, Map<String, JsonNode> values, String hash) {
+        }
+        java.util.List<Prepared> prepared = new java.util.ArrayList<>();
+        for (ProcessData.Item item : items) {
+            Map<String, JsonNode> values = new LinkedHashMap<>();
+            inputs.forEach((name, fieldRef) -> {
+                JsonNode value = ProcessData.resolve(execution, json, fieldRef, item);
+                if (value.isMissingNode() || value.isNull()) {
+                    throw new IllegalStateException("Input " + fieldRef + " is not available; the compiler guarantees it");
+                }
+                values.put(name, value);
+            });
+            prepared.add(new Prepared(item, nodeId + "#i" + item.index(), values,
+                    json.canonicalSha256(dispatcher.body(values))));
+        }
+        extendJobLock(execution, dispatcher.leaseSeconds(workspaceId, connection, connectionVersion, operation,
+                timeoutSeconds) * 2L);
+        java.util.List<java.util.concurrent.Callable<EffectDispatcher.DispatchResult>> calls = new java.util.ArrayList<>();
+        for (Prepared p : prepared) {
+            EffectDispatcher.Failed recorded = recordedFailure(workspaceId, runId, p.effectNode(), occurrence, connection,
+                    connectionVersion, operation, p.hash());
+            if (recorded != null) {
+                calls.add(() -> recorded);
+                continue;
+            }
+            EffectDispatcher.DispatchRequest request = new EffectDispatcher.DispatchRequest(workspaceId, runId,
+                    p.effectNode(), occurrence, connection, connectionVersion, operation, dispatcher.body(p.values()),
+                    results, timeoutSeconds, properties.runtime().lockOwner(), initiator);
+            calls.add(() -> dispatcher.dispatch(request));
+        }
+        java.util.List<EffectDispatcher.DispatchResult> outcomes = forEach.concurrently(calls);
+        Prepared failedItem = null;
+        EffectDispatcher.Failed failure = null;
+        for (int i = 0; i < prepared.size(); i++) {
+            Prepared p = prepared.get(i);
+            if (outcomes.get(i) instanceof EffectDispatcher.Succeeded success) {
+                if (!success.reused()) {
+                    metrics.effectAttempt(success.effectClass(), "succeeded");
+                }
+                forEach.recordItem(execution, nodeId, occurrence, p.item().index(), success.result(), true);
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("connectionKey", connection);
+                data.put("operation", operation);
+                data.put("attempt", success.attempt());
+                data.put("httpStatus", success.httpStatus());
+                data.put("remoteReference", success.remoteReference());
+                data.put("itemIndex", p.item().index());
+                if (occurrence > 1) {
+                    data.put("occurrence", occurrence);
+                }
+                if (success.reused()) {
+                    data.put("reusedRecordedResult", true);
+                }
+                events.append(workspaceId, runId, "EFFECT_SUCCEEDED", nodeId, null, data);
+            } else if (failure == null) {
+                failure = (EffectDispatcher.Failed) outcomes.get(i);
+                failedItem = p;
+            }
+        }
+        if (failure == null) {
+            runs.mutate(workspaceId, runId, m -> m.settle());
+            return;
+        }
+        metrics.effectAttempt(failure.effectClass(), failure.classification());
+        String error = routeKnownFailure(execution, element, failure, workspaceId, runId, connection, operation, raise,
+                failedItem.effectNode(), occurrence);
+        if (error != null) {
+            throw new BpmnError(error);
+        }
+        throw new JobFailure(failure.retryable(), failure.attentionReason(), failure.errorCode(),
+                failure.classification(), failure.httpStatus(), failure.attempt(), failure.effectId(),
+                failure.businessMessage()).withRetryAfter(failure.retryAfter());
+    }
+
+    /**
      * @return the BPMN error code to throw for a known permanent failure the workflow routes ({@code ORQIX_STEP_FAILED}
      *         for the step's own failure path, or the S71 opt-in code for its section's error route), or null when the
      *         failure is not routed and becomes an ordinary job failure
      */
     private String routeKnownFailure(DelegateExecution execution, FlowElement element, EffectDispatcher.Failed failed,
-            UUID workspaceId, UUID runId, String connection, String operation, String raise) {
+            UUID workspaceId, UUID runId, String connection, String operation, String raise, String effectNode,
+            int occurrence) {
         if (failed.retryable() || !"permanent".equals(failed.classification()) || failed.effectId() == null) return null;
         boolean rejected = "EFFECT_REJECTED".equals(failed.attentionReason()) && knownRejection(failed.httpStatus(), failed.errorCode());
         boolean invalidRead = "RESPONSE_INVALID".equals(failed.attentionReason()) && knownInvalidRead(failed.effectClass(), failed.errorCode());
         if (!rejected && !invalidRead) return null;
         var candidate = OrqixModel.model(execution.getProcessDefinitionId()).getFlowElement(element.getId() + "__failed");
-        boolean failurePath = candidate instanceof BoundaryEvent boundary && element.getId().equals(boundary.getAttachedToRefId())
+        // S138: a parallel for-each in batches has its failure boundary on the batches subprocess.
+        boolean failurePath = candidate instanceof BoundaryEvent boundary && (element.getId().equals(boundary.getAttachedToRefId())
+                        || (element.getId() + "__batches").equals(boundary.getAttachedToRefId()))
                 && boundary.getEventDefinitions().stream().anyMatch(definition -> definition instanceof ErrorEventDefinition error
                         && ("error__stepFailed".equals(error.getErrorCode()) || "ORQIX_STEP_FAILED".equals(error.getErrorCode())));
         // The compiler never lets a call have both; the step's own failure path wins if a hand-made model did.
@@ -174,7 +292,7 @@ public class HttpTaskDelegate implements JavaDelegate {
                 SELECT EXISTS(SELECT 1 FROM effect_journal WHERE id=:id AND workspace_id=:ws AND run_id=:run
                   AND node_id=:node AND occurrence=:occurrence AND state='permanentFailure')
                 """).param("id", failed.effectId()).param("ws", workspaceId).param("run", runId)
-                .param("node", element.getId()).param("occurrence", OCCURRENCE).query(Boolean.class).single();
+                .param("node", effectNode).param("occurrence", occurrence).query(Boolean.class).single();
         if (!recorded) return null;
         String kind = rejected ? "rejected" : "invalidResponse";
         // A v1 connection maps known client errors to business codes (S130); the code is a failure fact.
@@ -245,14 +363,14 @@ public class HttpTaskDelegate implements JavaDelegate {
                 && java.util.Set.of("RESPONSE_INVALID", "RESPONSE_TOO_LARGE", "UNEXPECTED_STATUS").contains(code);
     }
 
-    private EffectDispatcher.Failed recordedFailure(UUID workspaceId, UUID runId, String node, String connection,
+    private EffectDispatcher.Failed recordedFailure(UUID workspaceId, UUID runId, String node, int occurrence, String connection,
             int connectionVersion, String operation, String requestHash) {
         return jdbc.sql("""
                 SELECT id, attempts, last_http_status, last_error_code, effect_class
                 FROM effect_journal WHERE workspace_id=:ws AND run_id=:run AND node_id=:node AND occurrence=:occurrence
                   AND connection_key=:connection AND connection_version=:version AND operation=:operation
                   AND request_hash=:hash AND state='permanentFailure'
-                """).param("ws", workspaceId).param("run", runId).param("node", node).param("occurrence", OCCURRENCE)
+                """).param("ws", workspaceId).param("run", runId).param("node", node).param("occurrence", occurrence)
                 .param("connection", connection).param("version", connectionVersion).param("operation", operation).param("hash", requestHash)
                 .query((rs, index) -> {
                     Integer status = rs.getObject("last_http_status", Integer.class); String code = rs.getString("last_error_code");

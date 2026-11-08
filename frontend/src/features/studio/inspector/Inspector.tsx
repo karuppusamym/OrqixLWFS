@@ -22,6 +22,7 @@ import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspect
 import { StartInspector } from './StartInspector'
 import { CompensateInspector, RaiseErrorInspector, SignalInspector } from './ScopeInspectors'
 import { CommitInput, CommitTextarea } from './controls'
+import { SendBackFields } from './SendBackFields'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
 export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => void }) {
@@ -44,6 +45,7 @@ export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => 
         <FormField label="Label on the canvas" optionalText id={`edge-label-${t.id}`}>
           {(ids) => <CommitInput id={ids.input} value={t.label ?? ''} maxLength={80} disabled={readOnly} onCommit={(v) => store.getState().updateTransition(t.id, { label: v.trim() })} />}
         </FormField>
+        <SendBackFields transition={t} />
         {t.on === 'condition' || t.on === 'default' ? (
           <Button variant="secondary" onClick={() => from && store.getState().select({ type: 'node', id: from.id })}>
             Edit the paths of &ldquo;{from?.label}&rdquo;

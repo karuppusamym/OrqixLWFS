@@ -37,10 +37,13 @@ public class ExternalTaskDelegate implements JavaDelegate, TriggerableJavaDelega
 
     private final ExternalJobService jobs;
     private final Json json;
+    private final OrqixForEach forEach;
 
-    public ExternalTaskDelegate(@org.springframework.context.annotation.Lazy ExternalJobService jobs, Json json) {
+    public ExternalTaskDelegate(@org.springframework.context.annotation.Lazy ExternalJobService jobs, Json json,
+            @org.springframework.context.annotation.Lazy OrqixForEach forEach) {
         this.jobs = jobs;
         this.json = json;
+        this.forEach = forEach;
     }
 
     /** @return the process variable that tells the trigger of this step to raise a BPMN error instead of leaving */
@@ -77,7 +80,12 @@ public class ExternalTaskDelegate implements JavaDelegate, TriggerableJavaDelega
         String variable = raiseVariable(execution.getCurrentActivityId());
         Object code = execution.getVariable(variable);
         if (!(code instanceof String error)) {
-            return; // a completion: leave the step normally
+            // A completion: leave the step normally. A for-each item (S138) keeps its result for the collected outputs.
+            Object result = execution.getVariable(ProcessData.stepVariable(execution.getCurrentActivityId()));
+            if (result != null) {
+                forEach.record(execution, execution.getCurrentActivityId(), json.parse(result.toString()), true);
+            }
+            return;
         }
         execution.removeVariable(variable);
         if (!"ORQIX_STEP_FAILED".equals(error)) {

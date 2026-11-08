@@ -36,6 +36,7 @@ tags:
   - name: Releases
   - name: Runs
   - name: Waits
+  - name: ControlFlow
   - name: Tasks
   - name: Notifications
   - name: Connections
@@ -4794,6 +4795,36 @@ paths:
               schema: { $ref: '#/components/schemas/RunPath' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- ControlFlow (CG-E01, CG-E06; docs/build/S138)
+  /workspaces/{workspaceId}/runs/{runId}/steps/{nodeId}/items:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: nodeId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' }
+    get:
+      tags: [ControlFlow]
+      operationId: getRunStepItems
+      summary: The item results of a "for each" step of a request
+      description: |
+        CG-E06 (S138): every finished item of every visit of a for-each step (call a system, external worker or AI
+        task), in visit and item order: the 0-based position in the request list, whether it succeeded and when it
+        finished. Item results themselves stay in the step outputs (the collected lists); this read shows progress
+        and which items ran when the step stopped early. Same access rule as the run path. 404 when the step is not
+        a for-each step of the request's release.
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200':
+          description: The item results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StepItems' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ---------------------------------------------------------------- end ControlFlow
 
   /workspaces/{workspaceId}/insights/summary:
     parameters:
@@ -13105,6 +13136,12 @@ components:
             additionalProperties: false
             properties:
               outcome: { type: string, enum: [approve, reject, timeout] }
+              outcomes:
+                type: array
+                minItems: 1
+                maxItems: 51
+                items: { type: string, enum: [approve, reject, timeout] }
+                description: 'S138: one outcome per visit of a step inside a bounded loop (the last one repeats); wins over outcome.'
               reason: { type: string, maxLength: 1000 }
         calls:
           type: object
@@ -14004,15 +14041,16 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134).' }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error, aiLabel, lowConfidence, needsReview, aiUnavailable, limitReached], description: 'error only on a section error route (S59); the ai routes leave AI tasks (S134); limitReached leaves a step whose bounded loop path is used up (S138).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
+        maxTraversals: { type: integer, minimum: 1, maximum: 10, description: 'A bounded "send back to" path (S138): how many times it may be taken. Left out otherwise.' }
     PathVisit:
       type: object
       required: [nodeId, occurrence, enteredAt, leftAt, outcome]
       properties:
         nodeId: { type: string }
         occurrence: { type: integer, minimum: 1, description: 'Which time the request was at this step (repeats in loops).' }
-        itemIndex: { type: integer, minimum: 0, maximum: 19, description: 'List-driven approval only (S88): the 0-based list position of the item this task decided. Left out otherwise.' }
+        itemIndex: { type: integer, minimum: 0, maximum: 499, description: 'List-driven approval (S88): the 0-based list position of the item this task decided; for-each call (S138): the item the call ran for. Left out otherwise.' }
         itemLabel: { type: string, description: 'List-driven approval only (S88): what the task showed for its item.' }
         enteredAt: { $ref: '#/components/schemas/Timestamp' }
         leftAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
@@ -14033,6 +14071,48 @@ components:
         candidateGroup: { type: [string, 'null'] }
         assignee: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
         dueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    # ---------------------------------------------------------------- ControlFlow schemas (S138)
+    StepItems:
+      type: object
+      required: [runId, nodeId, maxItems, mode, items]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        maxItems: { type: integer, minimum: 1, maximum: 500 }
+        mode: { type: string, enum: [sequential, parallel] }
+        items: { type: array, maxItems: 25500, items: { $ref: '#/components/schemas/StepItem' } }
+    StepItem:
+      type: object
+      required: [occurrence, itemIndex, succeeded, completedAt]
+      properties:
+        occurrence: { type: integer, minimum: 1, maximum: 51, description: 'The visit of the step (above 1 inside a bounded loop).' }
+        itemIndex: { type: integer, minimum: 0, maximum: 499, description: 0-based position in the request list. }
+        succeeded: { type: boolean, description: 'The item finished with a usable result (an AI task item: AI decided it).' }
+        completedAt: { $ref: '#/components/schemas/Timestamp' }
+    PathLoop:
+      type: object
+      required: [transitionId, from, to, maxTraversals, traversals, limitReached]
+      description: 'A bounded "send back to" path (CG-E01): how often the request was sent back and whether the limit was reached.'
+      properties:
+        transitionId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        maxTraversals: { type: integer, minimum: 1, maximum: 10 }
+        traversals: { type: integer, minimum: 0, maximum: 10 }
+        limitReached: { type: boolean, description: The request continued on the limitReached path. }
+    PathForEach:
+      type: object
+      required: [nodeId, occurrence, items, completed, succeeded, parallel, done]
+      description: One visit of a for-each step (CG-E06).
+      properties:
+        nodeId: { type: string }
+        occurrence: { type: integer, minimum: 1 }
+        items: { type: integer, minimum: 0, maximum: 500 }
+        completed: { type: integer, minimum: 0, maximum: 500 }
+        succeeded: { type: integer, minimum: 0, maximum: 500 }
+        parallel: { type: boolean }
+        done: { type: boolean, description: The step was left (its outputs were collected). }
+    # ---------------------------------------------------------------- end ControlFlow schemas
     RunPath:
       type: object
       required: [runId, lifecycle, diagram, visited, current, taken]
@@ -14051,6 +14131,8 @@ components:
         taken: { type: array, items: { type: string }, description: Ids of the routes the request has used. }
         historyTruncated: { type: boolean, description: History exceeded the diagram limit; only current steps are reliable. }
         scopeVisits: { type: array, items: { $ref: '#/components/schemas/PathScopeVisit' }, description: 'Each time a section was entered or a handler started (S59).' }
+        loops: { type: array, items: { $ref: '#/components/schemas/PathLoop' }, description: 'Bounded loop paths of the release and how the request used them (S138). Left out when the release has none.' }
+        forEach: { type: array, items: { $ref: '#/components/schemas/PathForEach' }, description: 'Visits of for-each steps (S138). Left out when there are none.' }
     PathScope:
       type: object
       required: [id, label, type, nodes, routes]

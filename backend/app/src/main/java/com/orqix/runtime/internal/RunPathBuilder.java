@@ -36,7 +36,27 @@ public final class RunPathBuilder {
             Position position) {
     }
 
-    public record Transition(String id, String from, String to, String on, String label) {
+    public record Transition(String id, String from, String to, String on, String label,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Integer maxTraversals) {
+        public Transition(String id, String from, String to, String on, String label) {
+            this(id, from, to, on, label, null);
+        }
+    }
+
+    /**
+     * A bounded loop path (CG-E01, S138): how many of its {@code maxTraversals} the request used and whether the
+     * limit was reached (the request then continued on the step's limitReached path).
+     */
+    public record Loop(String transitionId, String from, String to, int maxTraversals, int traversals,
+            boolean limitReached) {
+    }
+
+    /**
+     * A visit of a for-each step (CG-E06, S138): how many items it has, how many finished and how many succeeded;
+     * {@code done} once the step was left.
+     */
+    public record ForEach(String nodeId, int occurrence, int items, int completed, int succeeded, boolean parallel,
+            boolean done) {
     }
 
     public record Diagram(List<Node> nodes, List<Transition> transitions, List<Scope> scopes) {
@@ -74,7 +94,9 @@ public final class RunPathBuilder {
     }
 
     public record Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
-            List<String> taken, boolean historyTruncated, List<ScopeVisit> scopeVisits) {
+            List<String> taken, boolean historyTruncated, List<ScopeVisit> scopeVisits,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<Loop> loops,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<ForEach> forEach) {
         public Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
                 List<String> taken) {
             this(runId, lifecycle, diagram, visited, current, taken, false, List.of());
@@ -83,6 +105,11 @@ public final class RunPathBuilder {
         public Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
                 List<String> taken, boolean historyTruncated) {
             this(runId, lifecycle, diagram, visited, current, taken, historyTruncated, List.of());
+        }
+
+        public Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
+                List<String> taken, boolean historyTruncated, List<ScopeVisit> scopeVisits) {
+            this(runId, lifecycle, diagram, visited, current, taken, historyTruncated, scopeVisits, List.of(), List.of());
         }
     }
 
@@ -136,7 +163,8 @@ public final class RunPathBuilder {
             String to = t.path("to").asString(null);
             if (from != null && to != null && nodes.containsKey(from) && nodes.containsKey(to)) {
                 transitions.add(new Transition(t.path("id").asString(from + "-" + to), from, to,
-                        t.path("on").asString("next"), t.path("label").asString(null)));
+                        t.path("on").asString("next"), t.path("label").asString(null),
+                        t.path("maxTraversals").isNumber() ? t.path("maxTraversals").asInt() : null));
             }
         }
 
@@ -145,6 +173,10 @@ public final class RunPathBuilder {
         Map<String, Integer> openScopes = new HashMap<>();
         Map<String, Instant> childEnded = new HashMap<>();
         Map<String, String> childEndedKind = new HashMap<>();
+        // S138: traversals of bounded loop paths, steps whose limit was reached, and for-each progress.
+        Map<String, Integer> traversals = new HashMap<>();
+        Set<String> limitsReached = new HashSet<>();
+        Map<String, ForEach> forEach = new LinkedHashMap<>();
         for (RunEvents.EventRow e : events) {
             String node = canonical(sourceMap, e.nodeId());
             if (node != null && !nodes.containsKey(node)) {
@@ -270,6 +302,24 @@ public final class RunPathBuilder {
                     closeAll(visits, at, "cancelled");
                     closeScopes(scopeVisits, openScopes, at);
                 }
+                case "LOOP_TRAVERSED" -> traversals.merge(e.data().path("transitionId").asString(""), 1, Integer::sum);
+                case "LOOP_LIMIT_REACHED" -> limitsReached.add(e.data().path("transitionId").asString(""));
+                case "FOR_EACH_STARTED" -> {
+                    if (node != null) {
+                        int occurrence = e.data().path("occurrence").asInt(1);
+                        forEach.put(node + "#" + occurrence, new ForEach(node, occurrence,
+                                e.data().path("items").asInt(0), 0, 0, e.data().path("parallel").asBoolean(false), false));
+                    }
+                }
+                case "FOR_EACH_COMPLETED" -> {
+                    if (node != null) {
+                        int occurrence = e.data().path("occurrence").asInt(1);
+                        ForEach started = forEach.get(node + "#" + occurrence);
+                        forEach.put(node + "#" + occurrence, new ForEach(node, occurrence, e.data().path("items").asInt(0),
+                                e.data().path("completed").asInt(0), e.data().path("succeeded").asInt(0),
+                                started != null && started.parallel(), true));
+                    }
+                }
                 default -> {
                     // not part of the path
                 }
@@ -347,10 +397,27 @@ public final class RunPathBuilder {
         }
 
         List<String> taken = new ArrayList<>();
+        Map<String, Transition> boundedFrom = new HashMap<>();
+        transitions.stream().filter(t -> t.maxTraversals() != null).forEach(t -> boundedFrom.putIfAbsent(t.from(), t));
         for (Transition t : transitions) {
-            if (isTaken(t, visits, currentIds)) {
+            if (t.maxTraversals() != null) {
+                // S138: a bounded loop path is taken exactly when the guard sent the request back.
+                if (traversals.getOrDefault(t.id(), 0) > 0) {
+                    taken.add(t.id());
+                }
+            } else if ("limitReached".equals(t.on())) {
+                Transition back = boundedFrom.get(t.from());
+                if (back != null && limitsReached.contains(back.id())) {
+                    taken.add(t.id());
+                }
+            } else if (isTaken(t, visits, currentIds)) {
                 taken.add(t.id());
             }
+        }
+        List<Loop> loops = new ArrayList<>();
+        for (Transition t : boundedFrom.values().stream().sorted(Comparator.comparing(Transition::id)).toList()) {
+            loops.add(new Loop(t.id(), t.from(), t.to(), t.maxTraversals(), traversals.getOrDefault(t.id(), 0),
+                    limitsReached.contains(t.id())));
         }
         List<Scope> scopes = scopes(definition, nodes);
         for (Scope scope : scopes) {
@@ -382,7 +449,7 @@ public final class RunPathBuilder {
                     config.has("timeoutAfter") && !config.path("timeoutAfter").isNull(), position));
         }
         return new Result(runId, lifecycle, new Diagram(diagramNodes, transitions, scopes), visited, current, taken,
-                false, scopeVisits);
+                false, scopeVisits, loops, List.copyOf(forEach.values()));
     }
 
     private static List<Scope> scopes(JsonNode definition, Map<String, JsonNode> nodes) {

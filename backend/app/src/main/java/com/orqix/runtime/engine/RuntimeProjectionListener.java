@@ -211,6 +211,11 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         tasks.insert(task.getId(), workspaceId, runId, element.getId(), label, group, dueAt, now,
                 item == null ? null : item.index(), item == null ? null : item.label(),
                 item == null ? null : item.scope(), item == null ? null : item.count());
+        // S138: a task of a later visit of an approval inside a bounded loop carries that visit's number.
+        int occurrence = ProcessData.occurrence(task, element.getId());
+        if (occurrence > 1) {
+            tasks.occurrence(task.getId(), occurrence);
+        }
         runs.mutate(workspaceId, runId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
@@ -243,6 +248,9 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             data.put("itemIndex", item.index());
             data.put("itemLabel", item.label());
             data.put("itemCount", item.count());
+        }
+        if (occurrence > 1) {
+            data.put("occurrence", occurrence);
         }
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
         if (item != null && item.proposed() != null && propose(task, element.getId(), workspaceId, runId, item)) {

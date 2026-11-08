@@ -310,7 +310,8 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       if (req.on !== 'next') return { ok: false, reason: 'This step has one route to the next step.' }
       if (others.length > 0) return { ok: false, reason: 'This step already leads somewhere. Remove that connection first.' }
   }
-  if (wouldCreateCycle(def, from.id, to.id)) return { ok: false, reason: 'That would make the workflow loop back on itself. Loops are not supported yet.' }
+  if (wouldCreateCycle(def, from.id, to.id))
+    return { ok: false, reason: 'That would make the workflow loop back on itself. To send the request back to an earlier step, select the connection and choose "Send back to an earlier step" with a limit.' }
   return { ok: true }
 }
 
@@ -359,6 +360,56 @@ export function updateTransition(def: Definition, id: string, patch: { label?: s
   }
   if (target.on !== 'condition') delete target.condition
   return sameJson(next.transitions, def.transitions) ? def : next
+}
+
+/**
+ * CG-E01 (S138): turn a path into a bounded "send back to" path: it leads to `toId` (an earlier step) at most
+ * `maxTraversals` times, and the step it leaves continues on a limitReached path to where the path led before. With
+ * `toId` null the path leads to the limitReached target again and the limit route is removed.
+ */
+export function setSendBack(def: Definition, transitionId: string, toId: string | null, maxTraversals = 2): OpResult {
+  const t = def.transitions.find((x) => x.id === transitionId)
+  if (!t) return { ok: false, reason: 'That connection does not exist.' }
+  const next = clone(def)
+  const target = next.transitions.find((x) => x.id === transitionId) as Transition
+  const limit = next.transitions.find((x) => x.from === t.from && x.on === 'limitReached')
+  if (toId === null) {
+    if (!t.maxTraversals) return { ok: true, def }
+    if (limit) target.to = limit.to
+    delete target.maxTraversals
+    next.transitions = next.transitions.filter((x) => x !== limit)
+    return { ok: true, def: next }
+  }
+  if (next.transitions.some((x) => x.from === t.from && x.maxTraversals && x.id !== t.id))
+    return { ok: false, reason: 'This step already sends the request back on another path.' }
+  if (!nodeById(def, toId) || nodeById(def, toId)?.type === 'start') return { ok: false, reason: 'Choose an earlier step to send the request back to.' }
+  const max = Math.min(10, Math.max(1, Math.round(maxTraversals)))
+  if (!limit) {
+    next.transitions.push({ id: nextTransitionId(next), from: t.from, to: t.maxTraversals ? t.to : t.to, on: 'limitReached' })
+  }
+  target.to = toId
+  target.maxTraversals = max
+  return sameJson(next.transitions, def.transitions) ? { ok: true, def } : { ok: true, def: next }
+}
+
+/** S138: change how many times a bounded path may send the request back (1-10). */
+export function setMaxTraversals(def: Definition, transitionId: string, maxTraversals: number): Definition {
+  const t = def.transitions.find((x) => x.id === transitionId)
+  if (!t || !t.maxTraversals) return def
+  const max = Math.min(10, Math.max(1, Math.round(maxTraversals)))
+  if (t.maxTraversals === max) return def
+  const next = clone(def)
+  ;(next.transitions.find((x) => x.id === transitionId) as Transition).maxTraversals = max
+  return next
+}
+
+/** S138: where the request continues once the step's send-back limit is reached. */
+export function setLimitTarget(def: Definition, fromId: string, toId: string): Definition {
+  const limit = def.transitions.find((x) => x.from === fromId && x.on === 'limitReached')
+  if (!limit || limit.to === toId) return def
+  const next = clone(def)
+  ;(next.transitions.find((x) => x.id === limit.id) as Transition).to = toId
+  return next
 }
 
 /**

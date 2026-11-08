@@ -93,6 +93,12 @@ final class SimulationRun {
     private final List<ObjectNode> warnings = new ArrayList<>();
     private String lane;
     private Node endNode;
+    /** CG-E01 (S138): bounded loops, times each bounded path was taken and the visit number of each step. */
+    private final com.orqix.compiler.internal.model.Loops loops;
+    private final Map<String, Integer> traversals = new HashMap<>();
+    private final Map<String, Integer> occurrences = new HashMap<>();
+    /** CG-E06 (S138): the item a for-each step is running for (resolved for /input/<list>/* references). */
+    private JsonNode currentItem;
     /** Where a raised error continues (S59); consumed by the walk. */
     private Node jump;
     private ObjectNode attention;
@@ -116,6 +122,7 @@ final class SimulationRun {
         this.depth = depth;
         this.report = report;
         this.tolerated = tolerated;
+        this.loops = new com.orqix.compiler.internal.model.Loops(def);
     }
 
     // ------------------------------------------------------------------ run
@@ -193,7 +200,17 @@ final class SimulationRun {
                 return Flow.ARRIVED;
             }
             visited.add(node.id());
-            Transition next = step(node);
+            int occurrence = occurrences.merge(node.id(), 1, Integer::sum);
+            int before = trace.size();
+            Transition next = def.execution().forEachOf(node.id()) != null ? forEach(node) : step(node);
+            next = bounded(node, next);
+            if (occurrence > 1) {
+                for (int i = before; i < trace.size(); i++) {
+                    if (node.id().equals(trace.get(i).path("stepId").asString(null))) {
+                        trace.get(i).put("occurrence", occurrence);
+                    }
+                }
+            }
             if (next == null && jump != null) {
                 // A raised error continues where its section or handler says (S59).
                 node = jump;
@@ -206,6 +223,110 @@ final class SimulationRun {
             taken.add(next.id());
             node = graph.node(next.to());
         }
+    }
+
+    /**
+     * A bounded loop path (CG-E01, S138): taken while it was taken fewer than maxTraversals times, then the step's
+     * limitReached path instead, as the generated guard does at runtime.
+     */
+    private Transition bounded(Node node, Transition next) {
+        com.orqix.compiler.internal.model.Loops.Loop loop = next == null ? null : loops.of(next);
+        if (loop == null) {
+            return next;
+        }
+        int used = traversals.getOrDefault(next.id(), 0);
+        ObjectNode d = F.objectNode();
+        d.put("maxTraversals", loop.maxTraversals());
+        if (used < loop.maxTraversals()) {
+            traversals.put(next.id(), used + 1);
+            d.put("traversal", used + 1);
+            Node to = graph.node(next.to());
+            add(node, Text.quote(node.label()) + " sends the request back to " + Text.quote(to.label()) + " (time "
+                    + (used + 1) + " of at most " + loop.maxTraversals() + ").", d, null, next);
+            return next;
+        }
+        d.put("limitReached", true);
+        d.put("traversal", used);
+        Transition limit = loop.limit();
+        add(node, Text.quote(node.label()) + " would send the request back again, but it already did so "
+                + loop.maxTraversals() + " time" + (loop.maxTraversals() == 1 ? "" : "s") + ": the limit is reached and"
+                + " the request continues on the limitReached path.", d, null, limit);
+        return limit;
+    }
+
+    /**
+     * A for-each step (CG-E06, S138): runs the step once per item of the request list (in item order; parallel items
+     * run in the same order in a test), stops early when the completion condition holds, and writes the collected
+     * outputs. A failure of one item takes the step's failed path, as at runtime.
+     */
+    private Transition forEach(Node node) {
+        com.orqix.compiler.internal.model.StepForEach f = def.execution().forEachOf(node.id());
+        JsonNode list = inputValues.path(f.itemsField());
+        List<JsonNode> items = new ArrayList<>();
+        list.forEach(items::add);
+        if (items.size() > f.maxItems()) {
+            stallWith(node, Text.quote(node.label()) + " can run for at most " + f.maxItems() + " items, but the"
+                    + " sample request has " + items.size() + ".", F.objectNode(), "TEST_FOR_EACH_LIMIT",
+                    "The list is longer than the step's limit.");
+            return null;
+        }
+        Map<String, List<Object>> collected = new java.util.TreeMap<>();
+        f.collect().keySet().forEach(k -> collected.put(k, new ArrayList<>()));
+        int completed = 0;
+        int succeeded = 0;
+        Transition failed = null;
+        for (int i = 0; i < items.size(); i++) {
+            if (f.target() > 0 && succeeded >= f.target()) {
+                break;
+            }
+            currentItem = items.get(i);
+            ObjectNode before = attention;
+            int at = trace.size();
+            Transition t = step(node);
+            for (int k = at; k < trace.size(); k++) {
+                trace.get(k).put("itemIndex", i);
+            }
+            currentItem = null;
+            if (attention != before) {
+                return null; // the item stalled; the request needs attention
+            }
+            if (t != null && t.on() == Route.FAILED) {
+                failed = t;
+                break;
+            }
+            Map<String, Object> out = steps.getOrDefault(node.id(), Map.of());
+            completed++;
+            if (!(node instanceof Node.AiTask) || "decided".equals(out.get("status"))) {
+                succeeded++;
+            }
+            for (Map.Entry<String, String> c : f.collect().entrySet()) {
+                collected.get(c.getKey()).add(out.get(c.getValue()));
+            }
+        }
+        for (List<Object> values : collected.values()) {
+            while (values.size() < items.size()) {
+                values.add(null);
+            }
+        }
+        if (failed != null) {
+            return failed;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(com.orqix.compiler.internal.model.StepForEach.ITEM_COUNT, java.math.BigDecimal.valueOf(items.size()));
+        out.put(com.orqix.compiler.internal.model.StepForEach.COMPLETED_COUNT, java.math.BigDecimal.valueOf(completed));
+        out.put(com.orqix.compiler.internal.model.StepForEach.STOPPED_EARLY, completed < items.size());
+        out.putAll(collected);
+        steps.put(node.id(), out);
+        Transition t = next(node, Route.NEXT);
+        ObjectNode d = F.objectNode();
+        d.put("items", items.size());
+        d.put("completed", completed);
+        d.put("succeeded", succeeded);
+        d.put("mode", f.parallel() ? "parallel" : "sequential");
+        add(node, Text.quote(node.label()) + " ran for " + completed + " of " + items.size() + " item"
+                + (items.size() == 1 ? "" : "s") + (completed < items.size() ? " and stopped early because enough"
+                + " items succeeded" : "") + ".", d, out, t);
+        return t;
     }
 
     /** @return the transition taken, or null when the run ended or stalled here */
@@ -300,6 +421,11 @@ final class SimulationRun {
     private Transition approval(Node.Approval n) {
         JsonNode s = scenario.path("approvals").path(n.id());
         String choice = s.path("outcome").asString("approve");
+        if (s.path("outcomes").isArray() && !s.path("outcomes").isEmpty()) {
+            // S138: one outcome per visit of a step inside a loop; the last one repeats.
+            int visit = occurrences.getOrDefault(n.id(), 1);
+            choice = s.path("outcomes").get(Math.min(visit, s.path("outcomes").size()) - 1).asString("approve");
+        }
         if (!Set.of("approve", "reject", "timeout").contains(choice)) {
             throw new IllegalArgumentException("approvals." + n.id() + ".outcome must be approve, reject or timeout");
         }
@@ -2251,6 +2377,14 @@ final class SimulationRun {
             tokens = JsonPointers.parse(ref);
         } catch (IllegalArgumentException e) {
             return null;
+        }
+        if (tokens.size() >= 3 && "input".equals(tokens.get(0)) && "*".equals(tokens.get(2))) {
+            // S138: the item a for-each step is running for, or one column of it.
+            if (currentItem == null) {
+                return null;
+            }
+            JsonNode value = tokens.size() == 4 ? currentItem.path(tokens.get(3)) : currentItem;
+            return value.isMissingNode() || value.isNull() ? null : DefaultWorkflowSimulator.plain(value);
         }
         if (tokens.size() >= 2 && "input".equals(tokens.get(0))) {
             return DefaultWorkflowSimulator.plain(com.orqix.compiler.InputValues.resolve(inputValues, ref));

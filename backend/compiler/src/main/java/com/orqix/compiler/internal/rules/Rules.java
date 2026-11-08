@@ -18,6 +18,8 @@ public final class Rules {
         FieldTypes types = new FieldTypes(definition, graph, connections, workspace);
         RuleContext rc = new RuleContext(definition, workspace, graph, connections, types, issues);
         GraphRules.check(rc);
+        LoopRules.check(rc);
+        ForEachRules.check(rc);
         ParallelRules.check(rc);
         TimerRules.check(rc);
         MessageRules.check(rc);

@@ -192,6 +192,21 @@ public final class BpmnReader {
                 continue;
             }
             String id = el.attr("id");
+            if (el.is(BPMN_NS, "multiInstanceLoopCharacteristics") && container.attr("id") != null
+                    && container.attr("id").endsWith(BpmnGenerator.BATCHES)) {
+                continue; // the batches of a parallel for-each (S138); regenerated from orqix:forEach
+            }
+            if (el.is(BPMN_NS, "subProcess") && id != null && id.endsWith(BpmnGenerator.BATCHES)
+                    && ext(el, "scope") == null) {
+                // CG-E06 (S138): the generated subprocess of a parallel for-each in batches holds the step itself.
+                if (byId.putIfAbsent(id, el) != null) {
+                    unsupported(id, "The id '" + id + "' is used by more than one element.");
+                    continue;
+                }
+                containerOf.put(id, scopeId);
+                walk(el, scopeId, flows, helpers);
+                continue;
+            }
             if (el.is(BPMN_NS, "subProcess") && ext(el, "scope") != null) {
                 if (!PROCESS.equals(scopeId)) {
                     unsupported(id, "'" + id + "': sections and handlers cannot be nested; a step belongs to at most one.");
@@ -769,7 +784,64 @@ public final class BpmnReader {
         if (List.of("http", "externalTask", "sendAdapter").contains(kind)) {
             stepRetry(id, ext.child(ORQIX_NS, "retry"), config);
         }
+        if (List.of("http", "externalTask", "aiTask").contains(kind) && ext.child(ORQIX_NS, "forEach") != null) {
+            forEach(id, ext.child(ORQIX_NS, "forEach"), config);
+        }
         return kind;
+    }
+
+    /**
+     * {@code <orqix:forEach>} back to {@code config.forEach} (CG-E06, S138). The generator wrote the item inputs as
+     * {@code /input/<list>/*} mappings; they become itemInput or itemMapping again. Defaults are left out.
+     */
+    private void forEach(String id, El x, ObjectNode config) {
+        ObjectNode f = F.objectNode();
+        String itemsRef = x.attr("itemsRef");
+        putText(f, "itemsRef", itemsRef);
+        JsonNode inputs = config.get("inputMapping");
+        if (inputs instanceof ObjectNode mapping && itemsRef != null) {
+            String item = itemsRef + "/*";
+            ObjectNode columns = F.objectNode();
+            for (Map.Entry<String, JsonNode> e : new ArrayList<>(mapping.properties())) {
+                String name = e.getKey();
+                String ref = e.getValue().asString("");
+                if (ref.equals(item)) {
+                    f.put("itemInput", name);
+                    mapping.remove(name);
+                } else if (ref.startsWith(item + "/")) {
+                    columns.put(name, ref.substring(item.length() + 1));
+                    mapping.remove(name);
+                }
+            }
+            if (!columns.isEmpty()) {
+                f.set("itemMapping", columns);
+            }
+        }
+        Integer max = integer(id, "maxItems", x.attr("maxItems"));
+        if (max != null) {
+            f.put("maxItems", max);
+        }
+        if ("parallel".equals(x.attr("mode"))) {
+            f.put("mode", "parallel");
+            Integer batch = integer(id, "batchSize", x.attr("batchSize"));
+            if (batch != null && batch != 25) {
+                f.put("batchSize", batch);
+            }
+        }
+        String when = x.attr("when");
+        if (when != null && !"all".equals(when)) {
+            ObjectNode completion = f.putObject("completion");
+            completion.put("when", when);
+            Integer count = x.attr("count") == null ? null : integer(id, "count", x.attr("count"));
+            if (count != null) {
+                completion.put("count", count);
+            }
+        }
+        ObjectNode collect = pairs(id, x, "collect", "result");
+        if (collect != null && !collect.isEmpty()) {
+            f.set("collect", collect);
+        }
+        config.set("forEach", f);
     }
 
     /** {@code <orqix:retry>} back to {@code config.retry} (CG-W04, S131); the compiler checks the bounds. */
@@ -936,6 +1008,16 @@ public final class BpmnReader {
             }
             return;
         }
+        El ownerEl = byId.get(owner);
+        if (ownerEl != null && ownerEl.is(BPMN_NS, "sequenceFlow")
+                && (com.orqix.compiler.internal.model.Loops.GUARD.equals(suffix)
+                || com.orqix.compiler.internal.model.Loops.AGAIN.equals(suffix))) {
+            return; // the guard of a bounded loop path and its flow back (S138), checked on regeneration
+        }
+        if (suffix.startsWith(BpmnGenerator.BATCHES) && type != null
+                && List.of("http", "externalTask", "aiTask").contains(type)) {
+            return; // start, end and flows inside the batches of a parallel for-each (S138)
+        }
         boolean known = type != null && switch (suffix) {
             case BpmnGenerator.APPROVAL_OUT, BpmnGenerator.APPROVAL_ROUTE -> type.equals("approval");
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
@@ -962,6 +1044,22 @@ public final class BpmnReader {
             return null;
         }
         String container = containerOf.get(id);
+        Integer maxTraversals = null;
+        if (target.endsWith(com.orqix.compiler.internal.model.Loops.GUARD) && byId.get(target) != null) {
+            // CG-E01 (S138): a bounded path ends at its guard; the guard's "again" flow goes back to the step.
+            El guard = byId.get(target);
+            El loop = ext(guard, "loop");
+            El again = byId.get(id + com.orqix.compiler.internal.model.Loops.AGAIN);
+            if (loop == null || again == null || !id.equals(loop.attr("path"))) {
+                unsupported(id, "Sequence flow '" + id + "' goes to '" + target + "', which is not its loop guard.");
+                return null;
+            }
+            maxTraversals = integer(id, "maxTraversals", loop.attr("maxTraversals"));
+            target = again.attr("targetRef");
+        }
+        if (target != null && target.endsWith(BpmnGenerator.BATCHES)) {
+            target = target.substring(0, target.length() - BpmnGenerator.BATCHES.length());
+        }
         if (target.contains("__")) {
             // A path leaving a section ends at the generated end event <section>__end__<step> inside it (S59).
             int at = target.indexOf("__");
@@ -995,11 +1093,26 @@ public final class BpmnReader {
             from = source.substring(0, at);
             String suffix = source.substring(at);
             String type = types.get(from);
+            if (com.orqix.compiler.internal.model.Loops.GUARD.equals(suffix) && byId.get(from) != null
+                    && byId.get(from).is(BPMN_NS, "sequenceFlow")) {
+                // CG-E01 (S138): the guard's default flow is the step's limitReached path.
+                String back = byId.get(from).attr("sourceRef");
+                from = back == null ? null : back.contains("__") ? back.substring(0, back.indexOf("__")) : back;
+                type = from == null ? null : types.get(from);
+                suffix = "__limitReached";
+            } else if (BpmnGenerator.BATCHES.equals(suffix)) {
+                suffix = "__forEach";
+            }
             if (type == null) {
                 unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which is not part of a step.");
                 return null;
             }
             switch (suffix) {
+                case "__limitReached" -> on = "limitReached";
+                case "__forEach" -> {
+                    Matcher m = expression == null ? null : CONDITION_ROUTE.matcher(expression);
+                    on = m != null && m.matches() ? "condition" : "next";
+                }
                 case BpmnGenerator.APPROVAL_ROUTE -> {
                     Matcher m = expression == null ? null : APPROVAL_ROUTE.matcher(expression);
                     if (m == null || !m.matches() || !m.group(2).equals(from)) {
@@ -1068,6 +1181,9 @@ public final class BpmnReader {
         t.put("on", on);
         if (aiLabel != null) {
             t.put("aiLabel", aiLabel);
+        }
+        if (maxTraversals != null) {
+            t.put("maxTraversals", maxTraversals);
         }
         if (flow.attr("name") != null) {
             t.put("label", flow.attr("name"));

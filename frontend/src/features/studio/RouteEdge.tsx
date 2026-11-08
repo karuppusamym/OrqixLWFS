@@ -117,6 +117,7 @@ const TEXT_CLASS: Record<RouteKind, string> = {
   lowConfidence: 'text-edge-condition',
   needsReview: 'text-edge-condition',
   aiUnavailable: 'text-edge-rejected',
+  limitReached: 'text-edge-rejected',
 }
 
 /**

@@ -10,6 +10,7 @@ import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { CallFailureErrorFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
+import { ForEachFields } from './ForEachFields'
 import type { PayloadField } from './MessageInspector'
 
 /** Topics are lowercase words joined with dashes (schema pattern). */
@@ -115,6 +116,7 @@ export function ExternalTaskInspector({ node }: { node: WorkflowNode }) {
       </p>
     </InspectorSection>
     <CallFailureErrorFields node={node} />
+    <ForEachFields node={node} results={result.map((f) => f.name)} parallel={false} />
     <Advanced><StepIdField node={node} /></Advanced>
   </>
 }

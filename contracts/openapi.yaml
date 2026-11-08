@@ -49,6 +49,7 @@ tags:
   - name: Access
   - name: AI
   - name: AiSkills
+  - name: Completion
   - name: Expressions
   - name: Migration
   - name: Conversation
@@ -9249,6 +9250,174 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---- end AiSkills ----
 
+  # ---- S146 part B: DocumentExtraction (CG-A06) ----
+  /workspaces/{workspaceId}/ai-ocr-settings:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: getAiOcrSettings
+      summary: 'The OCR provider of document extraction and the providers this deployment offers'
+      description: |
+        local (on this deployment) is always allowed. A cloud provider is allowed only when the workspace AI
+        policy's residency rule names one of its residency tags, or, in a workspace that is not regulated and has no
+        residency rule, once an administrator chooses it.
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill | workspace.manage-access
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiOcrSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Completion]
+      operationId: updateAiOcrSettings
+      summary: 'Choose the OCR provider of document extraction'
+      description: |
+        expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT); a provider the residency rule does not
+        admit is 422.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: ai.ocr-settings.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiOcrSettingsUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiOcrSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-document-templates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: listAiDocumentTemplates
+      summary: 'Built-in document-type templates of extract skills (invoice, ID document, bank statement)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDocumentTemplateList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-verifications:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: listAiVerifications
+      summary: 'Open verification tasks of document extractions in the workspace'
+      x-orqix-permission: run.operate | ai.evaluate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerificationQueue' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Completion]
+      operationId: listRunAiVerifications
+      summary: 'Verification tasks of a run'
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerificationList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: verificationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      tags: [Completion]
+      operationId: getAiVerification
+      summary: 'A verification task: the document reference and the extracted fields with confidence and source'
+      description: |
+        Needs request-data visibility. sourceText comes from the file's OCR result while it exists (quarantine and
+        removal delete it).
+      x-orqix-permission: run.read-data | initiator | taskParticipant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerification' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: verificationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [Completion]
+      operationId: submitAiVerification
+      summary: 'Confirm or correct the extracted fields; the step continues with the verified values'
+      description: |
+        verified continues on next with the verified values as the step outputs; escalated (reason required) takes
+        needsReview. Every field that needs attention must be confirmed or corrected. The decision record gets the
+        human outcome and corrections become a pending evaluation candidate. The initiator of the request cannot
+        verify (403 SELF_APPROVAL_DENIED); a stale expectedVersion or a closed task is 409 TASK_VERSION_CONFLICT.
+      x-orqix-permission: taskParticipant | run.operate | ai.evaluate
+      x-orqix-audit: ai.verification.submitted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiVerificationSubmit' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end S146 part B: DocumentExtraction ----
+
   /workspaces/{workspaceId}/ai/status:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -12199,7 +12368,7 @@ components:
       type: object
       description: 'A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays.'
       properties:
-        zone: { type: string, maxLength: 64, description: IANA time zone, for example Europe/London }
+        zone: { type: string, maxLength: 64, description: 'IANA time zone, for example Europe/London' }
         weekdays: { type: array, minItems: 1, maxItems: 7, items: { type: integer, minimum: 1, maximum: 7 } }
         start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
         end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
@@ -12314,7 +12483,7 @@ components:
         startsAt: { type: [string, 'null'], format: date-time }
         endsAt: { type: [string, 'null'], format: date-time }
         calendarKey: { type: [string, 'null'], maxLength: 64, description: Start only inside this working calendar's hours; the latest version is pinned when saved }
-        input: { type: object, additionalProperties: true, description: The fixed request values, checked against the active release's request form }
+        input: { type: object, additionalProperties: true, description: "The fixed request values, checked against the active release's request form" }
         missedRunPolicy: { type: string, enum: [catchUpOnce, skip], description: Default catchUpOnce }
         overlapPolicy: { type: string, enum: [allow, skip], description: Default skip }
         enabled: { type: boolean, description: Default true }
@@ -14783,7 +14952,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai, verify] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -15400,7 +15569,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai, verify] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -17001,6 +17170,194 @@ components:
         value: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,39}$' }
         reason: { type: string, maxLength: 1000 }
     # ---- end AiSkills schemas ----
+    # ---- S146 part B: DocumentExtraction schemas (CG-A06) ----
+    AiOcrProvider:
+      type: object
+      required: [id, kind, label, residency, allowed, refusal]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [local, azureDocumentIntelligence, textract] }
+        label: { type: string }
+        residency: { type: array, items: { type: string } }
+        allowed: { type: boolean }
+        refusal: { type: [string, 'null'] }
+    AiOcrSettings:
+      type: object
+      required: [provider, chosen, version, updatedAt, refusal, providers]
+      properties:
+        provider: { type: string, description: 'The provider in use (the deployment default until an administrator chooses one).' }
+        chosen: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        refusal: { type: [string, 'null'], description: 'Why the provider in use is not allowed now (extractions then end on aiUnavailable).' }
+        providers: { type: array, items: { $ref: '#/components/schemas/AiOcrProvider' } }
+    AiOcrSettingsUpdate:
+      type: object
+      required: [provider, expectedVersion]
+      properties:
+        provider: { type: string, pattern: '^[a-z][a-z0-9-]{0,39}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+    AiDocumentTemplateField:
+      type: object
+      required: [name, type, required, description, hint]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, integer, boolean, date] }
+        required: { type: boolean }
+        description: { type: [string, 'null'] }
+        hint: { type: [string, 'null'], enum: [iban, currency, country, pastDate, futureDate, null] }
+    AiDocumentTemplate:
+      type: object
+      required: [type, label, fields, checks]
+      properties:
+        type: { type: string, enum: [invoice, idDocument, bankStatement] }
+        label: { type: string }
+        fields: { type: array, items: { $ref: '#/components/schemas/AiDocumentTemplateField' } }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [kind, target, plus, minus, other, tolerance]
+            properties:
+              kind: { type: string, enum: [sum, after, lineItems] }
+              target: { type: string }
+              plus: { type: array, items: { type: string } }
+              minus: { type: array, items: { type: string } }
+              other: { type: [string, 'null'] }
+              tolerance: { type: number }
+    AiDocumentTemplateList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiDocumentTemplate' } }
+    AiVerificationSummary:
+      type: object
+      required: [id, runId, nodeId, occurrence, decisionId, skillKey, skillVersion, documentType, provider, status, version, fieldCount, needsAttention, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        occurrence: { type: integer }
+        decisionId: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { type: string }
+        skillVersion: { type: integer }
+        documentType: { type: string, enum: [invoice, idDocument, bankStatement, custom] }
+        provider: { type: string }
+        status: { type: string, enum: [open, verified, escalated, cancelled] }
+        version: { type: integer }
+        fieldCount: { type: integer }
+        needsAttention: { type: integer }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        runReference: { type: [string, 'null'] }
+        ownRequest: { type: boolean }
+    AiVerificationQueue:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiVerificationSummary' } }
+    AiVerificationList:
+      type: object
+      required: [items, canVerify]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiVerificationSummary' } }
+        canVerify: { type: boolean }
+    AiBox:
+      type: object
+      description: 'A rectangle normalized to the page (0..1 from the top left).'
+      required: [x, y, w, h]
+      properties:
+        x: { type: number }
+        y: { type: number }
+        w: { type: number }
+        h: { type: number }
+    AiVerificationField:
+      type: object
+      required: [name, type, required, value, confidence, needsAttention, problems, source]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, integer, boolean, date] }
+        required: { type: boolean }
+        description: { type: [string, 'null'] }
+        hint: { type: [string, 'null'] }
+        value: { description: 'The extracted value (null when not found).' }
+        confidence: { type: [number, 'null'] }
+        needsAttention: { type: boolean }
+        problems:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        source:
+          type: object
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [ocrLine, ocrKeyValue, none] }
+            page: { type: integer }
+            line: { type: integer }
+            box: { oneOf: [{ $ref: '#/components/schemas/AiBox' }, { type: 'null' }] }
+            span:
+              type: object
+              required: [start, end]
+              properties:
+                start: { type: integer }
+                end: { type: integer }
+        sourceText: { type: [string, 'null'] }
+    AiVerification:
+      allOf:
+        - $ref: '#/components/schemas/AiVerificationSummary'
+        - type: object
+          required: [threshold, canSubmit, attachment, pages, fields, decision]
+          properties:
+            threshold: { type: number }
+            canSubmit: { type: boolean }
+            attachment:
+              type: object
+              required: [id, name, contentType, available, unavailableReason]
+              properties:
+                id: { $ref: '#/components/schemas/Uuid' }
+                name: { type: string }
+                contentType: { type: string }
+                available: { type: boolean }
+                unavailableReason: { type: [string, 'null'], enum: [removed, quarantined, scanBlocked, null] }
+            pages:
+              type: array
+              items:
+                type: object
+                required: [number, width, height, unit]
+                properties:
+                  number: { type: integer }
+                  width: { type: number }
+                  height: { type: number }
+                  unit: { type: string }
+            fields: { type: array, items: { $ref: '#/components/schemas/AiVerificationField' } }
+            decision:
+              type: object
+              required: [decidedBy, decidedAt, corrected]
+              properties:
+                decidedBy: { type: [string, 'null'] }
+                decidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                corrected: { type: array, items: { type: string } }
+    AiVerificationSubmit:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        outcome: { type: string, enum: [verified, escalated], default: verified }
+        reason: { type: string, maxLength: 1000 }
+        acknowledgeProblems: { type: boolean, description: 'Accept values that fail a validation hint or cross-field check.' }
+        fields:
+          type: object
+          description: 'Field name to the person''s answer: confirm keeps the value, correct sets value, clear removes it.'
+          additionalProperties:
+            type: object
+            required: [action]
+            properties:
+              action: { type: string, enum: [confirm, correct, clear] }
+              value: { description: 'The corrected value (correct only).' }
+    # ---- end S146 part B: DocumentExtraction schemas ----
     AiStatus:
       type: object
       required: [enabled, profiles]

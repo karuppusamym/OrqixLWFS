@@ -32,6 +32,17 @@ const REDACTION: Record<string, string> = {
 }
 
 interface SkillInput { type: string; required?: boolean; classification?: string }
+interface SkillDocument { type: 'invoice' | 'idDocument' | 'bankStatement' | 'custom'; attachmentInput: string }
+
+export const DOCUMENT_TYPE_LABEL: Record<SkillDocument['type'], string> = {
+  invoice: 'Invoice', idDocument: 'ID document', bankStatement: 'Bank statement', custom: 'Custom document',
+}
+
+/** Request fields that hold a file (format attachment): the only values a document input accepts (CG-A06). */
+export function attachmentFieldRefs(def: Definition): string[] {
+  return Object.entries(def.inputSchema.properties).filter(([, f]) => f?.type === 'string' && (f as { format?: string }).format === 'attachment')
+    .map(([key]) => `/input/${key}`)
+}
 
 /** The route slots an AI task offers for its mode and autonomy (mirrors the compiler, docs/build/S134). */
 export function aiRouteSlots(mode: Mode, autonomy: Autonomy, labels: string[]): Array<{ on: Transition['on']; aiLabel?: string; title: string; required: boolean }> {
@@ -42,7 +53,7 @@ export function aiRouteSlots(mode: Mode, autonomy: Autonomy, labels: string[]): 
     return [...routes, { on: 'lowConfidence', title: 'When AI is not confident enough', required: true },
       { on: 'needsReview', title: 'When a person must review (optional; otherwise low confidence)', required: false }, unavailable]
   }
-  if (mode === 'extract') return [{ on: 'next', title: 'Next step', required: true }, { on: 'needsReview', title: 'When a person must check the values', required: true }, unavailable]
+  if (mode === 'extract') return [{ on: 'next', title: 'Next step', required: true }, { on: 'needsReview', title: 'When a person must check the values (a document skill: when the verifier sends it for review)', required: true }, unavailable]
   return [{ on: 'next', title: mode === 'recommend' ? 'Next step (usually the approval that shows the recommendation)' : 'Next step', required: true }, unavailable]
 }
 
@@ -71,7 +82,14 @@ export function AiTaskInspector({ node }: { node: WorkflowNode }) {
   const autonomy = (cfg<string>(node, 'autonomy') ?? 'suggest') as Autonomy
   const skill = skills.find((s) => s.key === key)
   const pinned = skill?.versions.find((v) => v.version === (cfg<number>(node, 'skillVersion') ?? skill.approvedVersion))
-  const document = (pinned?.document ?? skill?.versions[0]?.document ?? {}) as { input?: Record<string, SkillInput>; labels?: Array<{ key: string; risk?: string }> }
+  const document = (pinned?.document ?? skill?.versions[0]?.document ?? {}) as { input?: Record<string, SkillInput>; labels?: Array<{ key: string; risk?: string }>; document?: SkillDocument; fields?: Array<{ name: string }> }
+  const reads = mode === 'extract' ? document.document : undefined
+  const ocr = useQuery({
+    queryKey: ['ws', workspace.id, 'ai-ocr-settings'],
+    queryFn: () => call(api.GET('/workspaces/{workspaceId}/ai-ocr-settings', { params: { path: { workspaceId: workspace.id } } })),
+    enabled: Boolean(reads) && can('workflow.read'),
+  })
+  const files = attachmentFieldRefs(def)
   const inputs = Object.entries(document.input ?? {})
   const labels = (document.labels ?? []).map((l) => l.key)
   const mapping = (cfg<Record<string, string>>(node, 'inputMapping') ?? {}) as Record<string, string>
@@ -132,6 +150,14 @@ export function AiTaskInspector({ node }: { node: WorkflowNode }) {
       {autonomy === 'auto' ? <p className="text-sm text-muted-foreground">Only labels the workspace AI policy marks low-risk are decided automatically; in a regulated workspace adverse outcomes always go to a person.</p> : null}
     </InspectorSection>
 
+    {reads ? <InspectorSection title="Document">
+      <p className="text-sm">{DOCUMENT_TYPE_LABEL[reads.type] ?? reads.type}{reads.type !== 'custom' && !document.fields ? ' template fields and checks' : ''}, read from the file in <strong>{reads.attachmentInput}</strong>.</p>
+      {files.length === 0 ? <Alert tone="warning">The request form has no file question. Add one (type file) and map it to {reads.attachmentInput}.</Alert> : null}
+      {ocr.data ? <p className="text-sm text-muted-foreground">OCR: {ocr.data.providers.find((p) => p.id === ocr.data.provider)?.label ?? ocr.data.provider}{ocr.data.refusal ? '' : '.'}</p> : null}
+      {ocr.data?.refusal ? <Alert tone="warning">{ocr.data.refusal} Until this changes the step takes the path for when AI is unavailable.</Alert> : null}
+      <p className="text-sm text-muted-foreground">Fields below the confidence threshold, or failing a check (totals, IBAN, dates), go to a verification task: a person sees the document beside the fields and confirms or corrects them. The verified values become this step's outputs; corrections feed the evaluation suite.</p>
+    </InspectorSection> : null}
+
     <InspectorSection title="What is sent">
       {inputs.length === 0 ? <p className="text-sm text-muted-foreground">Choose a skill to see its inputs.</p> : inputs.map(([name, input]) => (
         <div key={name} className="space-y-2">
@@ -142,8 +168,9 @@ export function AiTaskInspector({ node }: { node: WorkflowNode }) {
               else delete next[name]
               patch({ inputMapping: next })
             }}>
-              <option value="">{input.required ? 'Choose a value' : 'Not sent'}</option>
-              {candidates.map((f) => <option key={f.ref} value={f.ref}>{chipLabel(f)}</option>)}
+              <option value="">{input.required ? (input.type === 'attachment' ? 'Choose a request file' : 'Choose a value') : 'Not sent'}</option>
+              {candidates.filter((f) => (input.type === 'attachment') === files.includes(f.ref))
+                .map((f) => <option key={f.ref} value={f.ref}>{chipLabel(f)}</option>)}
             </Select>}
           </FormField>
           {mapping[name] ? <FormField label={`Redaction of ${name}`} id={`ai-redaction-${node.id}-${name}`}>

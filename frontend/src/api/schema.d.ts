@@ -9002,7 +9002,7 @@ export interface components {
         };
         /** @description A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays. */
         WorkingCalendarContent: {
-            /** @description IANA time zone */
+            /** @description IANA time zone, for example Europe/London */
             zone?: string;
             weekdays?: number[];
             start?: string;
@@ -9113,7 +9113,7 @@ export interface components {
             endsAt?: string | null;
             /** @description Start only inside this working calendar's hours; the latest version is pinned when saved */
             calendarKey?: string | null;
-            /** @description The fixed request values */
+            /** @description The fixed request values, checked against the active release's request form */
             input?: {
                 [key: string]: unknown;
             };

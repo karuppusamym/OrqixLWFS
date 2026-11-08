@@ -59,6 +59,7 @@ tags:
   - name: Views
   - name: McpServer
   - name: TaskActions
+  - name: AlertsAndRetention
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -8425,7 +8426,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, alert.manage] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -10273,6 +10274,424 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ---------------------------------------------------------------- AlertsAndRetention (CG-O06, CG-O07, CG-P04; docs/build/S144)
+  /workspaces/{workspaceId}/alert-destinations:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listAlertDestinations
+      summary: Alert destinations of the workspace (email and Teams adapters, Slack, PagerDuty, webhook subscriptions)
+      x-orqix-permission: alert.manage
+      responses:
+        '200':
+          description: Destinations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertDestinationList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: createAlertDestination
+      summary: Add an alert destination (at most 20 per workspace)
+      description: "Email and Teams send through an existing adapter of that kind (its recipient domains and egress rules apply); Slack and PagerDuty name the secret holding the incoming webhook address or routing key; a webhook destination uses an existing outbound webhook subscription. Only the local stub transports exist in this build."
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.destination-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertDestinationCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertDestination' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/alert-destinations/{destinationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: destinationId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [AlertsAndRetention]
+      operationId: updateAlertDestination
+      summary: Edit or switch off an alert destination (the kind never changes; expectedVersion must match)
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.destination-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertDestinationUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertDestination' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/alert-destinations/{destinationId}/test:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: destinationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: testAlertDestination
+      summary: Send a test notification now through the destination and record the outcome
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.destination-tested
+      responses:
+        '200':
+          description: Outcome of the test send
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertDestinationTestResult' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/alert-rules:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listAlertRules
+      summary: Alert rules with their current state and last value
+      x-orqix-permission: alert.manage
+      responses:
+        '200':
+          description: Rules
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRuleList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: createAlertRule
+      summary: Add an alert rule (at most 50 per workspace)
+      description: "A rule fires when the signal reaches the threshold and resolves when it drops below. Windowed signals (slaBreaches, tokenRefreshFailing, deadLetters) count events in the window; the others count what is true now."
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.rule-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertRuleRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/alert-rules/{ruleId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [AlertsAndRetention]
+      operationId: updateAlertRule
+      summary: Edit an alert rule (expectedVersion must match; a changed signal, scope or threshold closes an open incident without a notification)
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.rule-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertRuleRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [AlertsAndRetention]
+      operationId: deleteAlertRule
+      summary: Delete an alert rule with its incidents and notifications
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.rule-deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/alert-rules/{ruleId}/silence:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: silenceAlertRule
+      summary: Silence a rule's notifications for some minutes (0 ends the silence); it is still evaluated
+      x-orqix-permission: alert.manage
+      x-orqix-audit: alert.rule-silenced
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertSilenceRequest' }
+      responses:
+        '200':
+          description: The rule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/alert-incidents:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listAlertIncidents
+      summary: Alert incidents with their notifications, newest first, at most 100
+      x-orqix-permission: alert.manage
+      parameters:
+        - { name: ruleId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [firing, resolved] } }
+      responses:
+        '200':
+          description: Incidents
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertIncidentList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/retention-policies:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listRetentionPolicies
+      summary: Run retention policies per workflow, with how many ended requests are due now
+      x-orqix-permission: workspace.manage-access | audit.read
+      responses:
+        '200':
+          description: Policies
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionPolicyList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/retention-policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [AlertsAndRetention]
+      operationId: setRetentionPolicy
+      summary: Keep ended requests of this workflow for keepDays, then archive and purge them (expectedVersion 0 creates)
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: retention.policy-set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetentionPolicyRequest' }
+      responses:
+        '200':
+          description: The policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionPolicy' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [AlertsAndRetention]
+      operationId: removeRetentionPolicy
+      summary: Stop retention for this workflow (requests are kept until a policy is set again)
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: retention.policy-removed
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/legal-holds:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listLegalHolds
+      summary: Legal holds, newest first, at most 200
+      x-orqix-permission: workspace.manage-access | audit.read
+      parameters:
+        - { name: active, in: query, required: false, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Holds
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegalHoldList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: placeLegalHold
+      summary: Hold one request (with its parent and child requests) or a whole workflow; held requests are never archived or purged
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: retention.hold-placed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LegalHoldRequest' }
+      responses:
+        '201':
+          description: Placed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegalHold' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/legal-holds/{holdId}/release:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: holdId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: releaseLegalHold
+      summary: Release a legal hold with a reason
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: retention.hold-released
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LegalHoldReleaseRequest' }
+      responses:
+        '200':
+          description: Released
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegalHold' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/retention-sweeps:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listRetentionSweeps
+      summary: Retention sweeps and dry runs, newest first, at most 50
+      x-orqix-permission: workspace.manage-access | audit.read
+      responses:
+        '200':
+          description: Sweeps
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionSweepList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [AlertsAndRetention]
+      operationId: startRetentionSweep
+      summary: Run a dry run, or archive and purge the due requests now (confirm required)
+      description: "Runs synchronously and handles at most orqix.retention.max-requests-per-sweep top-level requests. Each request is archived, read back and checksum-verified before its rows are purged; a failure leaves the request untouched. 409 while another sweep of the workspace runs."
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: retention.sweep-completed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetentionSweepRequest' }
+      responses:
+        '200':
+          description: The finished sweep
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionSweep' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/run-archives:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [AlertsAndRetention]
+      operationId: listRunArchives
+      summary: Archived requests (also after their rows were purged), newest first, at most 200
+      x-orqix-permission: workspace.manage-access | audit.read
+      parameters:
+        - { name: reference, in: query, required: false, schema: { type: string, maxLength: 40 } }
+      responses:
+        '200':
+          description: Archives
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunArchiveList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/run-archives/{archiveId}/content:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: archiveId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [AlertsAndRetention]
+      operationId: downloadRunArchive
+      summary: Download an archive (ZIP); its checksum is verified against the record first
+      x-orqix-permission: workspace.manage-access | audit.read
+      x-orqix-audit: retention.archive-downloaded
+      responses:
+        '200':
+          description: The archive (Content-Disposition attachment)
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/zip:
+              schema: { type: string, contentMediaType: application/zip }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  # ---------------------------------------------------------------- end AlertsAndRetention
 
 components:
   securitySchemes:
@@ -12578,6 +12997,295 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/WebhookDelivery' } }
+    # ---------------------------------------------------------------- AlertsAndRetention schemas (docs/build/S144)
+    AlertDestinationKind: { type: string, enum: [email, teams, slack, pagerDuty, webhook] }
+    AlertDestination:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, enabled, version, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/AlertDestinationKind' }
+        adapterKey: { type: [string, 'null'], description: email and teams }
+        recipients: { type: [array, 'null'], items: { type: string }, description: email only }
+        secretRef: { type: [string, 'null'], description: slack and pagerDuty; the secret value is never shown }
+        webhookSubscriptionId: { type: [string, 'null'], format: uuid, description: webhook only }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
+    AlertDestinationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AlertDestination' } }
+    AlertDestinationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        kind: { $ref: '#/components/schemas/AlertDestinationKind' }
+        adapterKey: { type: [string, 'null'], pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        recipients: { type: [array, 'null'], minItems: 1, maxItems: 10, items: { type: string, maxLength: 254 } }
+        secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        webhookSubscriptionId: { type: [string, 'null'], format: uuid }
+        enabled: { type: [boolean, 'null'], description: default true }
+    AlertDestinationUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, enabled, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        adapterKey: { type: [string, 'null'], pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        recipients: { type: [array, 'null'], minItems: 1, maxItems: 10, items: { type: string, maxLength: 254 } }
+        secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        webhookSubscriptionId: { type: [string, 'null'], format: uuid }
+        enabled: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
+    AlertDestinationTestResult:
+      type: object
+      additionalProperties: false
+      required: [destinationId, status]
+      properties:
+        destinationId: { type: string, format: uuid }
+        status: { type: string, enum: [sent, failed] }
+        outcome: { type: [string, 'null'], description: "transport outcome, for example stubbed or queued" }
+        errorCode: { type: [string, 'null'] }
+    AlertSignal:
+      type: string
+      enum: [needsAttention, slaBreaches, circuitOpen, tokenRefreshFailing, deadLetters, pollChecksFailing, aiDriftFallback]
+    AlertRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [name, signal, threshold, severity, destinationIds]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        signal: { $ref: '#/components/schemas/AlertSignal' }
+        threshold: { type: integer, minimum: 1, maximum: 100000 }
+        windowMinutes: { type: [integer, 'null'], minimum: 5, maximum: 1440, description: default 15; used by windowed signals }
+        workflowId: { type: [string, 'null'], format: uuid, description: "needsAttention, slaBreaches, deadLetters, pollChecksFailing" }
+        connectionKey: { type: [string, 'null'], minLength: 1, maxLength: 64, description: "circuitOpen, tokenRefreshFailing, pollChecksFailing" }
+        severity: { type: string, enum: [info, warning, critical] }
+        quietMinutes: { type: [integer, 'null'], minimum: 0, maximum: 1440, description: default 30 }
+        notifyResolve: { type: [boolean, 'null'], description: default true }
+        enabled: { type: [boolean, 'null'], description: default true }
+        destinationIds: { type: array, minItems: 1, maxItems: 5, items: { type: string, format: uuid } }
+        expectedVersion: { type: [integer, 'null'], minimum: 1, description: required when editing }
+    AlertRule:
+      type: object
+      additionalProperties: false
+      required: [id, name, signal, threshold, windowMinutes, windowed, severity, quietMinutes, notifyResolve, enabled, state, destinationIds, version, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        signal: { $ref: '#/components/schemas/AlertSignal' }
+        threshold: { type: integer }
+        windowMinutes: { type: integer }
+        windowed: { type: boolean, description: true when the signal counts events in the window }
+        workflowId: { type: [string, 'null'], format: uuid }
+        connectionKey: { type: [string, 'null'] }
+        severity: { type: string, enum: [info, warning, critical] }
+        quietMinutes: { type: integer }
+        notifyResolve: { type: boolean }
+        enabled: { type: boolean }
+        silencedUntil: { type: [string, 'null'], format: date-time }
+        state: { type: string, enum: [ok, firing] }
+        lastValue: { type: [integer, 'null'] }
+        lastEvaluatedAt: { type: [string, 'null'], format: date-time }
+        openIncidentId: { type: [string, 'null'], format: uuid }
+        destinationIds: { type: array, items: { type: string, format: uuid } }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
+    AlertRuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AlertRule' } }
+    AlertSilenceRequest:
+      type: object
+      additionalProperties: false
+      required: [minutes]
+      properties:
+        minutes: { type: integer, minimum: 0, maximum: 10080 }
+    AlertDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, destinationId, destinationName, kind, status, attempts, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        destinationId: { type: string, format: uuid }
+        destinationName: { type: string }
+        kind: { type: string, enum: [fired, resolved, test] }
+        status: { type: string, enum: [queued, sent, failed, skipped] }
+        attempts: { type: integer, minimum: 0 }
+        outcome: { type: [string, 'null'] }
+        errorCode: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        settledAt: { type: [string, 'null'], format: date-time }
+    AlertIncident:
+      type: object
+      additionalProperties: false
+      required: [id, ruleId, ruleName, signal, severity, status, openedAt, openingValue, peakValue, lastValue, threshold, deliveries]
+      properties:
+        id: { type: string, format: uuid }
+        ruleId: { type: string, format: uuid }
+        ruleName: { type: string }
+        signal: { $ref: '#/components/schemas/AlertSignal' }
+        severity: { type: string, enum: [info, warning, critical] }
+        status: { type: string, enum: [firing, resolved] }
+        openedAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        openingValue: { type: integer }
+        peakValue: { type: integer }
+        lastValue: { type: integer }
+        threshold: { type: integer }
+        suppressed: { type: [string, 'null'], enum: [quietPeriod, silenced, null], description: why the incident was not notified }
+        deliveries: { type: array, items: { $ref: '#/components/schemas/AlertDelivery' } }
+    AlertIncidentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AlertIncident' } }
+    RetentionPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [keepDays, expectedVersion]
+      properties:
+        keepDays: { type: integer, minimum: 1, maximum: 3650 }
+        includeRunData: { type: [boolean, 'null'], description: "default true: request input, output, event data and effect results go into the archive" }
+        includeFiles: { type: [boolean, 'null'], description: default true }
+        enabled: { type: [boolean, 'null'], description: default true }
+        expectedVersion: { type: integer, minimum: 0, description: 0 to create }
+    RetentionPolicy:
+      type: object
+      additionalProperties: false
+      required: [workflowId, workflowKey, workflowName, keepDays, includeRunData, includeFiles, enabled, version, updatedAt, eligibleNow, workflowHeld]
+      properties:
+        workflowId: { type: string, format: uuid }
+        workflowKey: { type: string }
+        workflowName: { type: string }
+        keepDays: { type: integer }
+        includeRunData: { type: boolean }
+        includeFiles: { type: boolean }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+        eligibleNow: { type: integer, minimum: 0, description: top-level ended requests past keepDays }
+        workflowHeld: { type: boolean }
+    RetentionPolicyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RetentionPolicy' } }
+    LegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        workflowId: { type: [string, 'null'], format: uuid }
+        runId: { type: [string, 'null'], format: uuid }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    LegalHoldReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    LegalHold:
+      type: object
+      additionalProperties: false
+      required: [id, reason, placedBy, placedAt, active]
+      properties:
+        id: { type: string, format: uuid }
+        workflowId: { type: [string, 'null'], format: uuid }
+        workflowName: { type: [string, 'null'] }
+        runId: { type: [string, 'null'], format: uuid }
+        runReference: { type: [string, 'null'] }
+        reason: { type: string }
+        placedBy: { type: string, format: uuid }
+        placedAt: { type: string, format: date-time }
+        releasedBy: { type: [string, 'null'], format: uuid }
+        releasedAt: { type: [string, 'null'], format: date-time }
+        releaseReason: { type: [string, 'null'] }
+        active: { type: boolean }
+    LegalHoldList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LegalHold' } }
+    RetentionSweepRequest:
+      type: object
+      additionalProperties: false
+      required: [dryRun]
+      properties:
+        dryRun: { type: boolean }
+        confirm: { type: [boolean, 'null'], description: must be true when dryRun is false }
+    RetentionSweep:
+      type: object
+      additionalProperties: false
+      required: [id, mode, trigger, status, startedAt, eligible, archived, purged, held, skipped, failed, detail]
+      properties:
+        id: { type: string, format: uuid }
+        mode: { type: string, enum: [dryRun, purge] }
+        trigger: { type: string, enum: [manual, scheduled] }
+        requestedBy: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [running, completed, failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        eligible: { type: integer, minimum: 0 }
+        archived: { type: integer, minimum: 0 }
+        purged: { type: integer, minimum: 0 }
+        held: { type: integer, minimum: 0 }
+        skipped: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        detail:
+          type: object
+          description: "items (at most 200): runId, reference, workflowId, endedAt, outcome (eligible, purged, held, skipped, failed), reason, members, keepDays; truncated; error"
+          additionalProperties: true
+    RetentionSweepList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RetentionSweep' } }
+    RunArchive:
+      type: object
+      additionalProperties: false
+      required: [id, runId, runReference, workflowId, rootRunId, lifecycle, endedAt, store, objectKey, sha256, bytes, status, historyStatus, archivedAt]
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        workflowId: { type: string, format: uuid }
+        rootRunId: { type: string, format: uuid }
+        sweepId: { type: [string, 'null'], format: uuid }
+        lifecycle: { type: string }
+        endedAt: { type: string, format: date-time }
+        store: { type: string, enum: [filesystem, s3] }
+        objectKey: { type: string }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        bytes: { type: integer, minimum: 1 }
+        status: { type: string, enum: [archived, purged] }
+        historyStatus: { type: string, enum: [none, pending, purged], description: engine history (ACT_HI_*) of the request }
+        archivedAt: { type: string, format: date-time }
+        purgedAt: { type: [string, 'null'], format: date-time }
+        historyPurgedAt: { type: [string, 'null'], format: date-time }
+        purgeCounts: { type: [object, 'null'], additionalProperties: { type: integer }, description: rows deleted (or detached) per table }
+    RunArchiveList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RunArchive' } }
+    # ---------------------------------------------------------------- end AlertsAndRetention schemas
     InboundAccepted:
       type: object
       additionalProperties: false
@@ -12868,6 +13576,7 @@ components:
         - connector.approve
         - ai.approve-skill
         - ai.evaluate
+        - alert.manage
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -16635,7 +17344,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, alert.manage] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

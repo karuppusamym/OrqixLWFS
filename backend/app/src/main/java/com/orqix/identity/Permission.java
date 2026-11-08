@@ -32,7 +32,9 @@ public enum Permission {
     /** Grant-only (S134): approve AI skill versions and promotions written by someone else. */
     AI_APPROVE_SKILL("ai.approve-skill"),
     /** Grant-only (S134): run AI evaluation suites, read shadow dashboards and the AI review queue. */
-    AI_EVALUATE("ai.evaluate");
+    AI_EVALUATE("ai.evaluate"),
+    /** Grant-only, workspace-wide (CG-O06, S144): manage alert rules and destinations, read incidents. */
+    ALERT_MANAGE("alert.manage");
 
     private final String value;
 

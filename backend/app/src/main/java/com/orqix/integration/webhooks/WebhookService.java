@@ -148,6 +148,54 @@ public class WebhookService implements OutboundWebhooks {
         }
     }
 
+    /**
+     * CG-O06 (docs/build/S144): queues one alert notification ({@code alert.fired}, {@code alert.resolved} or
+     * {@code alert.test}) on a subscription chosen by an alert destination, whatever event types it lists. It is
+     * signed, retried and dead-lettered like a request event. Ids, names and numbers only.
+     *
+     * @return null when queued, otherwise an error code (webhook_unknown, webhook_disabled, pending_cap)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public String recordAlert(UUID workspaceId, UUID subscriptionId, String eventKey, String type, ObjectNode alert,
+            Instant at) {
+        Boolean enabled = jdbc.sql("SELECT enabled FROM webhook_subscription WHERE id = :id AND workspace_id = :ws")
+                .param("id", subscriptionId).param("ws", workspaceId).query(Boolean.class).optional().orElse(null);
+        if (enabled == null) {
+            return "webhook_unknown";
+        }
+        if (!enabled) {
+            return "webhook_disabled";
+        }
+        long pending = jdbc.sql("SELECT count(*) FROM webhook_delivery WHERE subscription_id = :s AND status IN ('pending', 'sending')")
+                .param("s", subscriptionId).query(Long.class).single();
+        if (pending >= settings.maxPending()) {
+            return "pending_cap";
+        }
+        UUID id = Ids.newId();
+        ObjectNode payload = json.object();
+        payload.put("id", id.toString());
+        payload.put("eventId", eventKey);
+        payload.put("type", type);
+        payload.put("occurredAt", at.toString());
+        payload.put("workspaceId", workspaceId.toString());
+        payload.set("alert", alert);
+        jdbc.sql("""
+                INSERT INTO webhook_delivery (id, workspace_id, subscription_id, event_key, event_type, run_id, payload,
+                                              status, next_attempt_at, created_at)
+                VALUES (:id, :ws, :s, :key, :type, NULL, CAST(:payload AS jsonb), 'pending', :now, :now)
+                ON CONFLICT (subscription_id, event_key) DO NOTHING
+                """).param("id", id).param("ws", workspaceId).param("s", subscriptionId).param("key", eventKey)
+                .param("type", type).param("payload", json.write(payload)).param("now", Sql.ts(at)).update();
+        return null;
+    }
+
+    /** CG-O06: true when the subscription exists in the workspace. */
+    @Transactional(readOnly = true)
+    public boolean subscriptionExists(UUID workspaceId, UUID subscriptionId) {
+        return jdbc.sql("SELECT count(*) FROM webhook_subscription WHERE id = :id AND workspace_id = :ws")
+                .param("id", subscriptionId).param("ws", workspaceId).query(Integer.class).single() > 0;
+    }
+
     // ---------------------------------------------------------------- subscriptions
 
     @Transactional

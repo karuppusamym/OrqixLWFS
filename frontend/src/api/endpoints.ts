@@ -818,3 +818,65 @@ export const updateStepTemplate = (ws: string, key: string, body: S['UpdateStepT
 
 export const addStepTemplateVersion = (ws: string, key: string, body: S['AddStepTemplateVersion']) =>
   call(api.POST('/workspaces/{workspaceId}/step-templates/{key}/versions', { params: { path: { workspaceId: ws, key } }, body }))
+
+// S144 (CG-O06): alert rules, destinations and incidents.
+export const listAlertDestinations = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-destinations', { params: { path: { workspaceId: ws } } }))
+
+export const createAlertDestination = (ws: string, body: S['AlertDestinationCreateRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-destinations', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateAlertDestination = (ws: string, destinationId: string, body: S['AlertDestinationUpdateRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/alert-destinations/{destinationId}', { params: { path: { workspaceId: ws, destinationId } }, body }))
+
+export const testAlertDestination = (ws: string, destinationId: string) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-destinations/{destinationId}/test', { params: { path: { workspaceId: ws, destinationId } } }))
+
+export const listAlertRules = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-rules', { params: { path: { workspaceId: ws } } }))
+
+export const createAlertRule = (ws: string, body: S['AlertRuleRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-rules', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateAlertRule = (ws: string, ruleId: string, body: S['AlertRuleRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/alert-rules/{ruleId}', { params: { path: { workspaceId: ws, ruleId } }, body }))
+
+export const deleteAlertRule = (ws: string, ruleId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/alert-rules/{ruleId}', { params: { path: { workspaceId: ws, ruleId } } }))
+
+export const silenceAlertRule = (ws: string, ruleId: string, minutes: number) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-rules/{ruleId}/silence', { params: { path: { workspaceId: ws, ruleId } }, body: { minutes } }))
+
+export const listAlertIncidents = (ws: string, query: { ruleId?: string; status?: 'firing' | 'resolved' } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-incidents', { params: { path: { workspaceId: ws }, query } }))
+
+// S144 (CG-O07, CG-P04): run retention, legal holds, sweeps and archives.
+export const listRetentionPolicies = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/retention-policies', { params: { path: { workspaceId: ws } } }))
+
+export const setRetentionPolicy = (ws: string, workflowId: string, body: S['RetentionPolicyRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/retention-policy', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const removeRetentionPolicy = (ws: string, workflowId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/workflows/{workflowId}/retention-policy', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const listLegalHolds = (ws: string, active?: boolean) =>
+  call(api.GET('/workspaces/{workspaceId}/legal-holds', { params: { path: { workspaceId: ws }, query: { active } } }))
+
+export const placeLegalHold = (ws: string, body: S['LegalHoldRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/legal-holds', { params: { path: { workspaceId: ws } }, body }))
+
+export const releaseLegalHold = (ws: string, holdId: string, reason: string) =>
+  call(api.POST('/workspaces/{workspaceId}/legal-holds/{holdId}/release', { params: { path: { workspaceId: ws, holdId } }, body: { reason } }))
+
+export const listRetentionSweeps = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/retention-sweeps', { params: { path: { workspaceId: ws } } }))
+
+export const startRetentionSweep = (ws: string, body: S['RetentionSweepRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/retention-sweeps', { params: { path: { workspaceId: ws } }, body }))
+
+export const listRunArchives = (ws: string, reference?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/run-archives', { params: { path: { workspaceId: ws }, query: { reference: reference || undefined } } }))
+
+/** The archive download is a plain link: the browser streams the ZIP with the session cookie. */
+export const runArchiveUrl = (ws: string, archiveId: string) => `/api/v1/workspaces/${ws}/run-archives/${archiveId}/content`

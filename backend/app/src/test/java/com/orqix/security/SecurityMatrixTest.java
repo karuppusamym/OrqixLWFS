@@ -628,6 +628,17 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     "secretRef", "foreign-hook");
             case "updatePackageTrigger" -> Map.of("secretRef", "foreign-hook", "enabled", false, "expectedVersion", 1);
             case "receivePackageTriggerEvent" -> Map.of("sys_id", "x");
+            // CG-O06/CG-O07 (S144): well-formed bodies, so a foreign 404 cannot be explained by validation.
+            case "createAlertDestination" -> Map.of("name", "Foreign", "kind", "slack", "secretRef", "foreign-hook");
+            case "updateAlertDestination" -> Map.of("name", "Foreign", "enabled", true, "expectedVersion", 1);
+            case "createAlertRule", "updateAlertRule" -> Map.of("name", "Foreign", "signal", "circuitOpen",
+                    "threshold", 1, "severity", "warning", "destinationIds", List.of(UUID.randomUUID().toString()),
+                    "expectedVersion", 1);
+            case "silenceAlertRule" -> Map.of("minutes", 10);
+            case "setRetentionPolicy" -> Map.of("keepDays", 30, "expectedVersion", 0);
+            case "placeLegalHold" -> Map.of("runId", UUID.randomUUID().toString(), "reason", "Foreign attempt");
+            case "releaseLegalHold" -> Map.of("reason", "Foreign attempt");
+            case "startRetentionSweep" -> Map.of("dryRun", true);
             default -> null;
         };
     }
@@ -646,7 +657,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "alert_destination", "alert_rule", "alert_rule_destination", "alert_incident", "alert_delivery", "retention_policy", "legal_hold", "retention_sweep", "run_archive",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

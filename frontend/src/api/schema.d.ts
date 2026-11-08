@@ -7620,6 +7620,294 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/alert-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Alert destinations of the workspace (email and Teams adapters, Slack, PagerDuty, webhook subscriptions) */
+        get: operations["listAlertDestinations"];
+        put?: never;
+        /**
+         * Add an alert destination (at most 20 per workspace)
+         * @description Email and Teams send through an existing adapter of that kind (its recipient domains and egress rules apply); Slack and PagerDuty name the secret holding the incoming webhook address or routing key; a webhook destination uses an existing outbound webhook subscription. Only the local stub transports exist in this build.
+         */
+        post: operations["createAlertDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-destinations/{destinationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit or switch off an alert destination (the kind never changes; expectedVersion must match) */
+        put: operations["updateAlertDestination"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-destinations/{destinationId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a test notification now through the destination and record the outcome */
+        post: operations["testAlertDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Alert rules with their current state and last value */
+        get: operations["listAlertRules"];
+        put?: never;
+        /**
+         * Add an alert rule (at most 50 per workspace)
+         * @description A rule fires when the signal reaches the threshold and resolves when it drops below. Windowed signals (slaBreaches, tokenRefreshFailing, deadLetters) count events in the window; the others count what is true now.
+         */
+        post: operations["createAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-rules/{ruleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                ruleId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit an alert rule (expectedVersion must match; a changed signal, scope or threshold closes an open incident without a notification) */
+        put: operations["updateAlertRule"];
+        post?: never;
+        /** Delete an alert rule with its incidents and notifications */
+        delete: operations["deleteAlertRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-rules/{ruleId}/silence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                ruleId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Silence a rule's notifications for some minutes (0 ends the silence); it is still evaluated */
+        post: operations["silenceAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/alert-incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Alert incidents with their notifications, newest first, at most 100 */
+        get: operations["listAlertIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/retention-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Run retention policies per workflow, with how many ended requests are due now */
+        get: operations["listRetentionPolicies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/retention-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Keep ended requests of this workflow for keepDays, then archive and purge them (expectedVersion 0 creates) */
+        put: operations["setRetentionPolicy"];
+        post?: never;
+        /** Stop retention for this workflow (requests are kept until a policy is set again) */
+        delete: operations["removeRetentionPolicy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/legal-holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Legal holds, newest first, at most 200 */
+        get: operations["listLegalHolds"];
+        put?: never;
+        /** Hold one request (with its parent and child requests) or a whole workflow; held requests are never archived or purged */
+        post: operations["placeLegalHold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/legal-holds/{holdId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                holdId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release a legal hold with a reason */
+        post: operations["releaseLegalHold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/retention-sweeps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Retention sweeps and dry runs, newest first, at most 50 */
+        get: operations["listRetentionSweeps"];
+        put?: never;
+        /**
+         * Run a dry run, or archive and purge the due requests now (confirm required)
+         * @description Runs synchronously and handles at most orqix.retention.max-requests-per-sweep top-level requests. Each request is archived, read back and checksum-verified before its rows are purged; a failure leaves the request untouched. 409 while another sweep of the workspace runs.
+         */
+        post: operations["startRetentionSweep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/run-archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Archived requests (also after their rows were purged), newest first, at most 200 */
+        get: operations["listRunArchives"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/run-archives/{archiveId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                archiveId: string;
+            };
+            cookie?: never;
+        };
+        /** Download an archive (ZIP); its checksum is verified against the record first */
+        get: operations["downloadRunArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -9388,6 +9676,316 @@ export interface components {
         WebhookDeliveryList: {
             items: components["schemas"]["WebhookDelivery"][];
         };
+        /** @enum {string} */
+        AlertDestinationKind: "email" | "teams" | "slack" | "pagerDuty" | "webhook";
+        AlertDestination: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            kind: components["schemas"]["AlertDestinationKind"];
+            /** @description email and teams */
+            adapterKey?: string | null;
+            /** @description email only */
+            recipients?: string[] | null;
+            /** @description slack and pagerDuty; the secret value is never shown */
+            secretRef?: string | null;
+            /**
+             * Format: uuid
+             * @description webhook only
+             */
+            webhookSubscriptionId?: string | null;
+            enabled: boolean;
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        AlertDestinationList: {
+            items: components["schemas"]["AlertDestination"][];
+        };
+        AlertDestinationCreateRequest: {
+            name: string;
+            kind: components["schemas"]["AlertDestinationKind"];
+            adapterKey?: string | null;
+            recipients?: string[] | null;
+            secretRef?: string | null;
+            /** Format: uuid */
+            webhookSubscriptionId?: string | null;
+            /** @description default true */
+            enabled?: boolean | null;
+        };
+        AlertDestinationUpdateRequest: {
+            name: string;
+            adapterKey?: string | null;
+            recipients?: string[] | null;
+            secretRef?: string | null;
+            /** Format: uuid */
+            webhookSubscriptionId?: string | null;
+            enabled: boolean;
+            expectedVersion: number;
+        };
+        AlertDestinationTestResult: {
+            /** Format: uuid */
+            destinationId: string;
+            /** @enum {string} */
+            status: "sent" | "failed";
+            /** @description transport outcome, for example stubbed or queued */
+            outcome?: string | null;
+            errorCode?: string | null;
+        };
+        /** @enum {string} */
+        AlertSignal: "needsAttention" | "slaBreaches" | "circuitOpen" | "tokenRefreshFailing" | "deadLetters" | "pollChecksFailing" | "aiDriftFallback";
+        AlertRuleRequest: {
+            name: string;
+            signal: components["schemas"]["AlertSignal"];
+            threshold: number;
+            /** @description default 15; used by windowed signals */
+            windowMinutes?: number | null;
+            /**
+             * Format: uuid
+             * @description needsAttention, slaBreaches, deadLetters, pollChecksFailing
+             */
+            workflowId?: string | null;
+            /** @description circuitOpen, tokenRefreshFailing, pollChecksFailing */
+            connectionKey?: string | null;
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            /** @description default 30 */
+            quietMinutes?: number | null;
+            /** @description default true */
+            notifyResolve?: boolean | null;
+            /** @description default true */
+            enabled?: boolean | null;
+            destinationIds: string[];
+            /** @description required when editing */
+            expectedVersion?: number | null;
+        };
+        AlertRule: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            signal: components["schemas"]["AlertSignal"];
+            threshold: number;
+            windowMinutes: number;
+            /** @description true when the signal counts events in the window */
+            windowed: boolean;
+            /** Format: uuid */
+            workflowId?: string | null;
+            connectionKey?: string | null;
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            quietMinutes: number;
+            notifyResolve: boolean;
+            enabled: boolean;
+            /** Format: date-time */
+            silencedUntil?: string | null;
+            /** @enum {string} */
+            state: "ok" | "firing";
+            lastValue?: number | null;
+            /** Format: date-time */
+            lastEvaluatedAt?: string | null;
+            /** Format: uuid */
+            openIncidentId?: string | null;
+            destinationIds: string[];
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        AlertRuleList: {
+            items: components["schemas"]["AlertRule"][];
+        };
+        AlertSilenceRequest: {
+            minutes: number;
+        };
+        AlertDelivery: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            destinationId: string;
+            destinationName: string;
+            /** @enum {string} */
+            kind: "fired" | "resolved" | "test";
+            /** @enum {string} */
+            status: "queued" | "sent" | "failed" | "skipped";
+            attempts: number;
+            outcome?: string | null;
+            errorCode?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            settledAt?: string | null;
+        };
+        AlertIncident: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ruleId: string;
+            ruleName: string;
+            signal: components["schemas"]["AlertSignal"];
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            /** @enum {string} */
+            status: "firing" | "resolved";
+            /** Format: date-time */
+            openedAt: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            openingValue: number;
+            peakValue: number;
+            lastValue: number;
+            threshold: number;
+            /**
+             * @description why the incident was not notified
+             * @enum {string|null}
+             */
+            suppressed?: "quietPeriod" | "silenced" | null;
+            deliveries: components["schemas"]["AlertDelivery"][];
+        };
+        AlertIncidentList: {
+            items: components["schemas"]["AlertIncident"][];
+        };
+        RetentionPolicyRequest: {
+            keepDays: number;
+            /** @description default true: request input, output, event data and effect results go into the archive */
+            includeRunData?: boolean | null;
+            /** @description default true */
+            includeFiles?: boolean | null;
+            /** @description default true */
+            enabled?: boolean | null;
+            /** @description 0 to create */
+            expectedVersion: number;
+        };
+        RetentionPolicy: {
+            /** Format: uuid */
+            workflowId: string;
+            workflowKey: string;
+            workflowName: string;
+            keepDays: number;
+            includeRunData: boolean;
+            includeFiles: boolean;
+            enabled: boolean;
+            version: number;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description top-level ended requests past keepDays */
+            eligibleNow: number;
+            workflowHeld: boolean;
+        };
+        RetentionPolicyList: {
+            items: components["schemas"]["RetentionPolicy"][];
+        };
+        LegalHoldRequest: {
+            /** Format: uuid */
+            workflowId?: string | null;
+            /** Format: uuid */
+            runId?: string | null;
+            reason: string;
+        };
+        LegalHoldReleaseRequest: {
+            reason: string;
+        };
+        LegalHold: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workflowId?: string | null;
+            workflowName?: string | null;
+            /** Format: uuid */
+            runId?: string | null;
+            runReference?: string | null;
+            reason: string;
+            /** Format: uuid */
+            placedBy: string;
+            /** Format: date-time */
+            placedAt: string;
+            /** Format: uuid */
+            releasedBy?: string | null;
+            /** Format: date-time */
+            releasedAt?: string | null;
+            releaseReason?: string | null;
+            active: boolean;
+        };
+        LegalHoldList: {
+            items: components["schemas"]["LegalHold"][];
+        };
+        RetentionSweepRequest: {
+            dryRun: boolean;
+            /** @description must be true when dryRun is false */
+            confirm?: boolean | null;
+        };
+        RetentionSweep: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            mode: "dryRun" | "purge";
+            /** @enum {string} */
+            trigger: "manual" | "scheduled";
+            /** Format: uuid */
+            requestedBy?: string | null;
+            /** @enum {string} */
+            status: "running" | "completed" | "failed";
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string | null;
+            eligible: number;
+            archived: number;
+            purged: number;
+            held: number;
+            skipped: number;
+            failed: number;
+            /** @description items (at most 200): runId, reference, workflowId, endedAt, outcome (eligible, purged, held, skipped, failed), reason, members, keepDays; truncated; error */
+            detail: {
+                [key: string]: unknown;
+            };
+        };
+        RetentionSweepList: {
+            items: components["schemas"]["RetentionSweep"][];
+        };
+        RunArchive: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            /** Format: uuid */
+            workflowId: string;
+            /** Format: uuid */
+            rootRunId: string;
+            /** Format: uuid */
+            sweepId?: string | null;
+            lifecycle: string;
+            /** Format: date-time */
+            endedAt: string;
+            /** @enum {string} */
+            store: "filesystem" | "s3";
+            objectKey: string;
+            sha256: string;
+            bytes: number;
+            /** @enum {string} */
+            status: "archived" | "purged";
+            /**
+             * @description engine history (ACT_HI_*) of the request
+             * @enum {string}
+             */
+            historyStatus: "none" | "pending" | "purged";
+            /** Format: date-time */
+            archivedAt: string;
+            /** Format: date-time */
+            purgedAt?: string | null;
+            /** Format: date-time */
+            historyPurgedAt?: string | null;
+            /** @description rows deleted (or detached) per table */
+            purgeCounts?: {
+                [key: string]: number;
+            } | null;
+        };
+        RunArchiveList: {
+            items: components["schemas"]["RunArchive"][];
+        };
         InboundAccepted: {
             /**
              * Format: uuid
@@ -9537,7 +10135,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "alert.manage";
         AgentWriteSubject: {
             id: components["schemas"]["Uuid"];
             displayName: string;
@@ -12548,7 +13146,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "alert.manage";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -27402,7 +28000,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "alert.manage";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
@@ -29357,6 +29955,585 @@ export interface operations {
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAlertDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Destinations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDestinationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAlertDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertDestinationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDestination"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updateAlertDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertDestinationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDestination"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    testAlertDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Outcome of the test send */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDestinationTestResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRuleList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                ruleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                ruleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    silenceAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                ruleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertSilenceRequest"];
+            };
+        };
+        responses: {
+            /** @description The rule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAlertIncidents: {
+        parameters: {
+            query?: {
+                ruleId?: string;
+                status?: "firing" | "resolved";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incidents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertIncidentList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRetentionPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionPolicyList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setRetentionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description The policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    removeRetentionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listLegalHolds: {
+        parameters: {
+            query?: {
+                active?: boolean;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Holds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalHoldList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    placeLegalHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalHoldRequest"];
+            };
+        };
+        responses: {
+            /** @description Placed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalHold"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    releaseLegalHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                holdId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalHoldReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Released */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalHold"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRetentionSweeps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sweeps */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionSweepList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    startRetentionSweep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionSweepRequest"];
+            };
+        };
+        responses: {
+            /** @description The finished sweep */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionSweep"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listRunArchives: {
+        parameters: {
+            query?: {
+                reference?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archives */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunArchiveList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    downloadRunArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                archiveId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive (Content-Disposition attachment) */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
         };
     };
 }

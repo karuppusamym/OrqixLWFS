@@ -10,7 +10,7 @@ const ALL_KINDS = Object.keys(KINDS) as NodeKind[]
 
 describe('BPMN notation mapping (STU01)', () => {
   it('maps every step kind to a shape, and nothing else', () => {
-    expect(ALL_KINDS).toHaveLength(21)
+    expect(ALL_KINDS).toHaveLength(22)
     expect(Object.keys(BPMN_NOTATION).sort()).toEqual([...ALL_KINDS].sort())
     for (const kind of [...ALL_KINDS, ...PALETTE_KINDS]) {
       const n = BPMN_NOTATION[kind]

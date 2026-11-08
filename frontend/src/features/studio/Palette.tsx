@@ -41,7 +41,7 @@ export function Palette({ onAdd, onAddPackageStep, onAddWorkspaceTemplate, disab
 
   if (collapsed) {
     return (
-      <aside className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-border bg-surface py-3" aria-label="Palette">
+      <aside className="flex w-12 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-border bg-surface py-3" aria-label="Palette">
         <Button variant="ghost" size="icon" onClick={() => toggle(false)} aria-label="Show the step list" aria-expanded={false} title="Show the step list">
           <PanelLeftOpen aria-hidden="true" />
         </Button>
@@ -56,7 +56,7 @@ export function Palette({ onAdd, onAddPackageStep, onAddWorkspaceTemplate, disab
                 onAdd(k)
                 announce(`${KINDS[k].paletteLabel} step added`)
               }}
-              className={cn('flex size-9 items-center justify-center rounded-control text-white disabled:cursor-not-allowed disabled:opacity-60', KIND_ACCENT[k])}
+              className={cn('flex size-9 shrink-0 items-center justify-center rounded-control text-white disabled:cursor-not-allowed disabled:opacity-60', KIND_ACCENT[k])}
               aria-label={`Add: ${KINDS[k].paletteLabel}`}
               title={`${KINDS[k].paletteLabel}: ${KINDS[k].description}`}
             >

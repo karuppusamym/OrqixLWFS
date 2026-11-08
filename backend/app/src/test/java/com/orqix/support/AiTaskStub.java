@@ -155,6 +155,9 @@ public final class AiTaskStub {
     private static String answer(String all, String data) {
         double confidence = data.contains("unsure") ? 0.4 : 0.95;
         ObjectNode a = JSON.createObjectNode();
+        if (all.contains("<run_facts>")) {
+            return runExplanation(all);
+        }
         if (all.contains("one classify task")) {
             String label = data.contains("urgent") ? "unusual" : "routine";
             a.put("label", label).put("confidence", confidence);
@@ -174,6 +177,40 @@ public final class AiTaskStub {
         } else {
             a.put("summary", "A short summary.").put("confidence", confidence);
         }
+        return a.toString();
+    }
+
+    /**
+     * S146 part C ("Explain this request"): cites the first two facts and an unknown fact id, suggests the first
+     * permitted action plus one that is never permitted ({@code deleteRequest}), so callers can check the filter.
+     */
+    private static String runExplanation(String all) {
+        JsonNode user = JSON.readTree(all);
+        String text = "";
+        for (JsonNode m : user.path("messages")) {
+            if ("user".equals(m.path("role").asString())) {
+                text = m.path("content").isString() ? m.path("content").asString() : m.path("content").toString();
+            }
+        }
+        int start = text.indexOf("<run_facts>");
+        int end = text.indexOf("</run_facts>");
+        JsonNode data = start >= 0 && end > start
+                ? JSON.readTree(text.substring(start + "<run_facts>".length(), end)) : JSON.createObjectNode();
+        ObjectNode a = JSON.createObjectNode();
+        a.put("summary", "Stub explanation: the request is " + data.path("lifecycle").asString("unknown") + ".");
+        a.put("cause", "Stub cause from the facts.");
+        ArrayNode evidence = a.putArray("evidence");
+        JsonNode facts = data.path("facts");
+        for (int i = 0; i < Math.min(2, facts.size()); i++) {
+            evidence.add(facts.get(i).path("id").asString());
+        }
+        evidence.add("F999");
+        ArrayNode actions = a.putArray("suggestedActions");
+        if (data.path("permittedActions").size() > 0) {
+            actions.addObject().put("actionId", data.path("permittedActions").get(0).path("id").asString())
+                    .put("why", "Stub reason.");
+        }
+        actions.addObject().put("actionId", "deleteRequest").put("why", "Not permitted.");
         return a.toString();
     }
 

@@ -49,6 +49,7 @@ tags:
   - name: Access
   - name: AI
   - name: AiSkills
+  - name: Completion
   - name: Expressions
   - name: Migration
   - name: Conversation
@@ -8275,6 +8276,45 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---------------------------------------------------------------- end of S141 TaskActions paths
+  # ---------------------------------------------------------------- S146 Completion: operator explain paths
+  /workspaces/{workspaceId}/runs/{runId}/explain:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Completion]
+      operationId: explainRun
+      summary: Explain why this request is stuck and which permitted action would unblock it (CG-A07)
+      description: |
+        Read-only. Builds a bounded fact set from the request's timeline, current steps, waits, effects, the
+        health of the connections it uses and the published workflow model, with no request data values (field
+        names at most), and lists the actions the caller may take now (computed with the same permission checks
+        as the actions themselves; actions that need someone else are listed as askAdministrator). The
+        explanation comes from the AI profile through the provider SPI when AI is available (strict JSON
+        answer, temperature 0, metered as ai_generation kind aiExplain, workspace residency rule applied) and
+        from rules otherwise (`source` rules with `fallbackReason`). Suggested actions are always ids from
+        `permittedActions`; anything else the model suggests is dropped and reported in `droppedActions`.
+        It never performs an action: the request, its tasks, waits and engine state do not change. A POST
+        because the model call is metered and audited; no Idempotency-Key and no expectedVersion. An AI answer
+        is reused for the same caller and request state for up to two minutes (`ai.cached`).
+      x-orqix-permission: run.operate
+      x-orqix-audit: ai.run.explained
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExplainRunRequest' }
+      responses:
+        '200':
+          description: The explanation with its facts and the caller's permitted actions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunExplanation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ---------------------------------------------------------------- end S146 Completion: operator explain paths
 
   /workspaces/{workspaceId}/mcp-server:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -13588,6 +13628,86 @@ components:
         shared: { type: boolean }
         status: { type: string, enum: [active, archived] }
     # -------------------------------------------------------------- end of S141 TaskActions schemas
+    # -------------------------------------------------------------- S146 Completion: operator explain schemas
+    ExplainRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        preferRules: { type: [boolean, 'null'], description: Answer from the rules without calling a model. }
+    ExplainFact:
+      type: object
+      additionalProperties: false
+      required: [id, kind, text, nodeId, at, eventSeq]
+      description: "A fact written by Orqix from codes, times, labels and keys; never request data values."
+      properties:
+        id: { type: string, maxLength: 8 }
+        kind:
+          type: string
+          enum: [run, attention, effect, connection, circuit, binding, step, wait, check, task, event, model, suspension, child]
+        text: { type: string, maxLength: 400 }
+        nodeId: { type: [string, 'null'] }
+        at: { type: [string, 'null'], format: date-time }
+        eventSeq: { type: [integer, 'null'], format: int64, description: The timeline entry the fact comes from. }
+    ExplainPermittedAction:
+      type: object
+      additionalProperties: false
+      required: [id, operationId, kind, label, description, permission, nodeId, targetId]
+      properties:
+        id: { type: string, maxLength: 120, description: "Stable id such as retryRun or reassignTask:<taskId>." }
+        operationId: { type: [string, 'null'], description: The API operation behind the action (null when someone else must act). }
+        kind:
+          type: string
+          enum: [operate, open, askAdministrator]
+          description: "operate opens the existing operator dialog with its usual confirmation; open a settings page; askAdministrator means someone else must act."
+        label: { type: string }
+        description: { type: string }
+        permission: { type: string }
+        nodeId: { type: [string, 'null'] }
+        targetId: { type: [string, 'null'], description: "The effect, wait, task or connection the action applies to." }
+    ExplainSuggestedAction:
+      type: object
+      additionalProperties: false
+      required: [actionId, why]
+      properties:
+        actionId: { type: string }
+        why: { type: string, maxLength: 200 }
+    ExplainAiInfo:
+      type: object
+      additionalProperties: false
+      required: [profile, model, promptVersion, cached]
+      properties:
+        profile: { type: string }
+        model: { type: string }
+        promptVersion: { type: string }
+        cached: { type: boolean }
+    RunExplanation:
+      type: object
+      additionalProperties: false
+      required: [runId, runVersion, lifecycle, source, summary, cause, evidence, suggestedActions, facts, permittedActions, droppedActions, fallbackReason, ai, readOnly, stateDigest, generatedAt]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        runVersion: { type: integer }
+        lifecycle: { type: string }
+        source: { type: string, enum: [ai, rules] }
+        summary: { type: string, maxLength: 1200 }
+        cause: { type: string, maxLength: 1200 }
+        evidence: { type: array, items: { type: string }, description: Ids of facts that support the explanation. }
+        suggestedActions: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ExplainSuggestedAction' } }
+        facts: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/ExplainFact' } }
+        permittedActions: { type: array, items: { $ref: '#/components/schemas/ExplainPermittedAction' } }
+        droppedActions: { type: array, items: { type: string }, description: "Action ids the model suggested that the caller may not take; never shown as actions." }
+        fallbackReason:
+          type: [string, 'null']
+          enum: [aiOff, featureOff, notConfigured, residency, budget, unavailable, invalidAnswer, null]
+          description: Why the rules answered although AI was wanted.
+        ai:
+          oneOf:
+            - { $ref: '#/components/schemas/ExplainAiInfo' }
+            - { type: 'null' }
+        readOnly: { type: boolean, const: true }
+        stateDigest: { type: string }
+        generatedAt: { $ref: '#/components/schemas/Timestamp' }
+    # -------------------------------------------------------------- end S146 Completion: operator explain schemas
     McpServer:
       type: object
       additionalProperties: false

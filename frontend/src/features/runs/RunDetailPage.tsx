@@ -3,8 +3,9 @@ import { CallbackWaitsPanel } from './CallbackWaitsPanel'
 import { GuestLinksPanel } from './GuestLinksPanel'
 import { WaitingForPanel } from './WaitingForPanel'
 import { AiDecisionsPanel } from './AiDecisionsPanel'
+import { ExplainRunPanel, type ExplainAction } from './ExplainRunPanel'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
 import { useConsistencyFindings, useMe, useRelease, useRun, useRunEvents } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
@@ -75,6 +76,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const me = useMe()
   const [dialog, setDialog] = useState<DialogName>(null)
   const [reconcileId, setReconcileId] = useState<string | undefined>()
+  const navigate = useNavigate()
   const [view, setViewState] = useState<RunView>(() => (readStorage('orqix.runView') === 'diagram' ? 'diagram' : 'timeline'))
   const setView = (next: RunView) => {
     setViewState(next)
@@ -129,6 +131,23 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       : allowed.retry.allowed ? 'retry'
         : allowed.reconcile.allowed ? 'reconcile'
           : openTasks.length > 0 ? 'reassign' : null
+
+  // CG-A07: a suggested action of "Explain this request" opens the existing dialog or place; it never acts by itself.
+  const onExplainAction = (action: ExplainAction) => {
+    const operation = action.operationId ?? ''
+    const dialogs: Record<string, DialogName> = { retryRun: 'retry', cancelRun: 'cancel', resumeRun: 'resume', repairRun: 'repair', reassignTask: 'reassign' }
+    if (operation === 'reconcileEffect') {
+      setReconcileId(action.targetId ?? undefined)
+      setDialog('reconcile')
+    } else if (dialogs[operation]) {
+      setDialog(dialogs[operation])
+    } else if (operation === 'putConnectionBinding') {
+      void navigate(`/w/${ws}/settings`)
+    } else {
+      const target = operation === 'correctRunInput' ? 'input-correction-heading' : 'waiting-for-heading'
+      document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   return (
     <>
@@ -268,6 +287,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </section>
       ) : null}
 
+      {can('run.operate') ? <ExplainRunPanel ws={ws} runId={run.id} onAction={onExplainAction} /> : null}
+
       <StageProgress stage={run.stage} stages={run.stages} />
 
       <div className={cn('grid grid-cols-[minmax(0,1fr)] gap-6', view === 'timeline' && 'xl:grid-cols-[minmax(0,1fr)_26rem]')}>
@@ -387,7 +408,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                     ) : (
                       <ol className="relative space-y-4 border-l-2 border-border pl-5" data-testid="timeline">
                         {timelineEvents(events).map((e) => (
-                          <li key={e.seq} className="relative">
+                          <li key={e.seq} id={`event-${e.seq}`} className="relative scroll-mt-20">
                             <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
                             <p className="text-sm">{describeEvent(e, ctx)}</p>
                             <DecisionEvidence event={e} />

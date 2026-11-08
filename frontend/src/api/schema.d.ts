@@ -6346,6 +6346,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain why this request is stuck and which permitted action would unblock it (CG-A07)
+         * @description Read-only. Builds a bounded fact set from the request's timeline, current steps, waits, effects, the
+         *     health of the connections it uses and the published workflow model, with no request data values (field
+         *     names at most), and lists the actions the caller may take now (computed with the same permission checks
+         *     as the actions themselves; actions that need someone else are listed as askAdministrator). The
+         *     explanation comes from the AI profile through the provider SPI when AI is available (strict JSON
+         *     answer, temperature 0, metered as ai_generation kind aiExplain, workspace residency rule applied) and
+         *     from rules otherwise (`source` rules with `fallbackReason`). Suggested actions are always ids from
+         *     `permittedActions`; anything else the model suggests is dropped and reported in `droppedActions`.
+         *     It never performs an action: the request, its tasks, waits and engine state do not change. A POST
+         *     because the model call is metered and audited; no Idempotency-Key and no expectedVersion. An AI answer
+         *     is reused for the same caller and request state for up to two minutes (`ai.cached`).
+         */
+        post: operations["explainRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/mcp-server": {
         parameters: {
             query?: never;
@@ -10098,6 +10131,78 @@ export interface components {
             shared: boolean;
             /** @enum {string} */
             status: "active" | "archived";
+        };
+        ExplainRunRequest: {
+            /** @description Answer from the rules without calling a model. */
+            preferRules?: boolean | null;
+        };
+        /** @description A fact written by Orqix from codes, times, labels and keys; never request data values. */
+        ExplainFact: {
+            id: string;
+            /** @enum {string} */
+            kind: "run" | "attention" | "effect" | "connection" | "circuit" | "binding" | "step" | "wait" | "check" | "task" | "event" | "model" | "suspension" | "child";
+            text: string;
+            nodeId: string | null;
+            /** Format: date-time */
+            at: string | null;
+            /**
+             * Format: int64
+             * @description The timeline entry the fact comes from.
+             */
+            eventSeq: number | null;
+        };
+        ExplainPermittedAction: {
+            /** @description Stable id such as retryRun or reassignTask:<taskId>. */
+            id: string;
+            /** @description The API operation behind the action (null when someone else must act). */
+            operationId: string | null;
+            /**
+             * @description operate opens the existing operator dialog with its usual confirmation; open a settings page; askAdministrator means someone else must act.
+             * @enum {string}
+             */
+            kind: "operate" | "open" | "askAdministrator";
+            label: string;
+            description: string;
+            permission: string;
+            nodeId: string | null;
+            /** @description The effect, wait, task or connection the action applies to. */
+            targetId: string | null;
+        };
+        ExplainSuggestedAction: {
+            actionId: string;
+            why: string;
+        };
+        ExplainAiInfo: {
+            profile: string;
+            model: string;
+            promptVersion: string;
+            cached: boolean;
+        };
+        RunExplanation: {
+            runId: components["schemas"]["Uuid"];
+            runVersion: number;
+            lifecycle: string;
+            /** @enum {string} */
+            source: "ai" | "rules";
+            summary: string;
+            cause: string;
+            /** @description Ids of facts that support the explanation. */
+            evidence: string[];
+            suggestedActions: components["schemas"]["ExplainSuggestedAction"][];
+            facts: components["schemas"]["ExplainFact"][];
+            permittedActions: components["schemas"]["ExplainPermittedAction"][];
+            /** @description Action ids the model suggested that the caller may not take; never shown as actions. */
+            droppedActions: string[];
+            /**
+             * @description Why the rules answered although AI was wanted.
+             * @enum {string|null}
+             */
+            fallbackReason: "aiOff" | "featureOff" | "notConfigured" | "residency" | "budget" | "unavailable" | "invalidAnswer" | null;
+            ai: components["schemas"]["ExplainAiInfo"] | null;
+            /** @constant */
+            readOnly: true;
+            stateDigest: string;
+            generatedAt: components["schemas"]["Timestamp"];
         };
         McpServer: {
             /** @description false until a workspace administrator switches it on */
@@ -27223,6 +27328,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    explainRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExplainRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The explanation with its facts and the caller's permitted actions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunExplanation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getMcpServer: {

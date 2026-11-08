@@ -28,7 +28,7 @@ import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 public final class Stub {
 
     public enum Mode {
-        NONE, DELAY, STATUS500, STATUS400, STATUS429, STATUS503, COMMIT_THEN_TIMEOUT, DROP_CONNECTION, INVALID_BODY
+        NONE, DELAY, STATUS500, STATUS400, STATUS403, STATUS429, STATUS503, COMMIT_THEN_TIMEOUT, DROP_CONNECTION, INVALID_BODY
     }
 
     /** @param retryAfter Retry-After header of a 429 or 503 (S131), or null */
@@ -194,6 +194,9 @@ public final class Stub {
             }
             case STATUS400 -> {
                 return json(400, "{\"error\":\"injected\"}");
+            }
+            case STATUS403 -> {
+                return json(403, "{\"error\":\"injected forbidden\"}");
             }
             case STATUS429, STATUS503 -> {
                 ResponseDefinitionBuilder declined = new ResponseDefinitionBuilder()

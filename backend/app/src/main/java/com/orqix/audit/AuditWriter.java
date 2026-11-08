@@ -337,7 +337,31 @@ public class AuditWriter {
                     "redactPatterns")),
             Map.entry("agent.request.answered", Set.of("requestId", "runId", "kind", "toolName", "outcome")),
             Map.entry("agent.test-suite.saved", Set.of("connectionKey", "cases")),
-            Map.entry("agent.test-suite.ran", Set.of("connectionKey", "connectionVersion", "passed", "failed")));
+            Map.entry("agent.test-suite.ran", Set.of("connectionKey", "connectionVersion", "passed", "failed")),
+            // CG-O06/CG-O07/CG-P04 (S144): kinds, counts, ids and checksums only; never recipients, secrets,
+            // hold reasons or request values.
+            Map.entry("alert.destination-created", Set.of("kind", "enabled")),
+            Map.entry("alert.destination-updated", Set.of("kind", "enabled", "version")),
+            Map.entry("alert.destination-tested", Set.of("kind", "status", "errorCode")),
+            Map.entry("alert.rule-created", Set.of("signal", "threshold", "windowMinutes", "severity", "destinations",
+                    "enabled", "version")),
+            Map.entry("alert.rule-updated", Set.of("signal", "threshold", "windowMinutes", "severity", "destinations",
+                    "enabled", "version")),
+            Map.entry("alert.rule-deleted", Set.of("signal")),
+            Map.entry("alert.rule-silenced", Set.of("minutes")),
+            Map.entry("alert.fired", Set.of("ruleId", "signal", "value", "threshold", "notifications", "suppressed")),
+            Map.entry("alert.resolved", Set.of("ruleId", "signal", "value", "notifications")),
+            Map.entry("retention.policy-set", Set.of("workflowId", "keepDays", "includeRunData", "includeFiles",
+                    "enabled", "version")),
+            Map.entry("retention.policy-removed", Set.of("workflowId")),
+            Map.entry("retention.hold-placed", Set.of("target", "targetId")),
+            Map.entry("retention.hold-released", Set.of()),
+            Map.entry("retention.sweep-completed", Set.of("mode", "eligible", "archived", "purged", "held", "skipped",
+                    "failed")),
+            Map.entry("run.archived-and-purged", Set.of("reference", "workflowId", "rootRunId", "archiveId", "sha256",
+                    "bytes", "store", "keepDays")),
+            Map.entry("run.history-purged", Set.of("instances", "skipped")),
+            Map.entry("retention.archive-downloaded", Set.of("runId", "reference", "bytes")));
 
     private final JdbcClient jdbc;
     private final Json json;

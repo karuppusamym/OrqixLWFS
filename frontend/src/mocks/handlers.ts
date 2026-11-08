@@ -56,7 +56,7 @@ import {
 // Access (Settings → Members and groups): seeded memberships plus the changes an administrator made -------------------
 
 const ROLE_KEYS = ['WORKSPACE_ADMIN', 'WORKFLOW_DESIGNER', 'PUBLISHER', 'OPERATOR', 'VIEWER', 'APPROVER']
-const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate']
+const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate', 'alert.manage']
 
 function edits(): NonNullable<typeof db.accessEdits> {
   return (db.accessEdits ??= { roleBindings: [], grants: [], removed: [], groups: [] })

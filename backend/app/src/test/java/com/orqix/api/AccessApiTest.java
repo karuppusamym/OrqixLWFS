@@ -76,7 +76,7 @@ class AccessApiTest extends IntegrationTestBase {
     void everyGrantablePermissionCanBeGranted() throws Exception {
         for (String permission : List.of("workflow.start", "connection.manage", "message.send", "document.browse",
                 "job.work", "audit.read", "workflow.approve-promotion", "agent.approve-write-tool", "connector.manage",
-                "connector.approve", "ai.approve-skill", "ai.evaluate", "run.bulk-operate")) {
+                "connector.approve", "ai.approve-skill", "ai.evaluate", "run.bulk-operate", "alert.manage")) {
             Response grant = api("wade.admin").post(Map.of("permission", permission,
                     "principal", Map.of("type", "idpGroup", "value", "orqix-grant-check")),
                     "/workspaces/{ws}/access/grants", SANDBOX);

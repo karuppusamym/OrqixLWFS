@@ -417,3 +417,25 @@ steps with other effects (notices, documents, child requests) are not run again.
 workspace without an explicit non-production stage) or a regulated one, a second operator must approve each move;
 the move lapses if the request changes first or nobody approves it within 24 hours. Details:
 [S143](build/S143-instance-migration-and-move.md).
+
+## Alert rules - 8 November 2026
+
+Settings → Alerts needs the grant-only `alert.manage` permission (grant it under Members and groups → Extra
+permissions; it is workspace-wide). Add destinations first: email or Teams through an existing adapter (its recipient
+domains apply), Slack or PagerDuty by naming the secret that holds the incoming webhook address or routing key, or an
+outbound webhook subscription. Then add rules on requests needing attention, SLA breaches, paused connections,
+credential failures, dead letters, failing poll checks or AI drift fallback, with a threshold, a window for counted
+signals, a quiet period and the destinations. A rule notifies once when it fires and once when it resolves; Silence
+stops notifications for a while. In this build Slack, PagerDuty, email and Teams go to local stubs. Details:
+[S144](build/S144-alerts-retention-archiving.md).
+
+## Run retention, archives and legal holds - 8 November 2026
+
+Settings → Run retention (`workspace.manage-access` to change, `audit.read` to read and download). A policy keeps a
+workflow's ended requests for a number of days; then the nightly sweep archives each one (evidence pack, its rows in
+the exit-export layout and optionally its files), reads the archive back to check it, and purges the request with its
+engine history. The audit log is kept. Run a dry run before the first purge. A legal hold on a request or a workflow
+stops all of this until released. Configure the archive store with `orqix.retention.store` (`filesystem` with
+`orqix.retention.filesystem.root` on a persistent volume, or `s3` with `orqix.retention.s3.*` from the secret mount;
+enable object lock on the bucket if your records policy requires it). The engine-history runbook is in
+[S144](build/S144-alerts-retention-archiving.md#runbook-engine-history-growth).

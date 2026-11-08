@@ -20,6 +20,8 @@ import { WorkingCalendarsPanel } from './WorkingCalendarsPanel'
 import { SchedulesPanel } from './SchedulesPanel'
 import { TaskActionsPanel } from './TaskActionsPanel'
 import { JobDashboardPanel } from './JobDashboardPanel'
+import { AlertRulesPanel } from './AlertRulesPanel'
+import { RunRetentionPanel } from './RunRetentionPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -40,8 +42,10 @@ export function SettingsPage() {
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
   const showOperations = can('run.operate')
+  const showAlerts = can('alert.manage')
+  const showRetention = can('workspace.manage-access', 'audit.read')
 
-  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages && !showOperations) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages && !showOperations && !showAlerts && !showRetention) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -55,7 +59,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Who can do what in this workspace, and which systems it can reach." />
-      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : showWebhooks ? 'webhooks' : 'operations'}>
+      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : showWebhooks ? 'webhooks' : showOperations ? 'operations' : showAlerts ? 'alerts' : 'run-retention'}>
         <TabsList aria-label="Settings sections">
           {showAccess ? (
             <TabsTrigger value="access">
@@ -84,6 +88,7 @@ export function SettingsPage() {
             </TabsTrigger>
           ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
+          {showAlerts ? <TabsTrigger value="alerts">Alerts</TabsTrigger> : null}
           {showWebhooks ? <TabsTrigger value="kafka">Kafka</TabsTrigger> : null}
           {showPackages ? <TabsTrigger value="packages">Connector packages</TabsTrigger> : null}
           {showAi ? (
@@ -103,6 +108,7 @@ export function SettingsPage() {
           ) : null}
           {showAccess ? <TabsTrigger value="retention">File retention</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="agent-write-retention">Agent write retention</TabsTrigger> : null}
+          {showRetention ? <TabsTrigger value="run-retention">Run retention</TabsTrigger> : null}
           {showAccess ? (
             <TabsTrigger value="exit-export">
               <Archive className="size-4" aria-hidden="true" /> Exit export
@@ -117,6 +123,8 @@ export function SettingsPage() {
         {showAccess ? <TabsContent value="retention"><AttachmentRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="agent-write-retention"><AgentWriteRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="exit-export"><ExitExportPanel /></TabsContent> : null}
+        {showAlerts ? <TabsContent value="alerts"><AlertRulesPanel /></TabsContent> : null}
+        {showRetention ? <TabsContent value="run-retention"><RunRetentionPanel /></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />

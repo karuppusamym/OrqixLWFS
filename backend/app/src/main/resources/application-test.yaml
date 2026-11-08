@@ -48,6 +48,14 @@ orqix:
     tick: 1h
   schedules:
     tick: 1h
+  # S144: tests evaluate alerts and run retention sweeps explicitly (AlertEngine, RetentionSweeper, HistoryPurger).
+  alerts:
+    poll-delay: 1h
+  retention:
+    scheduled: false
+    history-delay: 1h
+    filesystem:
+      root: ${java.io.tmpdir}/orqix-test-run-archives
   mcp:
     # S136 tests: the elicitation stream gives up quickly when a test never answers.
     elicitation-wait: 10s

@@ -37,7 +37,9 @@ public enum Permission {
      * CG-O01 (S142): grant-only, workspace-wide; confirms and controls bulk operations by filter. The single-request
      * rules still apply to every item (run.operate and the action's own checks).
      */
-    RUN_BULK_OPERATE("run.bulk-operate");
+    RUN_BULK_OPERATE("run.bulk-operate"),
+    /** Grant-only, workspace-wide (CG-O06, S144): manage alert rules and destinations, read incidents. */
+    ALERT_MANAGE("alert.manage");
 
     private final String value;
 

@@ -119,13 +119,15 @@ export function userById(id: string): MockUser | undefined {
 
 /** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S74). */
 export const promotionApprovers = new Set<string>()
+/** S144: `${wsId}:${userId}` holding the grant-only alert.manage permission in mock mode. */
+export const alertManagers = new Set<string>()
 
 /** `${workspaceId}:${userId}` pairs that hold the grant-only run.bulk-operate (CG-O01, docs/build/S142). */
 export const bulkOperators = new Set<string>()
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(bulkOperators.has(`${wsId}:${user.id}`) ? ['run.bulk-operate' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(bulkOperators.has(`${wsId}:${user.id}`) ? ['run.bulk-operate' as const] : []), ...(alertManagers.has(`${wsId}:${user.id}`) ? ['alert.manage' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {

@@ -56,6 +56,7 @@ const PERMISSION_HELP: Record<GrantPermission, string> = {
   'ai.approve-skill': 'Can approve AI skill versions and autonomy promotions written by someone else',
   'ai.evaluate': 'Can run AI evaluation suites and read shadow dashboards and the AI review queue',
   'run.bulk-operate': 'Can run and confirm bulk operations on requests by filter (retry, cancel, suspend, resume, move to a release); also needs the operator role',
+  'alert.manage': 'Can manage alert rules and destinations and read alert incidents',
 }
 const PERMISSIONS = Object.keys(PERMISSION_HELP) as GrantPermission[]
 

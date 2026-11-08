@@ -51,6 +51,10 @@ orqix:
   mcp:
     # S136 tests: the elicitation stream gives up quickly when a test never answers.
     elicitation-wait: 10s
+  analytics:
+    # S145: tests run the projector and the KPI evaluation explicitly (AnalyticsProjector.run, KpiEvaluator.evaluate).
+    projector-tick: 1h
+    kpi-check-interval: 1h
   insights:
     # Tests read figures right after changing data, so no figure is kept (production default: 30 seconds).
     cache-ttl-seconds: 0

@@ -272,6 +272,9 @@ public class AuditWriter {
             Map.entry("webhook.subscription-deleted", Set.of("deliveries")),
             Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
             Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
+            // S145: analytics read model (which targets were set, how many runs were queued; never figures or data)
+            Map.entry("analytics.kpi-targets.updated", Set.of("workflowId", "cleared", "targets")),
+            Map.entry("analytics.backfill.requested", Set.of("enqueued", "since")),
             // S133: connector packages and package triggers (ids, versions, hashes and counts; never content or secrets)
             Map.entry("connector.package-imported", Set.of("packageId", "version", "sha256", "signatureStatus", "unsignedOverride", "keyId")),
             Map.entry("connector.package-decided", Set.of("packageId", "version", "sha256", "decision")),

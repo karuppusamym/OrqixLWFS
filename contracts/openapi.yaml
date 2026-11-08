@@ -53,6 +53,7 @@ tags:
   - name: Migration
   - name: Conversation
   - name: Insights
+  - name: Analytics
   - name: Attachments
   - name: FormsLookupGuest
   - name: Cases
@@ -5367,6 +5368,191 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
+
+  # ---------------------------------------------------------------- Analytics (docs/build/S145, CG-N01, CG-N03, CG-N05)
+  /workspaces/{workspaceId}/analytics/heatmap:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Analytics]
+      operationId: getAnalyticsHeatmap
+      summary: Heatmap of one workflow - visits, average and p95 time per step, runs per connection
+      description: |
+        From the analytics read model, never from the run tables. Covers runs started in the range (UTC dates), of one
+        release when `releaseId` is given. Step figures count finished visits; connection figures count runs that used
+        the connection at least once (`share` of the runs started). Node and connection ids are those of the release
+        definition, so the Studio canvas and the run diagram overlay them by id. `freshness` says how current the read
+        model is.
+      x-orqix-permission: run.read
+      parameters:
+        - name: workflowId
+          in: query
+          required: true
+          description: The workflow (404 when it is not in the workspace).
+          schema: { $ref: '#/components/schemas/Uuid' }
+        - name: releaseId
+          in: query
+          description: Limit to one release of the workflow (404 when it is not a release of that workflow).
+          schema: { $ref: '#/components/schemas/Uuid' }
+        - $ref: '#/components/parameters/InsightsFrom'
+        - $ref: '#/components/parameters/InsightsTo'
+      responses:
+        '200':
+          description: Heatmap figures
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsHeatmap' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/analytics/human-work:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Analytics]
+      operationId: getHumanWorkAnalytics
+      summary: Human work - waiting versus working time per step and group, load, SLA attainment, reassignments
+      description: |
+        Tasks that ended in the range, per workflow step and candidate group: waiting time (nobody assigned) and
+        working time (someone assigned), SLA attainment over tasks with a due time, and reassignments. Groups also show
+        their open tasks now, whatever their age. No people, titles or request data. Capped at 200 step rows
+        (`truncated`) and 200 groups.
+      x-orqix-permission: run.read
+      parameters:
+        - $ref: '#/components/parameters/InsightsWorkflowId'
+        - $ref: '#/components/parameters/InsightsFrom'
+        - $ref: '#/components/parameters/InsightsTo'
+      responses:
+        '200':
+          description: Human work figures
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsHumanWork' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/analytics/kpis:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Analytics]
+      operationId: getKpiOverview
+      summary: Business value view - workflows with KPI targets, off-target ones first, ranked by delay cost
+      description: |
+        Workflows with targets, measured over runs completed and tasks ended in the range. A measure with fewer than 5
+        samples is `insufficientData`. `excessHours` is the time completed runs spent over the cycle-time target (the
+        p95 target, else the median target); `delayCost` multiplies it by the workflow's delay cost per hour.
+      x-orqix-permission: run.read
+      parameters:
+        - $ref: '#/components/parameters/InsightsWorkflowId'
+        - $ref: '#/components/parameters/InsightsFrom'
+        - $ref: '#/components/parameters/InsightsTo'
+      responses:
+        '200':
+          description: KPI figures per workflow
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsKpiOverview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/analytics/status:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Analytics]
+      operationId: getAnalyticsStatus
+      summary: How current the analytics read model is - pending and failed updates, last projection
+      x-orqix-permission: run.read
+      responses:
+        '200':
+          description: Read model status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsStatus' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/analytics/backfill:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Analytics]
+      operationId: startAnalyticsBackfill
+      summary: Queue the runs of the workspace (optionally those started since a date) for the analytics read model
+      description: |
+        Adds every run of the workspace to the projection queue, except runs already waiting there; the projector then
+        rebuilds their figures from their timelines. Safe to repeat and to interrupt: the queue survives restarts.
+      x-orqix-permission: run.operate
+      x-orqix-audit: analytics.backfill.requested
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalyticsBackfillRequest' }
+      responses:
+        '202':
+          description: Runs queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsBackfill' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Analytics]
+      operationId: getWorkflowKpiTargets
+      summary: The KPI targets of the workflow (version 0 when none are set)
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Targets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsKpiTargets' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Analytics]
+      operationId: setWorkflowKpiTargets
+      summary: Set all KPI targets of the workflow at once (an absent target is cleared; none clears all)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: analytics.kpi-targets.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalyticsKpiTargetsUpdate' }
+      responses:
+        '200':
+          description: The targets now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsKpiTargets' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---------------------------------------------------------------- end Analytics
 
   /workspaces/{workspaceId}/runs/{runId}/cancel:
     parameters:
@@ -12194,6 +12380,180 @@ components:
         items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InsightsOutsideWait' } }
         totalOpenSeconds: { type: integer, minimum: 0 }
     # ---------------------------------------------------------------- end of Waits
+    # ---------------------------------------------------------------- Analytics (docs/build/S145)
+    AnalyticsFreshness:
+      type: object
+      additionalProperties: false
+      required: [lastProjectedAt, pendingUpdates]
+      description: How current the read model is. Pending updates are counted up to 10000.
+      properties:
+        lastProjectedAt: { type: [string, 'null'], format: date-time }
+        pendingUpdates: { type: integer, minimum: 0, maximum: 10000 }
+    AnalyticsHeatStep:
+      type: object
+      additionalProperties: false
+      required: [nodeId, kind, visits, runs, averageSeconds, p95Seconds, maxSeconds]
+      properties:
+        nodeId: { type: string }
+        kind: { type: string }
+        visits: { type: integer, minimum: 0, description: 'Finished visits (a step visited twice in a run counts twice)' }
+        runs: { type: integer, minimum: 0 }
+        averageSeconds: { type: [integer, 'null'], minimum: 0 }
+        p95Seconds: { type: [integer, 'null'], minimum: 0 }
+        maxSeconds: { type: [integer, 'null'], minimum: 0 }
+    AnalyticsHeatRoute:
+      type: object
+      additionalProperties: false
+      required: [transitionId, runs, share]
+      properties:
+        transitionId: { type: string }
+        runs: { type: integer, minimum: 0 }
+        share: { type: number, minimum: 0, maximum: 1 }
+    AnalyticsHeatmap:
+      type: object
+      additionalProperties: false
+      required: [range, workflowId, releaseId, runs, finishedRuns, steps, routes, freshness]
+      properties:
+        range: { $ref: '#/components/schemas/InsightsRange' }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        releaseId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        runs: { type: integer, minimum: 0, description: Runs started in the range }
+        finishedRuns: { type: integer, minimum: 0 }
+        steps: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/AnalyticsHeatStep' } }
+        routes: { type: array, maxItems: 1000, items: { $ref: '#/components/schemas/AnalyticsHeatRoute' } }
+        freshness: { $ref: '#/components/schemas/AnalyticsFreshness' }
+    AnalyticsHumanStep:
+      type: object
+      additionalProperties: false
+      required: [workflow, nodeId, label, groupKey, groupName, finished, averageWaitingSeconds, p95WaitingSeconds,
+        averageWorkingSeconds, p95WorkingSeconds, slaMet, slaMissed, slaAttainment, reassignments, approximate]
+      properties:
+        workflow: { $ref: '#/components/schemas/InsightsWorkflow' }
+        nodeId: { type: string }
+        label: { type: string }
+        groupKey: { type: string }
+        groupName: { type: [string, 'null'] }
+        finished: { type: integer, minimum: 0 }
+        averageWaitingSeconds: { type: [integer, 'null'], minimum: 0 }
+        p95WaitingSeconds: { type: [integer, 'null'], minimum: 0 }
+        averageWorkingSeconds: { type: [integer, 'null'], minimum: 0 }
+        p95WorkingSeconds: { type: [integer, 'null'], minimum: 0 }
+        slaMet: { type: integer, minimum: 0 }
+        slaMissed: { type: integer, minimum: 0 }
+        slaAttainment: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        reassignments: { type: integer, minimum: 0 }
+        approximate:
+          type: integer
+          minimum: 0
+          description: 'Tasks whose times come from their last claim only, because another task of the same step was open at the same time'
+    AnalyticsHumanGroup:
+      type: object
+      additionalProperties: false
+      required: [groupKey, groupName, openNow, openUnassigned, oldestOpenSeconds, finished, averageWaitingSeconds,
+        averageWorkingSeconds, slaMet, slaMissed, slaAttainment, reassignments]
+      properties:
+        groupKey: { type: string }
+        groupName: { type: [string, 'null'] }
+        openNow: { type: integer, minimum: 0 }
+        openUnassigned: { type: integer, minimum: 0 }
+        oldestOpenSeconds: { type: [integer, 'null'], minimum: 0 }
+        finished: { type: integer, minimum: 0 }
+        averageWaitingSeconds: { type: [integer, 'null'], minimum: 0 }
+        averageWorkingSeconds: { type: [integer, 'null'], minimum: 0 }
+        slaMet: { type: integer, minimum: 0 }
+        slaMissed: { type: integer, minimum: 0 }
+        slaAttainment: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        reassignments: { type: integer, minimum: 0 }
+    AnalyticsHumanWork:
+      type: object
+      additionalProperties: false
+      required: [range, steps, groups, truncated, freshness]
+      properties:
+        range: { $ref: '#/components/schemas/InsightsRange' }
+        steps: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/AnalyticsHumanStep' } }
+        groups: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/AnalyticsHumanGroup' } }
+        truncated: { type: boolean }
+        freshness: { $ref: '#/components/schemas/AnalyticsFreshness' }
+    AnalyticsKpiTargets:
+      type: object
+      additionalProperties: false
+      required: [workflowId, cycleP50Seconds, cycleP95Seconds, automationRate, slaAttainment, delayCostPerHour, currency,
+        version, updatedAt]
+      properties:
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        cycleP50Seconds: { type: [integer, 'null'], minimum: 1, maximum: 31622400 }
+        cycleP95Seconds: { type: [integer, 'null'], minimum: 1, maximum: 31622400 }
+        automationRate: { type: [number, 'null'], minimum: 0, maximum: 1, description: Share of completed runs without a human task }
+        slaAttainment: { type: [number, 'null'], minimum: 0, maximum: 1, description: Share of tasks with a due time finished in time }
+        delayCostPerHour: { type: [number, 'null'], minimum: 0 }
+        currency: { type: [string, 'null'], pattern: '^[A-Z]{3}$' }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { type: [string, 'null'], format: date-time }
+    AnalyticsKpiTargetsUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        cycleP50Seconds: { type: [integer, 'null'], minimum: 1, maximum: 31622400 }
+        cycleP95Seconds: { type: [integer, 'null'], minimum: 1, maximum: 31622400 }
+        automationRate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        slaAttainment: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        delayCostPerHour: { type: [number, 'null'], minimum: 0 }
+        currency: { type: [string, 'null'], pattern: '^[A-Z]{3}$', description: Required with delayCostPerHour }
+        expectedVersion: { type: integer, minimum: 0, description: The version read (0 when none was set) }
+    AnalyticsKpiMeasure:
+      type: object
+      additionalProperties: false
+      required: [measure, target, actual, samples, status, gap]
+      properties:
+        measure: { type: string, enum: [cycleP50, cycleP95, automationRate, slaAttainment] }
+        target: { type: number }
+        actual: { type: [number, 'null'] }
+        samples: { type: integer, minimum: 0 }
+        status: { type: string, enum: [onTarget, offTarget, insufficientData] }
+        gap: { type: [number, 'null'], minimum: 0, description: 'How far the actual figure is on the wrong side of the target (seconds or share)' }
+    AnalyticsKpiWorkflow:
+      type: object
+      additionalProperties: false
+      required: [workflow, targets, measures, offTarget, completedRuns, excessHours, delayCost, currency]
+      properties:
+        workflow: { $ref: '#/components/schemas/InsightsWorkflow' }
+        targets: { $ref: '#/components/schemas/AnalyticsKpiTargets' }
+        measures: { type: array, maxItems: 4, items: { $ref: '#/components/schemas/AnalyticsKpiMeasure' } }
+        offTarget: { type: integer, minimum: 0, maximum: 4 }
+        completedRuns: { type: integer, minimum: 0 }
+        excessHours: { type: number, minimum: 0 }
+        delayCost: { type: [number, 'null'], minimum: 0 }
+        currency: { type: [string, 'null'] }
+    AnalyticsKpiOverview:
+      type: object
+      additionalProperties: false
+      required: [range, items, freshness]
+      properties:
+        range: { $ref: '#/components/schemas/InsightsRange' }
+        items: { type: array, maxItems: 500, items: { $ref: '#/components/schemas/AnalyticsKpiWorkflow' } }
+        freshness: { $ref: '#/components/schemas/AnalyticsFreshness' }
+    AnalyticsStatus:
+      type: object
+      additionalProperties: false
+      required: [pending, failed, oldestPendingAt, lastProjectedAt, projectedRuns]
+      properties:
+        pending: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0, description: Updates that failed 5 times and are no longer retried }
+        oldestPendingAt: { type: [string, 'null'], format: date-time }
+        lastProjectedAt: { type: [string, 'null'], format: date-time }
+        projectedRuns: { type: integer, minimum: 0 }
+    AnalyticsBackfillRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        since: { type: [string, 'null'], format: date, description: Only runs started on or after this UTC date }
+    AnalyticsBackfill:
+      type: object
+      additionalProperties: false
+      required: [enqueued]
+      properties:
+        enqueued: { type: integer, minimum: 0 }
+    # ---------------------------------------------------------------- end Analytics
     # ---------------------------------------------------------------- WaitsAndStarts (docs/build/S139)
     WorkingCalendarContent:
       type: object

@@ -254,6 +254,10 @@ public class WaitReminders {
         tx.executeWithoutResult(status -> outcome(c, run, wait.label(), count, occurrence, result));
     }
 
+    /** Reads adapter configuration (already validated when the adapter was saved). */
+    private static final tools.jackson.databind.json.JsonMapper CONFIG_READER =
+            tools.jackson.databind.json.JsonMapper.builder().build();
+
     /** @return why an address from the request may not be used, or null when the adapter approves its domain */
     static String refusal(String address, AdapterSteps.Fact adapter) {
         Matcher m = EMAIL.matcher(address == null ? "" : address);
@@ -264,7 +268,8 @@ public class WaitReminders {
             return "The adapter no longer exists.";
         }
         Set<String> approved = new java.util.HashSet<>();
-        com.orqix.compiler.internal.json.StrictJson.parse(adapter.configJson()).path("allowedRecipientDomains")
+        String config = adapter.configJson() == null || adapter.configJson().isBlank() ? "{}" : adapter.configJson();
+        CONFIG_READER.readTree(config).path("allowedRecipientDomains")
                 .forEach(d -> approved.add(d.asString().toLowerCase(Locale.ROOT)));
         String domain = m.group(1).toLowerCase(Locale.ROOT);
         return approved.contains(domain) ? null : "The address's domain " + domain + " is not approved by the adapter.";

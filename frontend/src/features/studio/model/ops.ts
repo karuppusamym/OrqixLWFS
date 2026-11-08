@@ -567,8 +567,12 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   file: 'File upload',
 }
 
+/** Kinds operators can search by (CG-O04, S142): not files, lists, times of day or date-times. */
+export const SEARCHABLE_KINDS: ReadonlySet<FieldKind> = new Set(['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'lookup'])
+
 export interface FormFieldModel {
   incidentEditable?: boolean | undefined
+  searchable?: boolean | undefined
   key: string
   label: string
   kind: FieldKind
@@ -623,6 +627,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       required: (def.inputSchema.required ?? []).includes(key),
       help: f.description ?? '',
       incidentEditable: f.incidentEditable === true,
+      searchable: f.searchable === true,
       choices: f.enum ?? (kind === 'checklist' ? f.items?.enum ?? [] : []),
       minimum: f.minimum,
       maximum: f.maximum,
@@ -646,6 +651,7 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
     const schema: Definition['inputSchema']['properties'][string] = { type: 'string', title: f.label || f.key }
     if (f.help.trim()) schema.description = f.help.trim()
     if (f.incidentEditable && f.kind !== 'file' && f.kind !== 'collection') schema.incidentEditable = true
+    if (f.searchable && SEARCHABLE_KINDS.has(f.kind)) schema.searchable = true
     switch (f.kind) {
       case 'collection':
         schema.type = 'array'

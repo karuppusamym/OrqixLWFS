@@ -146,7 +146,29 @@ public class ExternalJobService {
                         json.parse(rs.getString("input")), rs.getInt("fence"), Sql.instant(rs, "lease_expires_at"),
                         rs.getInt("attempt"), rs.getInt("max_attempts"), rs.getString("reference"), rs.getString("node_id")))
                 .list();
+        seen(workspaceId, request.topics(), request.workerId(), now);
         return new ExternalJobDtos.JobBatch(items);
+    }
+
+    private static final java.util.regex.Pattern TOPIC = java.util.regex.Pattern.compile("^[a-z][a-z0-9-]{0,62}[a-z0-9]$");
+
+    /** CG-O05 (S142): when the worker last asked for each topic, written at most once a minute per worker and topic. */
+    private void seen(UUID workspaceId, List<String> topics, String workerId, Instant now) {
+        if (workerId == null || workerId.isBlank() || workerId.length() > 100 || topics == null) {
+            return;
+        }
+        for (String topic : topics.stream().distinct().limit(20).toList()) {
+            if (topic == null || !TOPIC.matcher(topic).matches()) {
+                continue;
+            }
+            jdbc.sql("""
+                    INSERT INTO external_worker_seen (workspace_id, topic, worker_id, last_seen_at)
+                    VALUES (:ws, :topic, :worker, :now)
+                    ON CONFLICT (workspace_id, topic, worker_id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+                    WHERE external_worker_seen.last_seen_at < EXCLUDED.last_seen_at - interval '60 seconds'
+                    """).param("ws", workspaceId).param("topic", topic).param("worker", workerId)
+                    .param("now", Sql.ts(now)).update();
+        }
     }
 
     @Transactional
@@ -343,7 +365,8 @@ public class ExternalJobService {
                 jdbc.sql("UPDATE external_job SET error_code = :code WHERE workspace_id = :ws AND id = :id")
                         .param("code", errorCode).param("ws", workspaceId).param("id", jobId).update();
             }
-            exhaust(workspaceId, run, job, errorCode == null ? message : truncate(errorCode + ": " + message), now);
+            exhaust(workspaceId, run, job, errorCode == null ? message : truncate(errorCode + ": " + message), now,
+                    errorCode);
         }
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("topic", job.topic());
@@ -603,6 +626,11 @@ public class ExternalJobService {
 
     /** Attempts are used up (or the worker said the failure is final): the request needs an operator. */
     private void exhaust(UUID workspaceId, RunStore.RunRow run, Job job, String message, Instant now) {
+        exhaust(workspaceId, run, job, message, now, null);
+    }
+
+    private void exhaust(UUID workspaceId, RunStore.RunRow run, Job job, String message, Instant now,
+            String errorCode) {
         // The input stays until an operator decides, so a retry can run the same job again.
         jdbc.sql("""
                 UPDATE external_job SET status = 'failed', worker_id = NULL, lease_expires_at = NULL, last_error = :error,
@@ -613,6 +641,9 @@ public class ExternalJobService {
         ObjectNode attention = json.object();
         attention.put("reason", "RETRIES_EXHAUSTED");
         attention.put("nodeId", job.nodeId());
+        if (errorCode != null) {
+            attention.put("errorCode", errorCode); // CG-O04 (S142): the run list filters by it
+        }
         attention.putNull("effectId");
         attention.put("message", hasCallback(job.workspaceId(), job.id(), job.fence())
                 ? "The asynchronous work did not complete. Check the remote outcome before authorizing another dispatch."

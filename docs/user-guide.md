@@ -389,3 +389,16 @@ the step list under *From workspace templates* by name or by what it does (for e
 **Approvers.** When your workspace has actionable tasks on, a task can reach you by email, Teams or Slack with Open,
 Claim, Approve and Reject. Nothing happens until you confirm, and the same rules apply as on the task page. An email
 link works only for you and that task and expires. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).
+
+## Bulk actions, searching by request fields and the operations dashboard (operators) - 8 November 2026
+
+**Designers.** Mark up to ten request questions *searchable* (text, choice, number, yes/no or date) so operators can
+find requests by their answers. It does not change how the workflow runs.
+
+**Operators.** On the Runs page, choose a workflow to filter by its searchable questions (with request-data access), or
+type an error code to find requests stuck on the same error. With the extra permission *run.bulk-operate*, *Bulk action
+on these runs* retries, cancels, suspends, resumes or moves to a release every request the filters match: a dry run
+shows exactly how many and which requests; you type that number and a reason to start. At most 1,000 requests change
+in one operation, at the speed you chose; each one gets the usual checks, a request that no longer matches is skipped,
+and you can pause, resume or cancel the rest. Settings → Operations shows worker job queues, checks that wait on other
+systems, package trigger delays and connection errors. Details: [S142](build/S142-bulk-search-job-dashboard.md).

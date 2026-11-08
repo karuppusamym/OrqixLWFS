@@ -394,3 +394,13 @@ from an unlinked account does nothing. Point Slack interactivity at `/api/v1/wor
 and the Teams outgoing webhook at `/api/v1/workspaces/<id>/task-actions/teams/interactions`. Recent messages show
 who was sent what channel, or why nothing was sent. In this build messages go to local stubs only; live mail servers
 and tenants are an external step. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).
+
+## Bulk operations and the operations dashboard - 8 November 2026
+
+`run.bulk-operate` is grant-only and workspace-wide (Settings → Members and groups → Grants); bulk operations also need
+the operator role (`run.operate`), and each request is changed with the confirmer's own permissions at that moment, so
+revoking either stops a running batch. Limits: `orqix.bulk.max-items` (default 1,000, at most 10,000 per operation),
+`orqix.bulk.default-rate-per-minute` (60), `orqix.bulk.poll-delay` (2 s). Every dry run, start, pause, resume, cancel
+and end is audited (`run.bulk-*`), and each changed request keeps its usual audit record and timeline entry with the
+reason. Settings → Operations (`run.operate`) reads counts only; connection call figures need `connection.read`.
+Details: [S142](build/S142-bulk-search-job-dashboard.md).

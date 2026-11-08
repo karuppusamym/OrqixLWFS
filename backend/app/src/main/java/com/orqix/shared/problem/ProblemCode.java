@@ -73,6 +73,14 @@ public enum ProblemCode {
     FEATURE_DISABLED(409, "This part of Orqix is switched off in this workspace"),
     /** S134: the AI skill version, promotion or evaluation is not in a state that allows this. */
     AI_SKILL_STATE_CONFLICT(409, "The AI skill is not in a state that allows this"),
+    /** S142 (CG-O01): the confirmed count differs from the count the dry run showed. */
+    BULK_COUNT_MISMATCH(409, "The confirmed count does not match the dry run"),
+    /** S142: the dry run is older than its validity; run it again. */
+    BULK_PREVIEW_EXPIRED(409, "The dry run has expired; run it again"),
+    /** S142: the bulk operation is not in a state that allows this (or changed since it was loaded). */
+    BULK_OPERATION_STATE_CONFLICT(409, "The bulk operation is not in a state that allows this"),
+    /** S142: the filter matches more requests than one bulk operation may change. */
+    BULK_LIMIT_EXCEEDED(422, "The filter matches more requests than one bulk operation may change"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

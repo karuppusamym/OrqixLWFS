@@ -16,6 +16,7 @@ import { createPackageHandlers } from './connectorPackages'
 import { createFeatureHandlers } from './features'
 import { createMcpServerHandlers } from './mcpServer'
 import { createTaskActionHandlers } from './taskActions'
+import { createBulkHandlers } from './bulk'
 import { createAgentWriteHandlers } from './agentWrites'
 import { createAgentToolHandlers } from './agentTools'
 import { createCaseFileHandlers } from './caseFiles'
@@ -84,7 +85,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
+  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createBulkHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)

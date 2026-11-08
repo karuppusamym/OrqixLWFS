@@ -56,7 +56,7 @@ import {
 // Access (Settings → Members and groups): seeded memberships plus the changes an administrator made -------------------
 
 const ROLE_KEYS = ['WORKSPACE_ADMIN', 'WORKFLOW_DESIGNER', 'PUBLISHER', 'OPERATOR', 'VIEWER', 'APPROVER']
-const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate']
+const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate']
 
 function edits(): NonNullable<typeof db.accessEdits> {
   return (db.accessEdits ??= { roleBindings: [], grants: [], removed: [], groups: [] })
@@ -112,6 +112,21 @@ export function getCurrentUser(): MockUser {
 }
 
 // Response helpers ----------------------------------------------------------------------------------------
+
+/** S142: key:op:value against request data (text ignores case). */
+export function matchesCondition(input: Record<string, unknown>, raw: string): boolean {
+  const [key = '', op = '', ...rest] = raw.split(':')
+  const want = rest.join(':')
+  const value = input[key]
+  if (value === undefined || value === null) return false
+  if (typeof value === 'number') {
+    const n = Number(want)
+    return op === 'gte' ? value >= n : op === 'lte' ? value <= n : value === n
+  }
+  const text = String(value).toLowerCase()
+  const w = want.toLowerCase()
+  return op === 'prefix' ? text.startsWith(w) : op === 'gte' ? text >= w : op === 'lte' ? text <= w : text === w
+}
 
 function problem(status: number, code: ProblemCode, title: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}): Response {
   return HttpResponse.json(
@@ -1351,6 +1366,14 @@ export function createHandlers(): HttpHandler[] {
       if (workflowId) runs = runs.filter((r) => r.workflowId === workflowId)
       if (outcomeKind) runs = runs.filter((r) => r.outcomeKind === outcomeKind)
       if (key) runs = runs.filter((r) => r.businessKey === key || r.reference === key)
+      // S142: error-code and searchable-field filters (field conditions need run.read-data, like the server).
+      const errorCode = url.searchParams.get('errorCode')
+      if (errorCode) runs = runs.filter((r) => r.lifecycle === 'needsAttention' && (r.attention as { errorCode?: string } | null)?.errorCode === errorCode)
+      const conditions = url.searchParams.getAll('field')
+      if (conditions.length) {
+        if (!permissionsOf(g.user, str(params.ws)).includes('run.read-data')) return problem(403, 'FORBIDDEN', 'You are not allowed to do this')
+        runs = runs.filter((r) => conditions.every((c) => matchesCondition(r.input, c)))
+      }
       runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const page = paginate(runs, url)
       return HttpResponse.json({ items: page.items.map((r) => toRun(r, g.user)), nextCursor: page.nextCursor })

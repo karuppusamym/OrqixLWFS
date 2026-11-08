@@ -415,6 +415,11 @@ export interface RunListQuery {
   lifecycle?: Lifecycle
   outcomeKind?: OutcomeKind
   businessKey?: string
+  overdue?: boolean
+  /** S142: searchable request field conditions key:op:value (need workflowId and run.read-data). */
+  field?: string[]
+  attentionReason?: S['AttentionReason']
+  errorCode?: string
   cursor?: string
   limit?: number
 }

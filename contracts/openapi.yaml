@@ -59,6 +59,7 @@ tags:
   - name: Views
   - name: McpServer
   - name: TaskActions
+  - name: BulkAndSearch
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -4745,6 +4746,24 @@ paths:
           in: query
           description: true lists only runs with a stage that is past its due time (docs/build/S17).
           schema: { type: boolean }
+        - name: field
+          in: query
+          description: |
+            CG-O04 (docs/build/S142): conditions on the workflow's searchable request fields, written key:op:value
+            with op eq or prefix (text), eq, gte or lte (numbers and dates YYYY-MM-DD) and eq:true or eq:false (yes/no).
+            Text matches ignore case. Needs workflowId and run.read-data; at most 5 (422 on unknown fields or values of
+            the wrong type). See listSearchableFields.
+          style: form
+          explode: true
+          schema: { type: array, maxItems: 5, items: { type: string, minLength: 3, maxLength: 270 } }
+        - name: attentionReason
+          in: query
+          description: Only runs that need attention for this reason (S142).
+          schema: { $ref: '#/components/schemas/AttentionReason' }
+        - name: errorCode
+          in: query
+          description: Only runs that need attention with this error code of the failed step (S142).
+          schema: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,63}$' }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -4753,6 +4772,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RunPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -8276,6 +8297,263 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---------------------------------------------------------------- end of S141 TaskActions paths
 
+  # ---------------------------------------------------------------- S142 BulkAndSearch paths (CG-O01, CG-O04, CG-O05)
+  /workspaces/{workspaceId}/workflows/{workflowId}/searchable-fields:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [BulkAndSearch]
+      operationId: listSearchableFields
+      summary: The request fields operators can filter this workflow's runs by (CG-O04, S142)
+      description: |
+        Fields marked `searchable` in the request form of the workflow's latest releases (the newest release wins for
+        title and kind). Filtering by them with `listRuns?field=` also needs run.read-data.
+      x-orqix-permission: run.read
+      responses:
+        '200':
+          description: The searchable fields
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchableFieldList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/bulk-operations/preview:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [BulkAndSearch]
+      operationId: previewBulkOperation
+      summary: Dry run of a bulk operation by filter, with the exact count and a sample (CG-O01, S142)
+      description: |
+        Selects the runs that match the filter (the listRuns filters; it must narrow the runs) and the action's state
+        rule: retry needs attention, cancel and suspend are active (suspend: not suspended), resume is suspended,
+        migrate is an active run of the filter's workflow on another release. The exact matching runs are stored with
+        the operation, up to the cap (default 1,000); a dry run that matches more stores none and cannot be executed.
+        Field conditions also need run.read-data. The dry run is valid for 15 minutes and changes no request.
+      x-orqix-permission: run.operate + run.bulk-operate
+      x-orqix-audit: run.bulk-previewed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkOperationPreviewRequest' }
+      responses:
+        '201':
+          description: The dry run with its count and the first matching runs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/bulk-operations:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [BulkAndSearch]
+      operationId: listBulkOperations
+      summary: Bulk operations of the workspace, newest first (S142)
+      x-orqix-permission: run.operate
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of bulk operations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperationPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [BulkAndSearch]
+      operationId: getBulkOperation
+      summary: One bulk operation with its progress and first items (S142)
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: The bulk operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/items:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [BulkAndSearch]
+      operationId: listBulkOperationItems
+      summary: Per-request results of a bulk operation, in dry-run order (S142)
+      x-orqix-permission: run.operate
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [pending, succeeded, failed, skipped, cancelled] } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperationItemPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/execute:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [BulkAndSearch]
+      operationId: executeBulkOperation
+      summary: Confirm the dry run's count and start the background batch (S142)
+      description: |
+        Only the person who ran the dry run, within 15 minutes, with `confirmedCount` equal to the count it showed
+        (409 BULK_COUNT_MISMATCH), a reason and an idempotency key. 422 BULK_LIMIT_EXCEEDED when the dry run matched
+        more than the cap; 409 BULK_PREVIEW_EXPIRED after 15 minutes. The batch acts only on the dry run's runs, one
+        at a time at the operation's rate, through the single-request operation with the confirmer's permissions and
+        its own idempotency key per request. A run that no longer matches when its turn comes is skipped.
+      x-orqix-permission: run.operate + run.bulk-operate
+      x-orqix-audit: run.bulk-started
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkOperationExecuteRequest' }
+      responses:
+        '200':
+          description: The running bulk operation (or a replay, marked with the Idempotent-Replayed header)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/pause:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [BulkAndSearch]
+      operationId: pauseBulkOperation
+      summary: Pause a running bulk operation after the item in progress (S142)
+      x-orqix-permission: run.operate + run.bulk-operate
+      x-orqix-audit: run.bulk-paused
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkOperationControlRequest' }
+      responses:
+        '200':
+          description: The paused bulk operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [BulkAndSearch]
+      operationId: resumeBulkOperation
+      summary: Continue a paused bulk operation (only the person who confirmed it) (S142)
+      x-orqix-permission: run.operate + run.bulk-operate
+      x-orqix-audit: run.bulk-resumed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkOperationControlRequest' }
+      responses:
+        '200':
+          description: The running bulk operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bulkOperationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [BulkAndSearch]
+      operationId: cancelBulkOperation
+      summary: Cancel the remaining items of a bulk operation or discard a dry run (S142)
+      description: Requests already changed stay changed; pending items end as cancelled.
+      x-orqix-permission: run.operate + run.bulk-operate
+      x-orqix-audit: run.bulk-cancelled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkOperationControlRequest' }
+      responses:
+        '200':
+          description: The cancelled bulk operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkOperation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/job-dashboard:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [BulkAndSearch]
+      operationId: getJobDashboard
+      summary: External job queues, polling checks, package trigger lag and connection volume (CG-O05, S142)
+      description: |
+        Counts, times and codes only. `connections` (calls and errors per connection from the S131 health) is present
+        only when the caller also holds connection.read.
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: The dashboard
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobDashboard' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ---------------------------------------------------------------- end of S142 BulkAndSearch paths
+
   /workspaces/{workspaceId}/mcp-server:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -8425,7 +8703,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -12868,6 +13146,7 @@ components:
         - connector.approve
         - ai.approve-skill
         - ai.evaluate
+        - run.bulk-operate
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -13264,6 +13543,10 @@ components:
             - AI_PROVIDER_UNAVAILABLE
             - AI_BUDGET_EXCEEDED
             - AI_SKILL_STATE_CONFLICT
+            - BULK_COUNT_MISMATCH
+            - BULK_PREVIEW_EXPIRED
+            - BULK_OPERATION_STATE_CONFLICT
+            - BULK_LIMIT_EXCEEDED
             - SOURCE_INVALID
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
@@ -13588,6 +13871,187 @@ components:
         shared: { type: boolean }
         status: { type: string, enum: [active, archived] }
     # -------------------------------------------------------------- end of S141 TaskActions schemas
+    # ---------------------------------------------------------------- S142 BulkAndSearch schemas
+    SearchableField:
+      type: object
+      required: [key, title, kind, options]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        kind: { type: string, enum: [text, choice, number, integer, boolean, date] }
+        options: { type: array, items: { type: string }, description: 'Choices of a choice field' }
+    SearchableFieldList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/SearchableField' } }
+    BulkRunFilter:
+      type: object
+      additionalProperties: false
+      description: 'The listRuns filters. At least one of workflowId, businessKey, createdFrom, createdTo, overdue, attentionReason, errorCode or fields is required.'
+      properties:
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        lifecycle: { $ref: '#/components/schemas/Lifecycle' }
+        businessKey: { type: string, minLength: 1, maxLength: 100 }
+        createdFrom: { $ref: '#/components/schemas/Timestamp' }
+        createdTo: { $ref: '#/components/schemas/Timestamp' }
+        overdue: { type: boolean }
+        fields:
+          type: array
+          maxItems: 5
+          description: 'Searchable field conditions written key:op:value (op eq, prefix, gte or lte); need workflowId and run.read-data'
+          items: { type: string, minLength: 3, maxLength: 270 }
+        attentionReason: { $ref: '#/components/schemas/AttentionReason' }
+        errorCode: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,63}$' }
+    BulkOperationPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [action, filter]
+      properties:
+        action: { type: string, enum: [retry, cancel, suspend, resume, migrate] }
+        filter: { $ref: '#/components/schemas/BulkRunFilter' }
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        ratePerMinute: { type: integer, minimum: 1, maximum: 600, description: 'Requests changed per minute (default 60)' }
+    BulkOperationExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmedCount, reason]
+      properties:
+        confirmedCount: { type: integer, minimum: 0, description: 'Must equal the matchedCount of the dry run' }
+        reason: { type: string, minLength: 1, maxLength: 450 }
+    BulkOperationControlRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+    BulkOperationProgress:
+      type: object
+      required: [total, pending, succeeded, failed, skipped, cancelled]
+      properties:
+        total: { type: integer, minimum: 0 }
+        pending: { type: integer, minimum: 0 }
+        succeeded: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        skipped: { type: integer, minimum: 0 }
+        cancelled: { type: integer, minimum: 0 }
+    BulkOperationItem:
+      type: object
+      required: [runId, reference, position, state, errorCode, message, finishedAt]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: string }
+        position: { type: integer, minimum: 1 }
+        state: { type: string, enum: [pending, succeeded, failed, skipped, cancelled] }
+        errorCode: { type: [string, 'null'], description: 'Problem code of a failed item; NO_LONGER_MATCHES for a skipped one' }
+        message: { type: [string, 'null'] }
+        finishedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    BulkOperation:
+      type: object
+      required: [id, action, state, filter, targetRelease, matchedCount, cap, exceedsCap, ratePerMinute, reason, stopReason, createdBy, createdAt, previewExpiresAt, startedAt, finishedAt, progress, sample, version]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        action: { type: string, enum: [retry, cancel, suspend, resume, migrate] }
+        state: { type: string, enum: [previewed, running, paused, completed, cancelled] }
+        filter: { $ref: '#/components/schemas/BulkRunFilter' }
+        targetRelease:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, releaseNumber]
+              properties:
+                id: { $ref: '#/components/schemas/Uuid' }
+                releaseNumber: { type: integer }
+        matchedCount: { type: integer, minimum: 0, description: 'Exact number of runs the dry run matched' }
+        cap: { type: integer, minimum: 1 }
+        exceedsCap: { type: boolean }
+        ratePerMinute: { type: integer }
+        reason: { type: [string, 'null'] }
+        stopReason: { type: [string, 'null'] }
+        createdBy: { $ref: '#/components/schemas/SubjectRef' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        previewExpiresAt: { $ref: '#/components/schemas/Timestamp' }
+        startedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        finishedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        progress: { $ref: '#/components/schemas/BulkOperationProgress' }
+        sample: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/BulkOperationItem' }, description: 'First items in dry-run order (empty in lists)' }
+        version: { type: integer, minimum: 1 }
+    BulkOperationPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BulkOperation' } }
+        nextCursor: { type: [string, 'null'] }
+    BulkOperationItemPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BulkOperationItem' } }
+        nextCursor: { type: [string, 'null'] }
+    JobQueue:
+      type: object
+      required: [topic, available, locked, failedLastDay, oldestAvailableAt, oldestAgeSeconds, workerLastSeenAt, workersSeenLastHour]
+      properties:
+        topic: { type: string }
+        available: { type: integer, minimum: 0 }
+        locked: { type: integer, minimum: 0 }
+        failedLastDay: { type: integer, minimum: 0 }
+        oldestAvailableAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        oldestAgeSeconds: { type: [integer, 'null'] }
+        workerLastSeenAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        workersSeenLastHour: { type: integer, minimum: 0 }
+    PollCheckSummary:
+      type: object
+      required: [connectionKey, operation, waiting, checking, needsAttention, lateChecks, nextCheckAt, lastCheckedAt]
+      properties:
+        connectionKey: { type: string }
+        operation: { type: string }
+        waiting: { type: integer, minimum: 0 }
+        checking: { type: integer, minimum: 0 }
+        needsAttention: { type: integer, minimum: 0 }
+        lateChecks: { type: integer, minimum: 0, description: 'Checks due more than a minute ago' }
+        nextCheckAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        lastCheckedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    PackageTriggerLag:
+      type: object
+      required: [id, packageId, triggerKey, kind, enabled, lastRunAt, lastSuccessAt, lagSeconds, lastErrorCode, deadLastDay, nextRunAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        packageId: { type: string }
+        triggerKey: { type: string }
+        kind: { type: string, enum: [webhook, poll] }
+        enabled: { type: boolean }
+        lastRunAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        lastSuccessAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        lagSeconds: { type: [integer, 'null'], description: 'Poll triggers: how far the last poll was behind the newest record' }
+        lastErrorCode: { type: [string, 'null'] }
+        deadLastDay: { type: integer, minimum: 0 }
+        nextRunAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    ConnectionVolume:
+      type: object
+      required: [connectionKey, name, bound, callsLastHour, successRateLastHour, callsLastDay, failedLastDay, lastErrorCode, circuitState, notices]
+      properties:
+        connectionKey: { type: string }
+        name: { type: string }
+        bound: { type: boolean }
+        callsLastHour: { type: integer, minimum: 0 }
+        successRateLastHour: { type: [number, 'null'] }
+        callsLastDay: { type: integer, minimum: 0 }
+        failedLastDay: { type: integer, minimum: 0 }
+        lastErrorCode: { type: [string, 'null'] }
+        circuitState: { type: string, enum: [closed, open, halfOpen] }
+        notices: { type: integer, minimum: 0 }
+    JobDashboard:
+      type: object
+      required: [jobQueues, pollChecks, packageTriggers, asOf]
+      properties:
+        jobQueues: { type: array, items: { $ref: '#/components/schemas/JobQueue' } }
+        pollChecks: { type: array, items: { $ref: '#/components/schemas/PollCheckSummary' } }
+        packageTriggers: { type: array, items: { $ref: '#/components/schemas/PackageTriggerLag' } }
+        connections: { type: array, items: { $ref: '#/components/schemas/ConnectionVolume' }, description: 'Only with connection.read' }
+        asOf: { $ref: '#/components/schemas/Timestamp' }
+    # ---------------------------------------------------------------- end of S142 BulkAndSearch schemas
     McpServer:
       type: object
       additionalProperties: false
@@ -14793,13 +15257,15 @@ components:
       type: object
       required: [reason, nodeId, message, since]
       properties:
-        reason:
-          type: string
-          enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR, RUN_WAITING_ON_NOTHING]
+        reason: { $ref: '#/components/schemas/AttentionReason' }
         nodeId: { type: [string, 'null'] }
         effectId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         message: { type: string, description: 'Business-readable, redacted' }
         since: { $ref: '#/components/schemas/Timestamp' }
+        errorCode: { type: string, description: 'S142: the error code the failed step reported; omitted when it reported none. listRuns filters by it.' }
+    AttentionReason:
+      type: string
+      enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR, RUN_WAITING_ON_NOTHING]
     Run:
       type: object
       required: [id, workflow, release, initiator, lifecycle, outcome, outcomeKind, currentSteps, attention, createdAt, updatedAt, endedAt, isTest, version]
@@ -16635,7 +17101,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

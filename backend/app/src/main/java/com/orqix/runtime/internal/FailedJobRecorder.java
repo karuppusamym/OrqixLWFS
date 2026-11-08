@@ -123,6 +123,9 @@ public class FailedJobRecorder {
         }
         attention.put("message", message == null ? reason : message);
         attention.put("since", now.toString());
+        if (failure != null && failure.errorCode() != null) {
+            attention.put("errorCode", failure.errorCode()); // CG-O04 (S142): the run list filters by it
+        }
         runs.mutate(f.workspaceId(), f.runId(), m -> {
             m.lifecycle = RunStore.NEEDS_ATTENTION;
             m.attention = attention;

@@ -43,6 +43,10 @@ public class RuntimeController {
 
     private static final Set<String> LIFECYCLES = Set.of("running", "waiting", "needsAttention", "completed", "cancelled");
 
+    /** OpenAPI {@code Attention.reason}. */
+    public static final Set<String> ATTENTION_REASONS = Set.of("RETRIES_EXHAUSTED", "EFFECT_UNKNOWN", "EFFECT_REJECTED",
+            "RESPONSE_INVALID", "CONNECTION_UNAVAILABLE", "POLICY_DENIED", "INTERNAL_ERROR", "RUN_WAITING_ON_NOTHING");
+
     private final CallerResolver callers;
     private final RunService runs;
     private final TaskService tasks;
@@ -84,6 +88,8 @@ public class RuntimeController {
             @RequestParam(required = false) String lifecycle, @RequestParam(required = false) String outcomeKind,
             @RequestParam(required = false) String businessKey, @RequestParam(required = false) String createdFrom,
             @RequestParam(required = false) String createdTo, @RequestParam(required = false) Boolean overdue,
+            @RequestParam(required = false) List<String> field, @RequestParam(required = false) String attentionReason,
+            @RequestParam(required = false) String errorCode,
             @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
         if (lifecycle != null && !LIFECYCLES.contains(lifecycle)) {
             throw ApiException.malformed("Unknown lifecycle.");
@@ -94,9 +100,16 @@ public class RuntimeController {
         if (businessKey != null && businessKey.length() > 100) {
             throw ApiException.malformed("businessKey is too long.");
         }
+        if (attentionReason != null && !ATTENTION_REASONS.contains(attentionReason)) {
+            throw ApiException.malformed("Unknown attentionReason.");
+        }
+        if (errorCode != null && !errorCode.matches("^[A-Z][A-Z0-9_]{1,63}$")) {
+            throw ApiException.malformed("errorCode is upper case letters, digits and underscores.");
+        }
         RunQueries.Filter filter = new RunQueries.Filter(workflowId, lifecycle, outcomeKind, businessKey,
-                instant(createdFrom), instant(createdTo), null, Boolean.TRUE.equals(overdue));
-        return runs.listRuns(callers.current(), workspaceId, filter, cursor, limit);
+                instant(createdFrom), instant(createdTo), null, Boolean.TRUE.equals(overdue), List.of(),
+                attentionReason, errorCode);
+        return runs.listRuns(callers.current(), workspaceId, filter, field, cursor, limit);
     }
 
     @GetMapping("/runs/{runId}")

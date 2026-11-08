@@ -179,10 +179,13 @@ public class RunStore {
     private final org.springframework.beans.factory.ObjectProvider<RunStages> stages;
     private final RunReferences references;
     private final org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates;
+    private final org.springframework.beans.factory.ObjectProvider<RunSearchIndex> searchIndex;
 
     public RunStore(JdbcClient jdbc, Json json, Clock clock,
             org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references,
-            org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates) {
+            org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates,
+            org.springframework.beans.factory.ObjectProvider<RunSearchIndex> searchIndex) {
+        this.searchIndex = searchIndex;
         this.waitStates = waitStates;
         this.references = references;
         this.jdbc = jdbc;
@@ -209,6 +212,15 @@ public class RunStore {
                 .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(input))
                 .param("now", Sql.ts(now))
                 .update();
+        reindex(workspaceId, id);
+    }
+
+    /** CG-O04 (S142): searchable request fields follow every change of the request data in the same transaction. */
+    private void reindex(UUID workspaceId, UUID runId) {
+        RunSearchIndex index = searchIndex.getIfAvailable();
+        if (index != null) {
+            index.refresh(workspaceId, runId);
+        }
     }
 
     /**
@@ -297,9 +309,11 @@ public class RunStore {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInput(UUID workspaceId,UUID runId,int version,JsonNode input) {
-        return jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle='needsAttention' RETURNING version")
+        int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle='needsAttention' RETURNING version")
                 .param("input",json.write(input)).param("now",Sql.ts(clock.instant())).param("ws",workspaceId).param("run",runId).param("version",version)
                 .query(Integer.class).optional().orElseThrow(()->new IllegalStateException("Locked correction version changed"));
+        reindex(workspaceId, runId);
+        return next;
     }
 
     /** Points the request at another release of its workflow (docs/build/S38); the caller has migrated the engine. */
@@ -307,14 +321,17 @@ public class RunStore {
     public void setRelease(UUID workspaceId, UUID runId, UUID releaseId) {
         jdbc.sql("UPDATE workflow_run SET release_id = :release WHERE workspace_id = :ws AND id = :id")
                 .param("release", releaseId).param("ws", workspaceId).param("id", runId).update();
+        reindex(workspaceId, runId);
     }
 
     /** Corrects the request data of a running or waiting request (an approver's correction, docs/build/S42). */
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInputWhileActive(UUID workspaceId, UUID runId, int version, JsonNode input) {
-        return jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
+        int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
                 .param("input", json.write(input)).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
                 .query(Integer.class).optional().orElseThrow(() -> new IllegalStateException("Locked correction version changed"));
+        reindex(workspaceId, runId);
+        return next;
     }
 
     /** Locks the run, applies {@code change} and writes the projection columns back with {@code version + 1}. */

@@ -65,13 +65,15 @@ public class RunService {
     private final RunSuspensions suspensions;
     private final RunQuota quota;
     private final FormLookups lookups;
+    private final RunSearchIndex searchIndex;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
             RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota,
-            FormLookups lookups) {
+            FormLookups lookups, RunSearchIndex searchIndex) {
+        this.searchIndex = searchIndex;
         this.lookups = lookups;
         this.quota = quota;
         this.suspensions = suspensions;
@@ -263,9 +265,39 @@ public class RunService {
     @Transactional(readOnly = true)
     public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter, String cursor,
             Integer limit) {
+        return listRuns(caller, workspaceId, filter, List.of(), cursor, limit);
+    }
+
+    /**
+     * The run list (run.read). Conditions on searchable request fields (CG-O04, S142) read request data and so also
+     * need run.read-data; they are checked against the workflow's searchable fields after the workspace check.
+     */
+    @Transactional(readOnly = true)
+    public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter,
+            List<String> fieldConditions, String cursor, Integer limit) {
         WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
         policy.require(access, Permission.RUN_READ, "listRuns", false);
+        if (fieldConditions != null && !fieldConditions.isEmpty()) {
+            policy.require(access, Permission.RUN_READ_DATA, "listRuns", false);
+            filter = withFields(filter, searchIndex.parse(workspaceId, filter.workflowId(), fieldConditions));
+        }
         return page(access, filter, cursor, limit, "listRuns");
+    }
+
+    static RunQueries.Filter withFields(RunQueries.Filter f, List<RunSearchIndex.Condition> fields) {
+        return new RunQueries.Filter(f.workflowId(), f.lifecycle(), f.outcomeKind(), f.businessKey(), f.createdFrom(),
+                f.createdTo(), f.initiator(), f.overdue(), fields, f.attentionReason(), f.errorCode());
+    }
+
+    /** CG-O04: the searchable request fields of a workflow, for filter forms (run.read). */
+    @Transactional(readOnly = true)
+    public List<RunSearchIndex.Field> searchableFields(Caller caller, UUID workspaceId, UUID workflowId) {
+        WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
+        if (releases.workflow(workspaceId, workflowId).isEmpty()) {
+            throw ApiException.notFound();
+        }
+        policy.require(access, Permission.RUN_READ, "listSearchableFields", false);
+        return searchIndex.forWorkflow(workspaceId, workflowId);
     }
 
     @Transactional(readOnly = true)

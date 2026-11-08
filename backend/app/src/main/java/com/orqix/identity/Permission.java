@@ -32,7 +32,12 @@ public enum Permission {
     /** Grant-only (S134): approve AI skill versions and promotions written by someone else. */
     AI_APPROVE_SKILL("ai.approve-skill"),
     /** Grant-only (S134): run AI evaluation suites, read shadow dashboards and the AI review queue. */
-    AI_EVALUATE("ai.evaluate");
+    AI_EVALUATE("ai.evaluate"),
+    /**
+     * CG-O01 (S142): grant-only, workspace-wide; confirms and controls bulk operations by filter. The single-request
+     * rules still apply to every item (run.operate and the action's own checks).
+     */
+    RUN_BULK_OPERATE("run.bulk-operate");
 
     private final String value;
 

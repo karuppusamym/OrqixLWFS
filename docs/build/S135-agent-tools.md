@@ -94,7 +94,7 @@ Sampling refusal and elicitation decline: `AgentToolServersTest.samplingIsRefuse
 
 ## 6. Verification
 
-Recorded in section 8 at the end of the change.
+See section 8.
 
 ## 7. Not in this slice
 
@@ -105,6 +105,15 @@ Recorded in section 8 at the end of the change.
 - Test suites shared with AI skills (CG-A02), browser journeys and Docker-stack runs.
 - A Flowable job per turn is reused through deferral; Flowable logs each deferral at ERROR level in one line (as for S131 deferrals).
 
-## 8. Evidence
+## 8. Evidence - 5 and 6 November 2026
 
-See the change's commit message and the coordinator notes for the executed suites.
+All runs in this worktree (JDK 21, Testcontainers PostgreSQL and Flowable, WireMock model and MCP stub, no live keys).
+
+- Full `backend/mvnw -o clean verify`: compiler **884/884** pass. Application **1,259 run, 2 failed, 5 skipped**:
+  - `SecretIsolationTest`: `listConnections` returned kind `mcpServer`, which the OpenAPI `kind` enum of the connection list did not allow. Fixed (enum and description); the class then passes alone.
+  - `SecurityMatrixTest.tSec01_tSec11…`: the row-count snapshot changed during the calls because a run left by an earlier test class advanced in the background (one effect, three run events, one reminder; no agent row). It passes alone (8/8). Recorded as an accumulation-dependent test assumption, not as fixed.
+  - Because of these failures, the coverage gate and packaging did not run; a full rerun after the enum fix was not done.
+- New backend classes: `McpClientTest` 15 (3 new), `AgentToolServersTest` 9, `AgentLoopTest` 5, `AgentTraceAndTestsTest` 3. Existing S13/S75 agent classes (63 tests) and `ArchitectureTest` (6) pass.
+- `tools/contract-check/contract_check.py`: PASS, 122 checks.
+- Frontend: `tsc -b --noEmit`, `eslint .` and `api:check` clean. `vitest run`: 1,417 of 1,420 pass; the 3 failures (`ai.test.tsx`, `CaseDesignerPage.test.tsx`, `StudioPage.test.tsx`, 15 s timeouts) fail the same way on the unchanged base branch. New: `AgentToolsPage.test.tsx` (5); `Shell.test.tsx` lists "Agents".
+- Not run: browser journeys, Docker stack, live MCP servers or models.

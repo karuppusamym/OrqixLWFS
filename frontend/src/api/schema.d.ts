@@ -27788,10 +27788,9 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The running bulk operation */
+            /** @description The running bulk operation (or a replay, marked with the Idempotent-Replayed header) */
             200: {
                 headers: {
-                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {

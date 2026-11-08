@@ -245,13 +245,26 @@ public class BulkOperationWorker {
         };
         Instant now = clock.instant();
         tx.executeWithoutResult(status -> {
-            jdbc.sql("""
+            int updated = jdbc.sql("""
                     UPDATE bulk_operation_item SET state = :state, attempts = attempts + 1, error_code = :code,
                            message = :message, finished_at = :finished
                     WHERE operation_id = :id AND run_id = :run AND state = 'pending'
                     """).param("state", state).param("code", code).param("message", text)
                     .param("finished", retry ? null : Sql.ts(now)).param("id", op.id()).param("run", runId).update();
-            if (column != null) {
+            if (updated == 0 && !retry) {
+                // The operation was cancelled while this item ran: the item's own result is the truth.
+                updated = jdbc.sql("""
+                        UPDATE bulk_operation_item SET state = :state, attempts = attempts + 1, error_code = :code,
+                               message = :message, finished_at = :finished
+                        WHERE operation_id = :id AND run_id = :run AND state = 'cancelled'
+                        """).param("state", state).param("code", code).param("message", text)
+                        .param("finished", Sql.ts(now)).param("id", op.id()).param("run", runId).update();
+                if (updated == 1) {
+                    jdbc.sql("UPDATE bulk_operation SET cancelled_items = cancelled_items - 1 WHERE id = :id")
+                            .param("id", op.id()).update();
+                }
+            }
+            if (column != null && updated == 1) {
                 jdbc.sql("UPDATE bulk_operation SET " + column + " = " + column + " + 1 WHERE id = :id")
                         .param("id", op.id()).update();
             }

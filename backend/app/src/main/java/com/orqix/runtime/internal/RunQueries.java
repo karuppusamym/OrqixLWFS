@@ -76,7 +76,7 @@ public class RunQueries {
      * The WHERE clause of {@code f} on {@code workflow_run} (without the keyset), shared by the run list and the bulk
      * operation dry run so both match exactly the same runs. Parameters are added to {@code params}.
      */
-    String where(UUID workspaceId, Filter f, Map<String, Object> params) {
+    public String where(UUID workspaceId, Filter f, Map<String, Object> params) {
         params.put("ws", workspaceId);
         params.put("wf", f.workflowId());
         params.put("lifecycle", f.lifecycle());

@@ -8440,9 +8440,7 @@ paths:
             schema: { $ref: '#/components/schemas/BulkOperationExecuteRequest' }
       responses:
         '200':
-          description: The running bulk operation
-          headers:
-            Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
+          description: The running bulk operation (or a replay, marked with the Idempotent-Replayed header)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BulkOperation' }

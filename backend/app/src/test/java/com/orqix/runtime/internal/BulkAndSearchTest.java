@@ -51,6 +51,20 @@ class BulkAndSearchTest extends RuntimeTestBase {
 
     private final List<String> grants = new ArrayList<>();
 
+    /** No test leaves a batch working in the background of the shared test database (later tests count run events). */
+    @org.junit.jupiter.api.BeforeEach
+    @AfterEach
+    void stopBatches() {
+        jdbc.sql("""
+                UPDATE bulk_operation_item SET state = 'cancelled', finished_at = now() WHERE state = 'pending'
+                  AND operation_id IN (SELECT id FROM bulk_operation WHERE state IN ('running', 'paused'))
+                """).update();
+        jdbc.sql("""
+                UPDATE bulk_operation SET state = 'cancelled', finished_at = now(), next_item_at = NULL
+                WHERE state IN ('running', 'paused')
+                """).update();
+    }
+
     @AfterEach
     void revokeGrants() throws Exception {
         for (String id : grants) {

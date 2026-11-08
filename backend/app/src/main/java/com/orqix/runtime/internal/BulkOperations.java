@@ -64,7 +64,7 @@ public class BulkOperations {
     public static final Duration PREVIEW_VALIDITY = Duration.ofMinutes(15);
     static final int SAMPLE = 10;
 
-    record Row(UUID id, UUID workspaceId, String action, JsonNode filter, UUID targetReleaseId, String state,
+    public record Row(UUID id, UUID workspaceId, String action, JsonNode filter, UUID targetReleaseId, String state,
             int matchedCount, int cap, int ratePerMinute, String reason, String stopReason, UUID createdBy,
             Instant createdAt, Instant previewExpiresAt, Instant startedAt, Instant finishedAt, int succeeded,
             int failed, int skipped, int cancelledItems, int version, int items, Instant nextItemAt) {
@@ -168,7 +168,8 @@ public class BulkOperations {
                     INSERT INTO bulk_operation_item (operation_id, workspace_id, run_id, position, reference,
                                                      version_at_preview)
                     SELECT :op, workspace_id, id, row_number() OVER (ORDER BY created_at, id), reference, version
-                    FROM workflow_run WHERE """ + where).params(params).update();
+                    FROM workflow_run WHERE
+                    """ + where).params(params).update();
             if (inserted != matched) {
                 // Runs changed between the count and the copy: the stored items are the truth the person confirms.
                 jdbc.sql("UPDATE bulk_operation SET matched_count = :n WHERE id = :id").param("n", inserted)
@@ -377,7 +378,7 @@ public class BulkOperations {
 
     /** Cancels the pending items and ends the operation; returns how many items were cancelled. */
     @Transactional
-    int stopRemaining(Row op, String code, String message, String stopReason) {
+    public int stopRemaining(Row op, String code, String message, String stopReason) {
         Instant now = clock.instant();
         int cancelled = jdbc.sql("""
                 UPDATE bulk_operation_item SET state = 'cancelled', error_code = :code, message = :message,

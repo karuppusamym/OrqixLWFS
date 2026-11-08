@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { ALL_FILE_TYPES, FILE_TYPES } from '@/api/attachments'
 import { FormPattern, MAX_PATTERN_LENGTH } from '@/lib/form/pattern'
 import type { QuestionRules } from '../model/formRules'
-import { FIELD_KIND_LABELS, type FieldKind, type FormFieldModel } from '../model/ops'
+import { FIELD_KIND_LABELS, SEARCHABLE_KINDS, type FieldKind, type FormFieldModel } from '../model/ops'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea } from './controls'
 import { RowColumnsEditor } from './RowColumnsEditor'
 
@@ -368,6 +368,10 @@ function QuestionDetails({
         {incidentEditable && f.kind !== 'file' && f.kind !== 'collection' ? <label htmlFor={`${p}-incident-editable`} className="flex items-center gap-2 text-sm">
           <Checkbox id={`${p}-incident-editable`} checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
           Allow operator correction during an incident before data is consumed
+        </label> : null}
+        {incidentEditable && SEARCHABLE_KINDS.has(f.kind) ? <label htmlFor={`${p}-searchable`} className="flex items-center gap-2 text-sm">
+          <Checkbox id={`${p}-searchable`} checked={!!f.searchable} disabled={readOnly} onCheckedChange={checked => onChange({searchable: checked === true})} />
+          Operators can search requests by this answer (at most 10 questions)
         </label> : null}
         <FormField label="Field key" id={`${p}-key`} error={keyError} description={keyDescription}>
           {(ids) => (

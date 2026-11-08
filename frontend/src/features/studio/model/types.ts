@@ -119,6 +119,8 @@ export interface DecisionTable {
 
 export interface FieldSchemaDoc {
   incidentEditable?: true
+  /** CG-O04 (S142): operators can filter requests by this request answer. */
+  searchable?: true
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
   title: string
   description?: string

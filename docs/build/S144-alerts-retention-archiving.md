@@ -206,3 +206,7 @@ of which `ExitExportPanel.test.tsx` timed out once under load while the backend 
   period.
 - Restoring a purged request into the engine (by design: the archive is the record).
 - Partitioning `ACT_HI_*` (rejected above).
+
+## Wave D merge note - 8 November 2026
+
+`V401__purge_wave_d_tables.sql` extends `orqix_purge_run` to the request-linked tables that other Wave D slices added after this note was written: `run_search_value`, `bulk_operation_item` (S142), `run_migration_batch_item`, `run_move` (S143), the analytics facts and outbox (S145) and `ai_document_verification` (S146). Decision (with a second-model review): a purged request also loses its analytics facts and pending analytics events. A purge must be complete, and the archived evidence pack still carries the request id. Long-term KPIs belong in a later rollup without request or task ids. The projector already removes the facts of a request that no longer exists.

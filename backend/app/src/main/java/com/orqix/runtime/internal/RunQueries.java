@@ -1,7 +1,9 @@
 package com.orqix.runtime.internal;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -15,12 +17,32 @@ import com.orqix.shared.web.Sql;
 @Repository
 public class RunQueries {
 
+    /**
+     * Run filters. {@code fields} (CG-O04, S142) are conditions on the workflow's searchable request fields;
+     * {@code attentionReason} and {@code errorCode} match the step that needs attention.
+     */
     public record Filter(UUID workflowId, String lifecycle, String outcomeKind, String businessKey, Instant createdFrom,
-            Instant createdTo, UUID initiator, boolean overdue) {
+            Instant createdTo, UUID initiator, boolean overdue, List<RunSearchIndex.Condition> fields,
+            String attentionReason, String errorCode) {
+
+        public Filter {
+            fields = fields == null ? List.of() : List.copyOf(fields);
+        }
+
+        public Filter(UUID workflowId, String lifecycle, String outcomeKind, String businessKey, Instant createdFrom,
+                Instant createdTo, UUID initiator, boolean overdue) {
+            this(workflowId, lifecycle, outcomeKind, businessKey, createdFrom, createdTo, initiator, overdue, List.of(),
+                    null, null);
+        }
 
         public Filter(UUID workflowId, String lifecycle, String outcomeKind, String businessKey, Instant createdFrom,
                 Instant createdTo, UUID initiator) {
             this(workflowId, lifecycle, outcomeKind, businessKey, createdFrom, createdTo, initiator, false);
+        }
+
+        /** True when the filter reads request data (and so needs run.read-data). */
+        public boolean readsData() {
+            return !fields.isEmpty();
         }
     }
 
@@ -36,9 +58,39 @@ public class RunQueries {
 
     @Transactional(readOnly = true)
     public List<RunStore.RunRow> list(UUID workspaceId, Filter f, CursorCodec.Position after, int limitPlusOne) {
-        return jdbc.sql("SELECT " + RunStore.columns() + """
-                 FROM workflow_run
-                 WHERE workspace_id = :ws
+        Map<String, Object> params = new HashMap<>();
+        String where = where(workspaceId, f, params);
+        params.put("afterAt", after == null ? null : Sql.ts(after.at()));
+        params.put("afterId", after == null ? null : UUID.fromString(after.id()));
+        params.put("limit", limitPlusOne);
+        return jdbc.sql("SELECT " + RunStore.columns() + " FROM workflow_run WHERE " + where + """
+                   AND (CAST(:afterAt AS timestamptz) IS NULL
+                        OR (created_at, id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS uuid)))
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT :limit
+                """)
+                .params(params).query(runs::map).list();
+    }
+
+    /**
+     * The WHERE clause of {@code f} on {@code workflow_run} (without the keyset), shared by the run list and the bulk
+     * operation dry run so both match exactly the same runs. Parameters are added to {@code params}.
+     */
+    String where(UUID workspaceId, Filter f, Map<String, Object> params) {
+        params.put("ws", workspaceId);
+        params.put("wf", f.workflowId());
+        params.put("lifecycle", f.lifecycle());
+        params.put("kind", f.outcomeKind());
+        params.put("bkey", f.businessKey());
+        params.put("from", Sql.ts(f.createdFrom()));
+        params.put("to", Sql.ts(f.createdTo()));
+        params.put("initiator", f.initiator());
+        params.put("overdue", f.overdue());
+        params.put("now", Sql.ts(clock.instant()));
+        params.put("attReason", f.attentionReason());
+        params.put("errCode", f.errorCode());
+        return """
+                workspace_id = :ws
                    AND (CAST(:wf AS uuid) IS NULL OR workflow_id = :wf)
                    AND (CAST(:lifecycle AS text) IS NULL OR lifecycle = :lifecycle)
                    AND (CAST(:kind AS text) IS NULL OR outcome_kind = :kind)
@@ -48,18 +100,10 @@ public class RunQueries {
                    AND (CAST(:initiator AS uuid) IS NULL OR initiator_subject_id = :initiator)
                    AND (:overdue = false OR EXISTS (SELECT 1 FROM run_stage s WHERE s.run_id = workflow_run.id
                         AND s.completed_at IS NULL AND s.due_at IS NOT NULL AND s.due_at < :now))
-                   AND (CAST(:afterAt AS timestamptz) IS NULL
-                        OR (created_at, id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS uuid)))
-                 ORDER BY created_at DESC, id DESC
-                 LIMIT :limit
-                """)
-                .param("ws", workspaceId).param("wf", f.workflowId()).param("lifecycle", f.lifecycle())
-                .param("kind", f.outcomeKind()).param("bkey", f.businessKey()).param("from", Sql.ts(f.createdFrom()))
-                .param("to", Sql.ts(f.createdTo())).param("initiator", f.initiator())
-                .param("overdue", f.overdue()).param("now", Sql.ts(clock.instant()))
-                .param("afterAt", after == null ? null : Sql.ts(after.at()))
-                .param("afterId", after == null ? null : UUID.fromString(after.id()))
-                .param("limit", limitPlusOne)
-                .query(runs::map).list();
+                   AND (CAST(:attReason AS text) IS NULL
+                        OR (lifecycle = 'needsAttention' AND attention ->> 'reason' = :attReason))
+                   AND (CAST(:errCode AS text) IS NULL
+                        OR (lifecycle = 'needsAttention' AND attention ->> 'errorCode' = :errCode))
+                """ + RunSearchIndex.predicates(f.fields(), params) + "\n";
     }
 }

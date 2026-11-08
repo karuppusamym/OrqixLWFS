@@ -6346,6 +6346,228 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/searchable-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The request fields operators can filter this workflow's runs by (CG-O04, S142)
+         * @description Fields marked `searchable` in the request form of the workflow's latest releases (the newest release wins for
+         *     title and kind). Filtering by them with `listRuns?field=` also needs run.read-data.
+         */
+        get: operations["listSearchableFields"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry run of a bulk operation by filter, with the exact count and a sample (CG-O01, S142)
+         * @description Selects the runs that match the filter (the listRuns filters; it must narrow the runs) and the action's state
+         *     rule: retry needs attention, cancel and suspend are active (suspend: not suspended), resume is suspended,
+         *     migrate is an active run of the filter's workflow on another release. The exact matching runs are stored with
+         *     the operation, up to the cap (default 1,000); a dry run that matches more stores none and cannot be executed.
+         *     Field conditions also need run.read-data. The dry run is valid for 15 minutes and changes no request.
+         */
+        post: operations["previewBulkOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Bulk operations of the workspace, newest first (S142) */
+        get: operations["listBulkOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** One bulk operation with its progress and first items (S142) */
+        get: operations["getBulkOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Per-request results of a bulk operation, in dry-run order (S142) */
+        get: operations["listBulkOperationItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the dry run's count and start the background batch (S142)
+         * @description Only the person who ran the dry run, within 15 minutes, with `confirmedCount` equal to the count it showed
+         *     (409 BULK_COUNT_MISMATCH), a reason and an idempotency key. 422 BULK_LIMIT_EXCEEDED when the dry run matched
+         *     more than the cap; 409 BULK_PREVIEW_EXPIRED after 15 minutes. The batch acts only on the dry run's runs, one
+         *     at a time at the operation's rate, through the single-request operation with the confirmer's permissions and
+         *     its own idempotency key per request. A run that no longer matches when its turn comes is skipped.
+         */
+        post: operations["executeBulkOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause a running bulk operation after the item in progress (S142) */
+        post: operations["pauseBulkOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue a paused bulk operation (only the person who confirmed it) (S142) */
+        post: operations["resumeBulkOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bulk-operations/{bulkOperationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel the remaining items of a bulk operation or discard a dry run (S142)
+         * @description Requests already changed stay changed; pending items end as cancelled.
+         */
+        post: operations["cancelBulkOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/job-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * External job queues, polling checks, package trigger lag and connection volume (CG-O05, S142)
+         * @description Counts, times and codes only. `connections` (calls and errors per connection from the S131 health) is present
+         *     only when the caller also holds connection.read.
+         */
+        get: operations["getJobDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/mcp-server": {
         parameters: {
             query?: never;
@@ -9537,7 +9759,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate";
         AgentWriteSubject: {
             id: components["schemas"]["Uuid"];
             displayName: string;
@@ -9848,7 +10070,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "BULK_COUNT_MISMATCH" | "BULK_PREVIEW_EXPIRED" | "BULK_OPERATION_STATE_CONFLICT" | "BULK_LIMIT_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -10098,6 +10320,159 @@ export interface components {
             shared: boolean;
             /** @enum {string} */
             status: "active" | "archived";
+        };
+        SearchableField: {
+            key: string;
+            title: string;
+            /** @enum {string} */
+            kind: "text" | "choice" | "number" | "integer" | "boolean" | "date";
+            /** @description Choices of a choice field */
+            options: string[];
+        };
+        SearchableFieldList: {
+            items: components["schemas"]["SearchableField"][];
+        };
+        /** @description The listRuns filters. At least one of workflowId, businessKey, createdFrom, createdTo, overdue, attentionReason, errorCode or fields is required. */
+        BulkRunFilter: {
+            workflowId?: components["schemas"]["Uuid"];
+            lifecycle?: components["schemas"]["Lifecycle"];
+            businessKey?: string;
+            createdFrom?: components["schemas"]["Timestamp"];
+            createdTo?: components["schemas"]["Timestamp"];
+            overdue?: boolean;
+            /** @description Searchable field conditions written key:op:value (op eq, prefix, gte or lte); need workflowId and run.read-data */
+            fields?: string[];
+            attentionReason?: components["schemas"]["AttentionReason"];
+            errorCode?: string;
+        };
+        BulkOperationPreviewRequest: {
+            /** @enum {string} */
+            action: "retry" | "cancel" | "suspend" | "resume" | "migrate";
+            filter: components["schemas"]["BulkRunFilter"];
+            targetReleaseId?: components["schemas"]["Uuid"];
+            /** @description Requests changed per minute (default 60) */
+            ratePerMinute?: number;
+        };
+        BulkOperationExecuteRequest: {
+            /** @description Must equal the matchedCount of the dry run */
+            confirmedCount: number;
+            reason: string;
+        };
+        BulkOperationControlRequest: {
+            expectedVersion: number;
+            reason?: string;
+        };
+        BulkOperationProgress: {
+            total: number;
+            pending: number;
+            succeeded: number;
+            failed: number;
+            skipped: number;
+            cancelled: number;
+        };
+        BulkOperationItem: {
+            runId: components["schemas"]["Uuid"];
+            reference: string;
+            position: number;
+            /** @enum {string} */
+            state: "pending" | "succeeded" | "failed" | "skipped" | "cancelled";
+            /** @description Problem code of a failed item; NO_LONGER_MATCHES for a skipped one */
+            errorCode: string | null;
+            message: string | null;
+            finishedAt: components["schemas"]["Timestamp"] | null;
+        };
+        BulkOperation: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            action: "retry" | "cancel" | "suspend" | "resume" | "migrate";
+            /** @enum {string} */
+            state: "previewed" | "running" | "paused" | "completed" | "cancelled";
+            filter: components["schemas"]["BulkRunFilter"];
+            targetRelease: null | {
+                id: components["schemas"]["Uuid"];
+                releaseNumber: number;
+            };
+            /** @description Exact number of runs the dry run matched */
+            matchedCount: number;
+            cap: number;
+            exceedsCap: boolean;
+            ratePerMinute: number;
+            reason: string | null;
+            stopReason: string | null;
+            createdBy: components["schemas"]["SubjectRef"];
+            createdAt: components["schemas"]["Timestamp"];
+            previewExpiresAt: components["schemas"]["Timestamp"];
+            startedAt: components["schemas"]["Timestamp"] | null;
+            finishedAt: components["schemas"]["Timestamp"] | null;
+            progress: components["schemas"]["BulkOperationProgress"];
+            /** @description First items in dry-run order (empty in lists) */
+            sample: components["schemas"]["BulkOperationItem"][];
+            version: number;
+        };
+        BulkOperationPage: {
+            items: components["schemas"]["BulkOperation"][];
+            nextCursor: string | null;
+        };
+        BulkOperationItemPage: {
+            items: components["schemas"]["BulkOperationItem"][];
+            nextCursor: string | null;
+        };
+        JobQueue: {
+            topic: string;
+            available: number;
+            locked: number;
+            failedLastDay: number;
+            oldestAvailableAt: components["schemas"]["Timestamp"] | null;
+            oldestAgeSeconds: number | null;
+            workerLastSeenAt: components["schemas"]["Timestamp"] | null;
+            workersSeenLastHour: number;
+        };
+        PollCheckSummary: {
+            connectionKey: string;
+            operation: string;
+            waiting: number;
+            checking: number;
+            needsAttention: number;
+            /** @description Checks due more than a minute ago */
+            lateChecks: number;
+            nextCheckAt: components["schemas"]["Timestamp"] | null;
+            lastCheckedAt: components["schemas"]["Timestamp"] | null;
+        };
+        PackageTriggerLag: {
+            id: components["schemas"]["Uuid"];
+            packageId: string;
+            triggerKey: string;
+            /** @enum {string} */
+            kind: "webhook" | "poll";
+            enabled: boolean;
+            lastRunAt: components["schemas"]["Timestamp"] | null;
+            lastSuccessAt: components["schemas"]["Timestamp"] | null;
+            /** @description Poll triggers: how far the last poll was behind the newest record */
+            lagSeconds: number | null;
+            lastErrorCode: string | null;
+            deadLastDay: number;
+            nextRunAt: components["schemas"]["Timestamp"] | null;
+        };
+        ConnectionVolume: {
+            connectionKey: string;
+            name: string;
+            bound: boolean;
+            callsLastHour: number;
+            successRateLastHour: number | null;
+            callsLastDay: number;
+            failedLastDay: number;
+            lastErrorCode: string | null;
+            /** @enum {string} */
+            circuitState: "closed" | "open" | "halfOpen";
+            notices: number;
+        };
+        JobDashboard: {
+            jobQueues: components["schemas"]["JobQueue"][];
+            pollChecks: components["schemas"]["PollCheckSummary"][];
+            packageTriggers: components["schemas"]["PackageTriggerLag"][];
+            /** @description Only with connection.read */
+            connections?: components["schemas"]["ConnectionVolume"][];
+            asOf: components["schemas"]["Timestamp"];
         };
         McpServer: {
             /** @description false until a workspace administrator switches it on */
@@ -11074,14 +11449,17 @@ export interface components {
             dueAt?: components["schemas"]["Timestamp"] | null;
         };
         Attention: {
-            /** @enum {string} */
-            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR" | "RUN_WAITING_ON_NOTHING";
+            reason: components["schemas"]["AttentionReason"];
             nodeId: string | null;
             effectId?: components["schemas"]["Uuid"] | null;
             /** @description Business-readable, redacted */
             message: string;
             since: components["schemas"]["Timestamp"];
+            /** @description S142: the error code the failed step reported; omitted when it reported none. listRuns filters by it. */
+            errorCode?: string;
         };
+        /** @enum {string} */
+        AttentionReason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR" | "RUN_WAITING_ON_NOTHING";
         Run: {
             id: components["schemas"]["Uuid"];
             /** @description Human request reference unique within the workspace, e.g. ORQ-1043 (shown instead of the UUID) */
@@ -12548,7 +12926,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -13852,6 +14230,11 @@ export interface components {
              * @constant
              */
             incidentEditable?: true;
+            /**
+             * @description CG-O04 (docs/build/S142): operators with run.read-data can filter this workflow's requests by this field on the Runs page and in bulk operations. Request fields of type text (not files or times), number, whole number, yes/no or date only; at most 10 per workflow. Indexed when the request starts and whenever its data is corrected; text longer than 200 characters is not indexed. Does not change execution.
+             * @constant
+             */
+            searchable?: true;
             /** @enum {unknown} */
             type: "string" | "number" | "integer" | "boolean";
             title: string;
@@ -15629,6 +16012,11 @@ export interface components {
                      * @constant
                      */
                     incidentEditable?: true;
+                    /**
+                     * @description CG-O04 (docs/build/S142): operators with run.read-data can filter this workflow's requests by this field on the Runs page and in bulk operations. Request fields of type text (not files or times), number, whole number, yes/no or date only; at most 10 per workflow. Indexed when the request starts and whenever its data is corrected; text longer than 200 characters is not indexed. Does not change execution.
+                     * @constant
+                     */
+                    searchable?: true;
                     /** @enum {unknown} */
                     type: "string" | "number" | "integer" | "boolean";
                     title: string;
@@ -22955,6 +23343,17 @@ export interface operations {
                 createdTo?: string;
                 /** @description true lists only runs with a stage that is past its due time (docs/build/S17). */
                 overdue?: boolean;
+                /**
+                 * @description CG-O04 (docs/build/S142): conditions on the workflow's searchable request fields, written key:op:value
+                 *     with op eq or prefix (text), eq, gte or lte (numbers and dates YYYY-MM-DD) and eq:true or eq:false (yes/no).
+                 *     Text matches ignore case. Needs workflowId and run.read-data; at most 5 (422 on unknown fields or values of
+                 *     the wrong type). See listSearchableFields.
+                 */
+                field?: string[];
+                /** @description Only runs that need attention for this reason (S142). */
+                attentionReason?: components["schemas"]["AttentionReason"];
+                /** @description Only runs that need attention with this error code of the failed step (S142). */
+                errorCode?: string;
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
             };
@@ -22975,9 +23374,11 @@ export interface operations {
                     "application/json": components["schemas"]["RunPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     startRun: {
@@ -27225,6 +27626,307 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listSearchableFields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The searchable fields */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchableFieldList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    previewBulkOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The dry run with its count and the first matching runs */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listBulkOperations: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of bulk operations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getBulkOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bulk operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listBulkOperationItems: {
+        parameters: {
+            query?: {
+                state?: "pending" | "succeeded" | "failed" | "skipped" | "cancelled";
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperationItemPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    executeBulkOperation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationExecuteRequest"];
+            };
+        };
+        responses: {
+            /** @description The running bulk operation */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    pauseBulkOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationControlRequest"];
+            };
+        };
+        responses: {
+            /** @description The paused bulk operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    resumeBulkOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationControlRequest"];
+            };
+        };
+        responses: {
+            /** @description The running bulk operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelBulkOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bulkOperationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationControlRequest"];
+            };
+        };
+        responses: {
+            /** @description The cancelled bulk operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkOperation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getJobDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dashboard */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDashboard"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getMcpServer: {
         parameters: {
             query?: never;
@@ -27402,7 +28104,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];

@@ -2971,6 +2971,10 @@
           "const": true,
           "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only."
         },
+        "searchable": {
+          "const": true,
+          "description": "CG-O04 (docs/build/S142): operators with run.read-data can filter this workflow's requests by this field on the Runs page and in bulk operations. Request fields of type text (not files or times), number, whole number, yes/no or date only; at most 10 per workflow. Indexed when the request starts and whenever its data is corrected; text longer than 200 characters is not indexed. Does not change execution."
+        },
         "type": {
           "enum": [
             "string",

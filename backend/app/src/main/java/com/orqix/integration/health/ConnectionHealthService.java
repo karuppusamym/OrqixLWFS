@@ -81,6 +81,16 @@ public class ConnectionHealthService {
         return new HealthList(items, notices);
     }
 
+    /** Every connection's health without a permission check (the caller checks), for the job dashboard (S142). */
+    @Transactional(readOnly = true)
+    public List<HealthView> views(UUID workspaceId) {
+        Map<String, String> names = new LinkedHashMap<>();
+        connections.definitions(workspaceId).forEach(d -> names.put(d.key(), d.definition().name()));
+        List<HealthView> items = new ArrayList<>();
+        names.forEach((key, name) -> items.add(view(workspaceId, key, name)));
+        return items;
+    }
+
     @Transactional(readOnly = true)
     public HealthView get(Caller caller, UUID workspaceId, String key) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);

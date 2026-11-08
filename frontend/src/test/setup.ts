@@ -8,6 +8,8 @@ import { clearMockConversations } from '@/features/ai/mocks'
 import { resetMcpMock } from '@/mocks/mcpServer'
 import { resetWaitsAndStartsMock } from '@/mocks/waitsAndStarts'
 import { resetTaskActionsMock } from '@/mocks/taskActions'
+import { resetBulkMock } from '@/mocks/bulk'
+import { bulkOperators } from '@/mocks/state'
 import { server } from './server'
 
 // Lazy routes (studio, React Flow) are slow to load the first time in a cold test worker.
@@ -77,6 +79,8 @@ afterEach(async () => {
   resetMcpMock()
   resetWaitsAndStartsMock()
   resetTaskActionsMock()
+  resetBulkMock()
+  bulkOperators.clear()
   window.localStorage.clear()
 })
 

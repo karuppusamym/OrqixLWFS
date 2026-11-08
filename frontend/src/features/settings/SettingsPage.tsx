@@ -1,4 +1,4 @@
-import { Archive, Bot, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
+import { Activity, Archive, Bot, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -19,6 +19,7 @@ import { McpServerPanel } from './McpServerPanel'
 import { WorkingCalendarsPanel } from './WorkingCalendarsPanel'
 import { SchedulesPanel } from './SchedulesPanel'
 import { TaskActionsPanel } from './TaskActionsPanel'
+import { JobDashboardPanel } from './JobDashboardPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -38,8 +39,9 @@ export function SettingsPage() {
   const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
+  const showOperations = can('run.operate')
 
-  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages && !showOperations) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -53,7 +55,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Who can do what in this workspace, and which systems it can reach." />
-      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : 'webhooks'}>
+      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : showWebhooks ? 'webhooks' : 'operations'}>
         <TabsList aria-label="Settings sections">
           {showAccess ? (
             <TabsTrigger value="access">
@@ -74,6 +76,11 @@ export function SettingsPage() {
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
+            </TabsTrigger>
+          ) : null}
+          {showOperations ? (
+            <TabsTrigger value="operations">
+              <Activity className="size-4" aria-hidden="true" /> Operations
             </TabsTrigger>
           ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
@@ -136,6 +143,7 @@ export function SettingsPage() {
             <ConnectionsPanel />
           </TabsContent>
         ) : null}
+        {showOperations ? <TabsContent value="operations"><JobDashboardPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="kafka"><KafkaTriggersPanel /></TabsContent> : null}
         {showPackages ? <TabsContent value="packages"><ConnectorPackagesPanel /></TabsContent> : null}

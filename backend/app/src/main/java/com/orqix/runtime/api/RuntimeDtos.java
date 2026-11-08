@@ -131,7 +131,9 @@ public final class RuntimeDtos {
             Instant startedAt, Instant endedAt, int iteration) {
     }
 
-    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since) {
+    /** {@code errorCode} (S142): the error code of the failed step when it reported one; omitted otherwise. */
+    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String errorCode) {
     }
 
     public record ActionAvailability(boolean allowed, String reasonCode) {

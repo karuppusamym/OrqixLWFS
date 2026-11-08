@@ -134,7 +134,7 @@ public class RuntimeViews {
         String effectId = attention.path("effectId").asString(null);
         return new RuntimeDtos.Attention(attention.path("reason").asString(), attention.path("nodeId").asString(null),
                 effectId == null ? null : UUID.fromString(effectId), attention.path("message").asString(),
-                instant(attention.path("since")));
+                instant(attention.path("since")), attention.path("errorCode").asString(null));
     }
 
     public RuntimeDtos.TaskSummary task(TaskStore.TaskRow task, RunStore.RunRow run, Map<UUID, String> names,

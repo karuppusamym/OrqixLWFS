@@ -159,7 +159,16 @@ seen for 15 minutes.
 
 ## Results
 
-See the session report (full backend `clean verify`, frontend typecheck, lint and tests, contract check).
+Evidence from this worktree (8 November 2026, JDK 21, Testcontainers PostgreSQL 18):
+
+- `backend/mvnw -o clean verify`: compiler 1,186 tests, 0 failures; app 1,357 tests, 3 failures, 5 skipped. The three
+  failures are timing-sensitive tests outside this slice (`BankingWorkflowsTest.creditEveryRun...` version race,
+  `CaseStagesTest.aStageMissedOnItsTimeLimit...` overdue timing, `PollWaitsTest.twoSchedulersNeverCheckTheSameRowAtOnce`);
+  all three pass when run again on this branch (24 tests, 0 failures). Every S142 test passes, including
+  `BulkAndSearchTest` (6), `SecurityMatrixTest` (8), `AccessApiTest` and `ArchitectureTest`.
+- Frontend: `tsc -b --noEmit` clean, `eslint .` clean, `vitest run` 227 files / 1,698 tests passed;
+  `npm run api:check` ok.
+- `python tools/contract-check/contract_check.py`: PASS (142 checks); Redocly 2.60.0 lint: valid (existing warnings only).
 
 ## Merge notes
 

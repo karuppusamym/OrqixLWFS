@@ -95,7 +95,15 @@
             ],
             "properties": {
               "type": {
-                "$ref": "#/$defs/scalarType"
+                "description": "A scalar type, or attachment: the id of a request file, allowed only as the document input of an extract skill (document.attachmentInput).",
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "date",
+                  "attachment"
+                ]
               },
               "required": {
                 "type": "boolean"
@@ -158,7 +166,7 @@
           }
         },
         "fields": {
-          "description": "extract only: the typed fields to extract.",
+          "description": "extract only: the typed fields to extract. A document skill with a built-in document type may leave them out: the template's fields are used.",
           "type": "array",
           "minItems": 1,
           "maxItems": 40,
@@ -182,6 +190,16 @@
               "description": {
                 "type": "string",
                 "maxLength": 500
+              },
+              "hint": {
+                "description": "Validation hint checked on the extracted value: iban (mod-97 checksum), currency (ISO 4217 code), country (ISO 3166 alpha-2 or alpha-3), pastDate (not after today), futureDate (not before today). A failing hint lowers the field's confidence and flags it for verification.",
+                "enum": [
+                  "iban",
+                  "currency",
+                  "country",
+                  "pastDate",
+                  "futureDate"
+                ]
               }
             }
           }
@@ -243,6 +261,30 @@
               "type": "integer",
               "minimum": 50,
               "maximum": 8000
+            }
+          }
+        },
+        "document": {
+          "description": "extract only: the skill reads a request file. The file passes OCR (the workspace's OCR provider), then the model extracts the fields from the recognized text with a source location per field; a person verifies values below the threshold.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "attachmentInput"
+          ],
+          "properties": {
+            "type": {
+              "description": "Document-type template: invoice, idDocument and bankStatement bring their fields and validation rules; custom uses the skill's own fields.",
+              "enum": [
+                "invoice",
+                "idDocument",
+                "bankStatement",
+                "custom"
+              ]
+            },
+            "attachmentInput": {
+              "description": "The input (of type attachment) that carries the file.",
+              "$ref": "#/$defs/name"
             }
           }
         },
@@ -402,8 +444,30 @@
             }
           },
           "then": {
-            "required": [
-              "fields"
+            "anyOf": [
+              {
+                "required": [
+                  "fields"
+                ]
+              },
+              {
+                "required": [
+                  "document"
+                ],
+                "properties": {
+                  "document": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "invoice",
+                          "idDocument",
+                          "bankStatement"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
             ]
           }
         },

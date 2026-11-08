@@ -25,6 +25,15 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/** S143: "skipped the step X" / "sent the request back to Y" / "moved the request to Y". */
+function moveText(data: Record<string, unknown>, done = false): string {
+  const from = str(data.fromLabel) || str(data.from)
+  const to = str(data.toLabel) || str(data.to)
+  if (data.kind === 'skip') return `${done ? 'skipped' : 'skip'} the step ${from}`
+  if (data.kind === 'rerun') return `${done ? 'sent' : 'send'} the request back to ${to}`
+  return `${done ? 'moved' : 'move'} the request from ${from} to ${to}`
+}
+
 export function stepLabel(event: RunEvent, ctx: EventContext): string {
   // nodeLabel is the step's name as written in the workflow; the rest are fallbacks for older servers.
   return str(event.nodeLabel) ?? str(event.data.label) ?? (event.nodeId ? (ctx.labels[event.nodeId] ?? humanize(event.nodeId)) : 'this step')
@@ -334,6 +343,20 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} moved the request from version ${String(event.data.fromReleaseNumber ?? '?')} to version ${String(event.data.toReleaseNumber ?? '?')}${reason ? `: ${reason}` : ''}`
     }
+    case 'RUN_MOVE_REQUESTED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} asked to ${moveText(event.data)}; a second operator must approve${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_MOVED': {
+      const reason = str(event.data.reason)
+      const approved = event.data.approvedBy ? ' (approved by a second operator)' : ''
+      const reused = Array.isArray(event.data.reusedResults) && event.data.reusedResults.length > 0 ? '. Recorded call results were reused; nothing was sent again' : ''
+      return `${actorName(event, ctx)} ${moveText(event.data, true)}${approved}${reused}${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_MOVE_REJECTED':
+      return `${actorName(event, ctx)} ${event.data.state === 'withdrawn' ? 'withdrew' : 'rejected'} a requested move${str(event.data.note) ? `: ${str(event.data.note)}` : ''}`
+    case 'RUN_MOVE_LAPSED':
+      return `A requested move was not run: ${str(event.data.why) || 'the request changed'}`
     case 'RUN_PROJECTION_REPAIRED': {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} rebuilt the open approval steps from the workflow engine${reason ? `: ${reason}` : ''}`

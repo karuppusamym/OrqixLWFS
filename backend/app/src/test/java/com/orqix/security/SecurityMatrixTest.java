@@ -73,7 +73,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             // S139: previews compute times and change nothing.
                             || "previewSchedule".equals(operationId) || "previewWorkingCalendar".equals(operationId)
                             // S140: a lookup search reads; its text must never reach the audit log.
-                            || "searchLookupOptions".equals(operationId))
+                            || "searchLookupOptions".equals(operationId)
+                            // S143: dry runs of a migration, a migration batch and a move change nothing.
+                            || "planRunMigration".equals(operationId) || "previewMigrationBatch".equals(operationId)
+                            || "planRunMove".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -364,6 +367,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("extensionId", UUID.randomUUID().toString());
         // S116: unknown send-backs and a well-formed but unsigned file path are 404 for foreign principals.
         ids.put("sendBackId", UUID.randomUUID().toString());
+        // S143: unknown moves and batches; the workspace is invisible to foreign principals.
+        ids.put("moveId", UUID.randomUUID().toString());
+        ids.put("batchId", UUID.randomUUID().toString());
         ids.put("token", "1." + "0".repeat(64));
         ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
@@ -558,6 +564,18 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "correctTaskInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("amount", 1));
             case "migrateRun" -> Map.of("targetReleaseId", UUID.randomUUID().toString(), "reason", "Foreign attempt",
                     "expectedVersion", 1);
+            case "planRunMigration" -> Map.of("targetReleaseId", ids.get("releaseId"));
+            case "migrateRunWithMapping" -> Map.of("targetReleaseId", ids.get("releaseId"), "reason", "Foreign attempt",
+                    "expectedVersion", 1);
+            case "previewMigrationBatch" -> Map.of("sourceReleaseId", ids.get("releaseId"), "targetReleaseId",
+                    ids.get("releaseId"));
+            case "createMigrationBatch" -> Map.of("sourceReleaseId", ids.get("releaseId"), "targetReleaseId",
+                    ids.get("releaseId"), "runIds", List.of(ids.get("runId")), "reason", "Foreign attempt",
+                    "expectedCount", 1);
+            case "planRunMove" -> Map.of("kind", "skip", "fromStepId", "manager", "toStepId", "amountPolicy");
+            case "moveRun" -> Map.of("kind", "skip", "fromStepId", "manager", "toStepId", "amountPolicy", "reason",
+                    "Foreign attempt", "expectedVersion", 1);
+            case "approveRunMove", "rejectRunMove" -> Map.of("note", "Foreign attempt");
             case "cancelRun", "retryRun", "suspendRun", "resumeRun", "repairRun" -> Map.of("reason", "Foreign attempt", "expectedVersion", 1);
             case "sendRunSignal" -> Map.of("signal", "withdraw", "reason", "Foreign attempt", "expectedVersion", 1);
             case "reconcileEffect" -> Map.of("resolution", "confirmedNotApplied", "evidence",

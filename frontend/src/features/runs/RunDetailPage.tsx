@@ -27,6 +27,7 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
+import { MappedMigrateDialog, MoveStepDialog } from './MigrationAndMoveDialogs'
 import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
 import { CaseControlsPanel } from './CaseControlsPanel'
 import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
@@ -49,7 +50,7 @@ const TONE_DOT: Record<EventTone, string> = {
   danger: 'bg-danger',
 }
 
-type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'repair' | null
+type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'migrateMapped' | 'moveStep' | 'repair' | null
 
 /**
  * Run detail for requesters, approvers and operators (docs/build/S7-frontend.md section 4).
@@ -251,6 +252,14 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                 Move to another version
               </Button>
             ) : null}
+            <Button variant="secondary" onClick={() => setDialog('migrateMapped')} title="Continue this request on another version, mapping waiting steps that were renamed">
+              Move with step mapping
+            </Button>
+            {!run.suspension ? (
+              <Button variant="secondary" onClick={() => setDialog('moveStep')} title="Skip the current step, run a step again or move to another step, without repeating what already happened">
+                Move to another step
+              </Button>
+            ) : null}
             {!run.suspension ? (
               <Button variant="secondary" onClick={() => setDialog('repair')} title="Compare this request with the workflow engine and rebuild missing steps">
                 Check consistency
@@ -418,6 +427,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       {dialog === 'suspend' ? <SuspendDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'resume' ? <ResumeDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'migrate' ? <MigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'migrateMapped' ? <MappedMigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'moveStep' ? <MoveStepDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'reassign' ? <ReassignDialog open run={run} onClose={() => setDialog(null)} /> : null}
     </>
   )

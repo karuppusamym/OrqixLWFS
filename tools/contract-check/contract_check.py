@@ -41,7 +41,7 @@ HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "tra
 AUDIT_REQUIRED_METHODS = ("post", "put", "delete")
 # Worker polls/lock extensions are high-volume protocol calls; promotion-check and validation POSTs are read-only.
 # checkCaseDefinitionDraft writes nothing (S126); saveAiConversation holds text people wrote, which is never audited (S124).
-AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "evaluateExpression", "previewSchedule", "previewWorkingCalendar", "markNotificationRead", "markAllNotificationsRead", "fetchExternalJobs", "extendExternalJobLock", "checkReleasePromotion", "checkDraftBpmn", "convertDecisionDmn", "checkCaseDefinitionDraft", "saveAiConversation", "searchLookupOptions"}
+AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "evaluateExpression", "previewSchedule", "previewWorkingCalendar", "markNotificationRead", "markAllNotificationsRead", "fetchExternalJobs", "extendExternalJobLock", "checkReleasePromotion", "checkDraftBpmn", "convertDecisionDmn", "checkCaseDefinitionDraft", "saveAiConversation", "searchLookupOptions", "planRunMigration", "previewMigrationBatch", "planRunMove"}
 
 
 class Report:

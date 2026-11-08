@@ -59,6 +59,8 @@ tags:
   - name: Views
   - name: McpServer
   - name: TaskActions
+  - name: MigrationAndMove
+    description: Moving requests between releases with a step mapping (single and batch) and guarded moves between steps (docs/build/S143).
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -5618,6 +5620,280 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/migration-plan:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [MigrationAndMove]
+      operationId: planRunMigration
+      summary: Dry run of moving a request to another release with a step mapping
+      description: >-
+        Computes the per-request plan (which waiting step continues as which step, which finished step's data is
+        copied under a new id) and every reason the move would be refused. Changes nothing. Without mappings, steps
+        keep their ids and `suggestedMappings` proposes pairs for steps the target release no longer has.
+      x-orqix-permission: run.operate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MigrationPlanRequest' }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationPlan' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [MigrationAndMove]
+      operationId: migrateRunWithMapping
+      summary: Move a request to another release of its workflow with explicit step mappings
+      description: >-
+        Extends migrateRun (docs/build/S143). The request must be suspended, or wait only for running child requests.
+        Waiting steps keep their kind and settings (an approval may continue under another id); the history may
+        differ when every step ahead still finds its data. Refused with 409 RUN_NOT_MIGRATABLE and `findings`.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.migrated
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MappedMigrationRequest' }
+      responses:
+        '200':
+          description: Migrated (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/migration-batches/preview:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [MigrationAndMove]
+      operationId: previewMigrationBatch
+      summary: Dry run of a batch migration with one step mapping
+      description: >-
+        The plan of each listed request, or of the newest 100 active top-level requests on the source release when
+        `runIds` is omitted (`truncated` says whether more exist). Changes nothing.
+      x-orqix-permission: run.operate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MigrationBatchPreviewRequest' }
+      responses:
+        '200':
+          description: The plan of each request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationBatchPreview' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/migration-batches:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [MigrationAndMove]
+      operationId: createMigrationBatch
+      summary: Move the listed requests to another release with one step mapping
+      description: >-
+        At most 100 requests; `expectedCount` must equal the number listed. Each request is moved by itself (its own
+        transaction, checks, audit and timeline entry) and keeps its own result. With `suspendDuring` a running
+        request is suspended for the move and resumed afterwards.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.migration-batch.started
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMigrationBatchRequest' }
+      responses:
+        '200':
+          description: The finished batch with a result per request (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationBatch' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/migration-batches/{batchId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: batchId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [MigrationAndMove]
+      operationId: getMigrationBatch
+      summary: A migration batch with the result of each request
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: The batch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationBatch' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/move-plan:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [MigrationAndMove]
+      operationId: planRunMove
+      summary: Dry run of moving a request to another step of its release
+      description: >-
+        Classifies the move (move, skip or rerun), lists the steps it passes over or runs again (calls recorded in
+        the effect journal reuse their result) and every reason it would be refused. Says whether a second operator
+        must approve. Changes nothing.
+      x-orqix-permission: run.operate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MovePlanRequest' }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MovePlan' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/moves:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [MigrationAndMove]
+      operationId: listRunMoves
+      summary: Moves of a request (newest first, at most 50)
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Moves
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunMoveList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [MigrationAndMove]
+      operationId: moveRun
+      summary: Move, skip or re-run a step of a request
+      description: >-
+        Refused with 409 RUN_NOT_MOVABLE and `findings` when the plan does not allow it. In a production or regulated
+        workspace the move waits for a second operator (`state` pendingApproval); otherwise it runs at once (`state`
+        executed).
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.moved
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveRunRequest' }
+      responses:
+        '200':
+          description: The move (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunMove' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: moveId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [MigrationAndMove]
+      operationId: approveRunMove
+      summary: Approve a move as the second operator
+      description: >-
+        Another operator than the requester (403 MOVE_SAME_OPERATOR). The move is planned again under the run lock;
+        when the request changed since it was planned, or the move waited more than 24 hours, the answer is the move
+        with `state` stale or expired and nothing runs.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.moved
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideMoveRequest' }
+      responses:
+        '200':
+          description: The move (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunMove' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - { name: moveId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [MigrationAndMove]
+      operationId: rejectRunMove
+      summary: Reject a move that waits for approval (withdraw it when you requested it)
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.move-rejected
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideMoveRequest' }
+      responses:
+        '200':
+          description: The move (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunMove' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -12199,7 +12475,7 @@ components:
       type: object
       description: 'A working week: zone, working days (1 Monday to 7 Sunday), 1 to 8 same-day working periods and holidays.'
       properties:
-        zone: { type: string, maxLength: 64, description: IANA time zone, for example Europe/London }
+        zone: { type: string, maxLength: 64, description: 'IANA time zone, for example Europe/London' }
         weekdays: { type: array, minItems: 1, maxItems: 7, items: { type: integer, minimum: 1, maximum: 7 } }
         start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
         end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
@@ -12314,7 +12590,7 @@ components:
         startsAt: { type: [string, 'null'], format: date-time }
         endsAt: { type: [string, 'null'], format: date-time }
         calendarKey: { type: [string, 'null'], maxLength: 64, description: Start only inside this working calendar's hours; the latest version is pinned when saved }
-        input: { type: object, additionalProperties: true, description: The fixed request values, checked against the active release's request form }
+        input: { type: object, additionalProperties: true, description: "The fixed request values, checked against the active release's request form" }
         missedRunPolicy: { type: string, enum: [catchUpOnce, skip], description: Default catchUpOnce }
         overlapPolicy: { type: string, enum: [allow, skip], description: Default skip }
         enabled: { type: boolean, description: Default true }
@@ -13232,6 +13508,9 @@ components:
             - RUN_NOT_SUSPENDABLE
             - RUN_NOT_REPAIRABLE
             - RUN_NOT_MIGRATABLE
+            - RUN_NOT_MOVABLE
+            - MOVE_NOT_PENDING
+            - MOVE_SAME_OPERATOR
             - SIGNAL_NOT_AWAITED
             - CALLBACK_ALREADY_RESUMED
             - CALLBACK_NOT_WAITING
@@ -15867,7 +16146,14 @@ components:
       additionalProperties: false
       required: [code, message]
       properties:
-        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, MULTI_INSTANCE, PER_ITEM, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, SUBPROCESSES, INPUT_INVALID] }
+        code:
+          type: string
+          enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, MULTI_INSTANCE, PER_ITEM, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED,
+                 PARALLEL_REGION, STAGES_CHANGED, SUBPROCESSES, INPUT_INVALID, POLL_CHANGED, LOOP_CHANGED,
+                 TIER1_PINNED_RELEASE, MAPPING_INVALID, MAPPING_MERGE, RENAME_UNSUPPORTED, EFFECT_IN_FLIGHT,
+                 LOOP_IN_PROGRESS, INCLUSIVE_REGION, JOIN_UNREACHABLE, DATA_MISSING, SAME_RELEASE, NOT_ON_RELEASE,
+                 NOT_VISIBLE, RUN_ENDED, RUN_SUSPENDED, CHILD_RUNNING, FROM_NOT_CURRENT, MOVE_FROM_KIND,
+                 MOVE_TARGET_KIND, MOVE_KIND_MISMATCH, EFFECT_WOULD_REPEAT]
         message: { type: string }
         nodeId: { type: [string, 'null'] }
     MigrationOption:
@@ -15901,6 +16187,220 @@ components:
         ready: { type: boolean }
         notReadyReason: { type: [string, 'null'] }
         options: { type: array, items: { $ref: '#/components/schemas/MigrationOption' } }
+    StepMapping:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      description: The request at (or the data of) step `from` of the current release continues as step `to` of the target.
+      properties:
+        from: { type: string, minLength: 1, maxLength: 200 }
+        to: { type: string, minLength: 1, maxLength: 200 }
+    MigrationPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [targetReleaseId]
+      properties:
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        mappings: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/StepMapping' } }
+    MigrationPlanStep:
+      type: object
+      additionalProperties: false
+      required: [from, to, kind, action, label]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        kind: { type: string }
+        action: { type: string, enum: [keep, rename] }
+        label: { type: string }
+    MigrationDataCopy:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: { type: string }
+        to: { type: string }
+    MigrationPlan:
+      type: object
+      additionalProperties: false
+      required: [runId, current, target, ready, allowed, runVersion, steps, dataCopies, findings, suggestedMappings]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: [string, 'null'] }
+        current: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        target: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        ready: { type: boolean, description: Nothing can change the request now (it is suspended or held by its child requests). }
+        notReadyReason: { type: [string, 'null'] }
+        hold: { type: [string, 'null'], enum: [suspended, childRequests, suspendDuring, null] }
+        allowed: { type: boolean, description: Ready and no finding. }
+        runVersion: { type: integer, minimum: 0 }
+        steps: { type: array, items: { $ref: '#/components/schemas/MigrationPlanStep' } }
+        dataCopies: { type: array, items: { $ref: '#/components/schemas/MigrationDataCopy' } }
+        findings: { type: array, items: { $ref: '#/components/schemas/MigrationFinding' } }
+        suggestedMappings: { type: array, items: { $ref: '#/components/schemas/StepMapping' } }
+    MigrationReleaseRef:
+      type: object
+      additionalProperties: false
+      required: [id, releaseNumber]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        releaseNumber: { type: integer, minimum: 1 }
+    MappedMigrationRequest:
+      type: object
+      additionalProperties: false
+      required: [targetReleaseId, reason, expectedVersion]
+      properties:
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        mappings: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/StepMapping' } }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    MigrationBatchPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceReleaseId, targetReleaseId]
+      properties:
+        sourceReleaseId: { $ref: '#/components/schemas/Uuid' }
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        mappings: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/StepMapping' } }
+        runIds: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/Uuid' } }
+        suspendDuring: { type: boolean }
+    MigrationBatchPreview:
+      type: object
+      additionalProperties: false
+      required: [source, target, total, allowed, refused, truncated, items]
+      properties:
+        source: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        target: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        total: { type: integer, minimum: 0 }
+        allowed: { type: integer, minimum: 0 }
+        refused: { type: integer, minimum: 0 }
+        truncated: { type: boolean }
+        items: { type: array, items: { $ref: '#/components/schemas/MigrationPlan' } }
+    CreateMigrationBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceReleaseId, targetReleaseId, runIds, reason, expectedCount]
+      properties:
+        sourceReleaseId: { $ref: '#/components/schemas/Uuid' }
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        mappings: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/StepMapping' } }
+        runIds: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/Uuid' } }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        suspendDuring: { type: boolean }
+        expectedCount: { type: integer, minimum: 1, maximum: 100 }
+    MigrationBatchItem:
+      type: object
+      additionalProperties: false
+      required: [runId, state, findings]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: [string, 'null'] }
+        state: { type: string, enum: [pending, migrated, refused, failed] }
+        message: { type: [string, 'null'] }
+        findings: { type: array, items: { $ref: '#/components/schemas/MigrationFinding' } }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    MigrationBatch:
+      type: object
+      additionalProperties: false
+      required: [id, workflowId, source, target, mappings, state, suspendDuring, itemCount, migrated, refused, failed, createdBy, createdAt, items]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        source: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        target: { $ref: '#/components/schemas/MigrationReleaseRef' }
+        mappings: { type: array, items: { $ref: '#/components/schemas/StepMapping' } }
+        state: { type: string, enum: [running, completed] }
+        suspendDuring: { type: boolean }
+        itemCount: { type: integer, minimum: 1 }
+        migrated: { type: integer, minimum: 0 }
+        refused: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        createdBy: { $ref: '#/components/schemas/Uuid' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        items: { type: array, items: { $ref: '#/components/schemas/MigrationBatchItem' } }
+    MovePlanRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, fromStepId, toStepId]
+      properties:
+        kind: { type: string, enum: [move, skip, rerun] }
+        fromStepId: { type: string, minLength: 1, maxLength: 200 }
+        toStepId: { type: string, minLength: 1, maxLength: 200 }
+    MoveAffected:
+      type: object
+      additionalProperties: false
+      required: [nodeId, label, kind, handling]
+      properties:
+        nodeId: { type: string }
+        label: { type: string }
+        kind: { type: string }
+        handling:
+          type: string
+          enum: [notRun, runsAgain, reuseRecorded, wouldRepeat]
+          description: reuseRecorded means the call is answered from the effect journal and nothing is sent again.
+    MovePlan:
+      type: object
+      additionalProperties: false
+      required: [kind, fromStepId, toStepId, allowed, runVersion, approvalRequired, skipped, rerun, findings]
+      properties:
+        kind: { type: string, enum: [move, skip, rerun] }
+        fromStepId: { type: string }
+        fromLabel: { type: [string, 'null'] }
+        toStepId: { type: string }
+        toLabel: { type: [string, 'null'] }
+        allowed: { type: boolean }
+        runVersion: { type: integer, minimum: 0 }
+        approvalRequired: { type: boolean }
+        approvalReason: { type: [string, 'null'] }
+        skipped: { type: array, items: { $ref: '#/components/schemas/MoveAffected' } }
+        rerun: { type: array, items: { $ref: '#/components/schemas/MoveAffected' } }
+        findings: { type: array, items: { $ref: '#/components/schemas/MigrationFinding' } }
+    MoveRunRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, fromStepId, toStepId, reason, expectedVersion]
+      properties:
+        kind: { type: string, enum: [move, skip, rerun] }
+        fromStepId: { type: string, minLength: 1, maxLength: 200 }
+        toStepId: { type: string, minLength: 1, maxLength: 200 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    DecideMoveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: [string, 'null'], maxLength: 500 }
+    RunMove:
+      type: object
+      additionalProperties: false
+      required: [id, runId, kind, fromStepId, toStepId, reason, state, approvalRequired, expectedVersion, requestedBy, requestedAt, skipped, rerun]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        kind: { type: string, enum: [move, skip, rerun] }
+        fromStepId: { type: string }
+        fromLabel: { type: [string, 'null'] }
+        toStepId: { type: string }
+        toLabel: { type: [string, 'null'] }
+        reason: { type: string }
+        state: { type: string, enum: [pendingApproval, executed, rejected, withdrawn, stale, expired] }
+        approvalRequired: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
+        requestedBy: { $ref: '#/components/schemas/Uuid' }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        decidedBy: { type: [string, 'null'], format: uuid }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decisionNote: { type: [string, 'null'] }
+        executedAt: { type: [string, 'null'], format: date-time }
+        skipped: { type: array, items: { $ref: '#/components/schemas/MoveAffected' } }
+        rerun: { type: array, items: { $ref: '#/components/schemas/MoveAffected' } }
+    RunMoveList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RunMove' } }
     ResumeRunRequest:
       type: object
       additionalProperties: false

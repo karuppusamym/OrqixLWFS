@@ -484,6 +484,58 @@ export const migrateRun = (ws: string, runId: string, body: S['MigrateRunRequest
     }),
   )
 
+// S143 (CG-O02, CG-O03): migration with a step mapping, migration batches and guarded moves.
+export const planRunMigration = (ws: string, runId: string, body: S['MigrationPlanRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/migration-plan', { params: { path: { workspaceId: ws, runId } }, body }))
+
+export const migrateRunWithMapping = (ws: string, runId: string, body: S['MappedMigrationRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const previewMigrationBatch = (ws: string, body: S['MigrationBatchPreviewRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migration-batches/preview', { params: { path: { workspaceId: ws } }, body }))
+
+export const createMigrationBatch = (ws: string, body: S['CreateMigrationBatchRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/migration-batches', {
+      params: { path: { workspaceId: ws }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const planRunMove = (ws: string, runId: string, body: S['MovePlanRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/move-plan', { params: { path: { workspaceId: ws, runId } }, body }))
+
+export const listRunMoves = (ws: string, runId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/moves', { params: { path: { workspaceId: ws, runId } } }))
+
+export const moveRun = (ws: string, runId: string, body: S['MoveRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/moves', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const decideRunMove = (ws: string, runId: string, moveId: string, decision: 'approve' | 'reject', body: S['DecideMoveRequest'], idempotencyKey: string) =>
+  decision === 'approve'
+    ? call(
+        api.POST('/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/approve', {
+          params: { path: { workspaceId: ws, runId, moveId }, header: { 'Idempotency-Key': idempotencyKey } },
+          body,
+        }),
+      )
+    : call(
+        api.POST('/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/reject', {
+          params: { path: { workspaceId: ws, runId, moveId }, header: { 'Idempotency-Key': idempotencyKey } },
+          body,
+        }),
+      )
+
 export const retryRun = (ws: string, runId: string, body: S['RetryRunRequest'], idempotencyKey: string) =>
   call(
     api.POST('/workspaces/{workspaceId}/runs/{runId}/retry', {

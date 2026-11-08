@@ -45,7 +45,8 @@ public class RunEvidencePack {
     /** Operator interventions on a run, its tasks or its effects (audited, guarded commands). */
     static final List<String> CORRECTIONS = List.of("run.input-corrected", "task.input-corrected",
             "run.retry-requested", "effect.reconciled", "run.suspended", "run.resumed", "run.cancelled", "run.migrated",
-            "run.projection-repaired", "run.signal-sent", "task.reassigned", "task.delegated");
+            "run.projection-repaired", "run.signal-sent", "task.reassigned", "task.delegated", "run.move-requested",
+            "run.move-rejected", "run.moved");
 
     private static final int LIMIT = 10_000;
 

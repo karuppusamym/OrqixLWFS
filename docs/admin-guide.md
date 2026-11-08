@@ -394,3 +394,16 @@ from an unlinked account does nothing. Point Slack interactivity at `/api/v1/wor
 and the Teams outgoing webhook at `/api/v1/workspaces/<id>/task-actions/teams/interactions`. Recent messages show
 who was sent what channel, or why nothing was sent. In this build messages go to local stubs only; live mail servers
 and tenants are an external step. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).
+
+## Moving requests between versions and steps - 8 November 2026
+
+Operators (`run.operate`) can move a suspended request to another version of its workflow with a **step mapping**
+(Run detail → Move with step mapping): a waiting approval may continue under a renamed step, and the version may
+change steps the request already passed as long as every step ahead still finds its data. The dialog shows the plan
+and every reason a move is refused before anything changes, and can preview and move up to 100 requests of the same
+version at once (each suspended and resumed around its move). **Move to another step** skips the current step, runs
+a step again or moves the request to another step; calls recorded in the effect journal are never sent twice, and
+steps with other effects (notices, documents, child requests) are not run again. In a production workspace (any
+workspace without an explicit non-production stage) or a regulated one, a second operator must approve each move;
+the move lapses if the request changes first or nobody approves it within 24 hours. Details:
+[S143](build/S143-instance-migration-and-move.md).

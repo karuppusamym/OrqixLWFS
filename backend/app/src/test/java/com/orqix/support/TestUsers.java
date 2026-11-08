@@ -21,6 +21,8 @@ public final class TestUsers {
             Map.entry("dana.designer", List.of("orqix-purchasing-designers")),
             Map.entry("paul.publisher", List.of("orqix-purchasing-publishers")),
             Map.entry("olga.operator", List.of("orqix-purchasing-operators")),
+            // S143: the second operator who approves a guarded move.
+            Map.entry("opal.operator", List.of("orqix-purchasing-operators")),
             Map.entry("vic.viewer", List.of("orqix-purchasing-viewers")),
             Map.entry("rhea.requester", List.of("orqix-purchasing-requesters")),
             Map.entry("mani.manager", List.of("orqix-purchasing-managers", "orqix-purchasing-requesters")),

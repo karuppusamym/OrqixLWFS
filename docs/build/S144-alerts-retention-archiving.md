@@ -166,7 +166,10 @@ Backend (real PostgreSQL 18 and Flowable 8 through Testcontainers):
 
 Frontend: `AlertRulesPanel.test.tsx` (3), `RunRetentionPanel.test.tsx` (2); mock backend `mocks/alertsRetention.ts`.
 
-Totals of the full runs are in the commit message of this slice.
+Full runs on this branch (rebased on `9ef01db3`): `backend/mvnw -o clean verify` BUILD SUCCESS, compiler 1,183 tests
+and app 1,361 tests (5 skipped), 0 failures. Frontend: lint, typecheck, `api:check` and build pass; Vitest 1,695 tests,
+of which `ExitExportPanel.test.tsx` timed out once under load while the backend suite ran and passes 4/4 alone.
+`contract_check.py` 142/142; Redocly lint valid (warnings only, none new apart from the tag without a description).
 
 ## Merge notes
 

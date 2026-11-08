@@ -100,6 +100,39 @@ public class MessageStore {
         return inserted == 1 ? Optional.of(id) : Optional.empty();
     }
 
+    /** S139 (CG-E08): a message handler's subscription, armed with the request and not shown as a waiting step. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<UUID> insertHandler(UUID id, UUID workspaceId, UUID runId, String handlerId, String messageName,
+            String correlationKey, String engineExecutionId, Instant createdAt) {
+        int inserted = jdbc.sql("""
+                INSERT INTO message_subscription (id, workspace_id, run_id, node_id, message_name, correlation_key,
+                                                  engine_execution_id, status, created_at, kind)
+                VALUES (:id, :ws, :run, :node, :name, :key, :execution, 'waiting', :now, 'handler')
+                ON CONFLICT (run_id, node_id) DO NOTHING
+                """)
+                .param("id", id).param("ws", workspaceId).param("run", runId).param("node", handlerId)
+                .param("name", messageName).param("key", correlationKey).param("execution", engineExecutionId)
+                .param("now", Sql.ts(createdAt)).update();
+        return inserted == 1 ? Optional.of(id) : Optional.empty();
+    }
+
+    /** @return {@code wait} or {@code handler} (S139) */
+    @Transactional(readOnly = true)
+    public String kind(UUID workspaceId, UUID id) {
+        return jdbc.sql("SELECT kind FROM message_subscription WHERE workspace_id = :ws AND id = :id")
+                .param("ws", workspaceId).param("id", id).query(String.class).optional().orElse("wait");
+    }
+
+    /** S139: closes the open subscription of one step (a cancelled branch or an interrupted wait). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void closeForStep(UUID workspaceId, UUID runId, String nodeId, Instant now) {
+        jdbc.sql("""
+                UPDATE message_subscription SET status = 'cancelled', closed_at = :now
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'waiting'
+                """).param("now", Sql.ts(now)).param("ws", workspaceId).param("run", runId).param("node", nodeId)
+                .update();
+    }
+
     @Transactional(readOnly = true)
     public Optional<Subscription> find(UUID workspaceId, UUID id) {
         return jdbc.sql("SELECT " + SUBSCRIPTION_COLUMNS + " FROM message_subscription WHERE workspace_id = :ws AND id = :id")
@@ -174,7 +207,7 @@ public class MessageStore {
     public List<UUID> waitingWithBufferedMessage(Instant now, int limit) {
         return jdbc.sql("""
                 SELECT s.id FROM message_subscription s
-                WHERE s.status = 'waiting' AND EXISTS (
+                WHERE s.status = 'waiting' AND s.kind = 'wait' AND EXISTS (
                     SELECT 1 FROM inbound_message m
                     WHERE m.workspace_id = s.workspace_id AND m.name = s.message_name
                       AND m.correlation_key = s.correlation_key AND m.status = 'buffered' AND m.expires_at > :now)

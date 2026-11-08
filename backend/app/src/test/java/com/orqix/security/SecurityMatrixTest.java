@@ -69,7 +69,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "checkCaseDefinitionDraft".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId)
                             // S124: the saved Ask AI conversation is text the editors wrote; it is never audited.
-                            || "saveAiConversation".equals(operationId))
+                            || "saveAiConversation".equals(operationId)
+                            // S139: previews compute times and change nothing.
+                            || "previewSchedule".equals(operationId) || "previewWorkingCalendar".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -377,6 +379,14 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("promotionId", UUID.randomUUID().toString());
         ids.put("candidateId", UUID.randomUUID().toString());
         ids.put("decisionId", UUID.randomUUID().toString());
+        // S139: a real working calendar, so a foreign call is refused by access, not by a missing resource; the
+        // workspace is invisible to foreign principals, so an unknown schedule id proves the 404 as well.
+        String calendarKey = "matrix-" + UUID.randomUUID().toString().substring(0, 8);
+        api("dana.designer").post(Map.of("key", calendarKey, "name", "Matrix " + calendarKey, "content",
+                Map.of("zone", "Europe/London", "weekdays", List.of(1, 2, 3, 4, 5), "start", "09:00", "end", "17:00")),
+                "/workspaces/{ws}/calendars", PURCHASING);
+        ids.put("calendarKey", calendarKey);
+        ids.put("scheduleId", UUID.randomUUID().toString());
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
         ids.put("grantId", access.path("grants").get(0).path("id").asString());

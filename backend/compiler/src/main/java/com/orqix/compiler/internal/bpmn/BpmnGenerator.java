@@ -164,8 +164,18 @@ public final class BpmnGenerator {
                 .namespace("omgdi", DI_NS)
                 .attr("targetNamespace", TARGET_NAMESPACE);
         // Message definitions come first, one per message name (sorted), so ids and order are deterministic.
-        new java.util.TreeSet<>(definition.nodes().stream().filter(n -> n instanceof Node.WaitForMessage)
-                .map(n -> ((Node.WaitForMessage) n).message()).toList()).forEach(name ->
+        java.util.TreeSet<String> messageNames = new java.util.TreeSet<>(definition.nodes().stream()
+                .filter(n -> n instanceof Node.WaitForMessage).map(n -> ((Node.WaitForMessage) n).message()).toList());
+        // S139: the message-like branches of "Wait for the first" and message handlers wait for messages too.
+        for (Node n : definition.nodes()) {
+            if (n instanceof Node.WaitForFirst w) {
+                w.branches().stream().filter(Node.FirstBranch::messageLike)
+                        .forEach(b -> messageNames.add(b.messageName(w.id())));
+            }
+        }
+        definition.subprocesses().stream().filter(WorkflowDefinition.Subprocess::messageHandler)
+                .forEach(s -> messageNames.add(s.message()));
+        messageNames.forEach(name ->
                 x.leaf("", "message", BPMN_NS).attr("id", MESSAGE_DEFINITION + name).attr("name", name));
         if (definition.transitions().stream().anyMatch(t -> t.on() == Route.FAILED)) {
             // One error definition for every failure route; each error boundary event sits on its own step (S32).
@@ -537,6 +547,21 @@ public final class BpmnGenerator {
                     // so exactly one continuation happens (S12 section 1).
                     .attr("flowable", FLOWABLE_NS, "async", "true")
                     .attr("flowable", FLOWABLE_NS, "exclusive", "true");
+            case Node.Wait w when d.waits().working(w.id()) != null -> {
+                // S139 (CG-W05): working time of a pinned shared calendar; the due date is computed on arrival.
+                var working = d.waits().working(w.id());
+                x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", w.id()).attr("name", w.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "wait", ORQIX_NS).attr("workingDuration", working.duration())
+                        .attr("calendarKey", working.calendarRef())
+                        .attr("calendarVersion", calendarVersion(d, working.calendarRef()));
+                x.close();
+                x.open("", "timerEventDefinition", BPMN_NS);
+                x.inline("", "timeDate", BPMN_NS, null, "${orqixWait.working(execution, '" + w.id() + "')}", true);
+                x.close();
+                x.close();
+            }
+            case Node.WaitForFirst w -> waitForFirst(x, map, d, w);
             case Node.Wait w -> {
                 x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", w.id()).attr("name", w.label());
                 x.open("", "extensionElements", BPMN_NS);
@@ -601,9 +626,19 @@ public final class BpmnGenerator {
                             .attr("name", m.label() + ": no message in time");
                     x.open("", "extensionElements", BPMN_NS);
                     x.leaf("orqix", "messageTimeout", ORQIX_NS).attr("node", m.id()).attr("after", m.timeoutAfter());
+                    String calendar = d.waits().timeoutCalendar(m.id());
+                    if (calendar != null) {
+                        // S139 (CG-W05): only written when set, so every other message wait is unchanged.
+                        x.attr("calendarKey", calendar).attr("calendarVersion", calendarVersion(d, calendar));
+                    }
                     x.close();
                     x.open("", "timerEventDefinition", BPMN_NS);
-                    x.inline("", "timeDuration", BPMN_NS, null, m.timeoutAfter(), false);
+                    if (calendar == null) {
+                        x.inline("", "timeDuration", BPMN_NS, null, m.timeoutAfter(), false);
+                    } else {
+                        x.inline("", "timeDate", BPMN_NS, null, "${orqixWait.working(execution, '" + timeout + "')}",
+                                true);
+                    }
                     x.close();
                     x.close();
                     map.node(m.id(), timeout);
@@ -692,6 +727,17 @@ public final class BpmnGenerator {
             x.open("", "extensionElements", BPMN_NS);
             x.leaf("orqix", "scopeEvent", ORQIX_NS).attr("scope", id).attr("trigger", s.triggerType())
                     .attr("interrupting", Boolean.toString(s.interrupting()));
+            if (s.messageHandler()) {
+                // S139 (CG-E08): the handler's message subscription (no waiting step; it is armed with the request).
+                x.open("orqix", "message", ORQIX_NS).attr("node", id).attr("name", s.message())
+                        .attr("correlationField", s.correlationField()).attr("handler", "true")
+                        .attr("interrupting", Boolean.toString(s.interrupting()));
+                for (Node.PayloadField f : s.payload()) {
+                    x.leaf("orqix", "field", ORQIX_NS).attr("name", f.name()).attr("type", f.type().json())
+                            .attr("required", Boolean.toString(f.required()));
+                }
+                x.close();
+            }
             x.close();
             switch (s.triggerType()) {
                 case "error" -> {
@@ -701,6 +747,8 @@ public final class BpmnGenerator {
                     }
                 }
                 case "signal" -> x.leaf("", "signalEventDefinition", BPMN_NS).attr("signalRef", SIGNAL_PREFIX + s.signal());
+                case "message" -> x.leaf("", "messageEventDefinition", BPMN_NS)
+                        .attr("messageRef", MESSAGE_DEFINITION + s.message());
                 default -> {
                     x.open("", "timerEventDefinition", BPMN_NS);
                     x.inline("", "timeDuration", BPMN_NS, null, s.after(), false);
@@ -971,6 +1019,11 @@ public final class BpmnGenerator {
                 }
             }
             d.subprocesses().stream().filter(s -> s.signal() != null).forEach(s -> names.add(s.signal()));
+            for (Node n : d.nodes()) {
+                if (n instanceof Node.WaitForFirst w) {
+                    w.branches().stream().filter(b -> b.signal() != null).forEach(b -> names.add(b.signal()));
+                }
+            }
             return names;
         }
     }
@@ -1009,7 +1062,7 @@ public final class BpmnGenerator {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
-            case NEXT, DEFAULT, TIMED_OUT, FAILED, AI_LABEL, LOW_CONFIDENCE, NEEDS_REVIEW, AI_UNAVAILABLE, LIMIT_REACHED -> null;
+            case NEXT, DEFAULT, TIMED_OUT, FAILED, AI_LABEL, LOW_CONFIDENCE, NEEDS_REVIEW, AI_UNAVAILABLE, LIMIT_REACHED, BRANCH -> null;
         };
         if (expression == null && listeners.isEmpty()) {
             x.leaf("", "sequenceFlow", BPMN_NS);
@@ -1367,8 +1420,100 @@ public final class BpmnGenerator {
         map.node(n.id(), id);
     }
 
+    /** S139: the calendar version the workflow pins ({@code dependencies.assets}, kind calendar). */
+    private static String calendarVersion(WorkflowDefinition d, String key) {
+        var pin = d.waits().calendarPins().get(key);
+        if (pin == null) {
+            throw new IllegalStateException("Calendar " + key + " is not pinned; the compiler reports it");
+        }
+        return Integer.toString(pin.version());
+    }
+
+    /**
+     * "Wait for the first" (S139, CG-W07): an event-based gateway (the step) followed by one catch event per branch
+     * ({@code <step>__<branch>}); each branch's path leaves from its catch event. Messages, signals and timers are
+     * engine events; a callback branch and a check branch wait for an internal message that their services deliver.
+     */
+    private static void waitForFirst(XmlOut x, SourceMap map, WorkflowDefinition d, Node.WaitForFirst w) {
+        x.open("", "eventBasedGateway", BPMN_NS).attr("id", w.id()).attr("name", w.label());
+        x.open("", "extensionElements", BPMN_NS);
+        x.leaf("orqix", "waitForFirst", ORQIX_NS).attr("branches", String.join(",",
+                w.branches().stream().map(Node.FirstBranch::id).toList()));
+        x.close();
+        x.close();
+        for (Node.FirstBranch b : w.branches()) {
+            String element = Node.WaitForFirst.elementId(w.id(), b.id());
+            x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", element).attr("name", w.label() + ": " + b.label());
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "first", ORQIX_NS).attr("step", w.id()).attr("branch", b.id()).attr("kind", b.kind());
+            switch (b.kind()) {
+                case "signal" -> x.leaf("orqix", "signal", ORQIX_NS).attr("action", "wait").attr("name", b.signal());
+                case "timer" -> {
+                    if (b.after() != null) {
+                        x.leaf("orqix", "wait", ORQIX_NS).attr("duration", b.after());
+                    } else if (b.untilField() != null) {
+                        x.leaf("orqix", "wait", ORQIX_NS).attr("untilField", b.untilField())
+                                .attr("atTime", b.atTime() == null ? Node.Wait.DEFAULT_TIME : b.atTime());
+                    } else {
+                        x.leaf("orqix", "wait", ORQIX_NS).attr("workingDuration", b.workingDuration())
+                                .attr("calendarKey", b.calendarRef()).attr("calendarVersion", calendarVersion(d, b.calendarRef()));
+                    }
+                }
+                default -> {
+                    x.open("orqix", "message", ORQIX_NS).attr("node", element).attr("name", b.messageName(w.id()));
+                    if ("message".equals(b.kind())) {
+                        x.attr("correlationField", b.correlationField());
+                    } else {
+                        // Delivered by Orqix itself to this request only.
+                        x.attr("correlation", "run");
+                    }
+                    if (b.tokenValidFor() != null) {
+                        x.attr("callbackTokenValidFor", b.tokenValidFor());
+                    }
+                    if (b.check() != null) {
+                        String version = Integer.toString(d.dependencies().stream()
+                                .filter(dep -> dep.key().equals(b.check().connectionRef())).findFirst()
+                                .orElseThrow().definitionVersion());
+                        x.attr("fallbackConnectionVersion", version)
+                                .attr("fallbackCheckBase64", base64Json(b.check().json()));
+                    }
+                    for (Node.PayloadField f : b.payload()) {
+                        x.leaf("orqix", "field", ORQIX_NS).attr("name", f.name()).attr("type", f.type().json())
+                                .attr("required", Boolean.toString(f.required()));
+                    }
+                    x.close();
+                }
+            }
+            x.close();
+            switch (b.kind()) {
+                case "signal" -> x.leaf("", "signalEventDefinition", BPMN_NS).attr("signalRef", SIGNAL_PREFIX + b.signal());
+                case "timer" -> {
+                    x.open("", "timerEventDefinition", BPMN_NS);
+                    if (b.after() != null) {
+                        x.inline("", "timeDuration", BPMN_NS, null, b.after(), false);
+                    } else if (b.untilField() != null) {
+                        x.inline("", "timeDate", BPMN_NS, null, "${orqixWait.until(execution, '" + element + "')}", true);
+                    } else {
+                        x.inline("", "timeDate", BPMN_NS, null, "${orqixWait.working(execution, '" + element + "')}", true);
+                    }
+                    x.close();
+                }
+                default -> x.leaf("", "messageEventDefinition", BPMN_NS)
+                        .attr("messageRef", MESSAGE_DEFINITION + b.messageName(w.id()));
+            }
+            x.close();
+            map.node(w.id(), element);
+            String flow = w.id() + "__to__" + b.id();
+            x.leaf("", "sequenceFlow", BPMN_NS).attr("id", flow).attr("sourceRef", w.id()).attr("targetRef", element);
+            map.node(w.id(), flow);
+        }
+    }
+
     /** BPMN element a canonical transition leaves from (approvals leave through their generated helpers). */
     private static String flowSource(Node from, Transition t, WorkflowDefinition d) {
+        if (from instanceof Node.WaitForFirst && t.branch() != null) {
+            return Node.WaitForFirst.elementId(from.id(), t.branch());
+        }
         com.orqix.compiler.internal.model.StepForEach each = d.execution().forEachOf(from.id());
         if (from instanceof Node.Http h && h.polls()) {
             return from.id() + POLL_ROUTE;
@@ -1439,6 +1584,12 @@ public final class BpmnGenerator {
                 if (scopes.merged(n.id())) {
                     centre.put(n.id() + SPLIT_MERGE, new BigDecimal[] {cx.subtract(HELPER_OFFSET), cy});
                 }
+                if (n instanceof Node.WaitForFirst w) {
+                    for (Node.FirstBranch b : w.branches()) {
+                        centre.put(Node.WaitForFirst.elementId(n.id(), b.id()), new BigDecimal[] {cx.add(HELPER_OFFSET),
+                                cy.add(BOUNDARY_OFFSET.multiply(BigDecimal.valueOf(b.index() - (w.branches().size() - 1) / 2)))});
+                    }
+                }
                 if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
                     centre.put(n.id() + MESSAGE_CATCH, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.subtract(BOUNDARY_OFFSET)});
                     centre.put(n.id() + MESSAGE_TIMEOUT, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.add(BOUNDARY_OFFSET)});
@@ -1453,7 +1604,7 @@ public final class BpmnGenerator {
                     case START, END, WAIT, RAISE_ERROR, SEND_SIGNAL, WAIT_FOR_SIGNAL -> new int[] {36, 36};
                     case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                             ? new int[] {40, 40} : new int[] {36, 36};
-                    case BRANCH, PARALLEL_SPLIT, PARALLEL_JOIN -> new int[] {40, 40};
+                    case BRANCH, PARALLEL_SPLIT, PARALLEL_JOIN, WAIT_FOR_FIRST -> new int[] {40, 40};
                     default -> new int[] {100, 80};
                 };
                 shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
@@ -1477,6 +1628,13 @@ public final class BpmnGenerator {
                     shape(x, n.id() + MESSAGE_TIMEOUT, centre.get(n.id() + MESSAGE_TIMEOUT), 36, 36);
                     edge(x, n.id() + "__toMessage", centre.get(n.id()), centre.get(n.id() + MESSAGE_CATCH));
                     edge(x, n.id() + "__toTimeout", centre.get(n.id()), centre.get(n.id() + MESSAGE_TIMEOUT));
+                }
+                if (n instanceof Node.WaitForFirst w) {
+                    for (Node.FirstBranch b : w.branches()) {
+                        String element = Node.WaitForFirst.elementId(n.id(), b.id());
+                        shape(x, element, centre.get(element), 36, 36);
+                        edge(x, n.id() + "__to__" + b.id(), centre.get(n.id()), centre.get(element));
+                    }
                 }
                 if (n instanceof Node.Approval a) {
                     shape(x, n.id() + APPROVAL_ROUTE, centre.get(n.id() + APPROVAL_ROUTE), 40, 40);

@@ -92,13 +92,16 @@ public class PollWaits {
     private final OrqixProperties properties;
     private final TransactionTemplate tx;
     private final com.orqix.shared.idempotency.IdempotencyService idempotency;
+    private final WorkingCalendars calendars;
 
     public PollWaits(JdbcClient jdbc, Json json, Clock clock, RunStore runs, RunEvents events, ReleaseQueries releases,
             EngineCommands engine, EffectDispatcher dispatcher, ConnectionService connections, PolicyService policy,
             RunAccess runAccess, AuditWriter audit, RunSuspensions suspensions, MessageStore messages,
             @org.springframework.context.annotation.Lazy MessageDelivery delivery, MessageSettings messageSettings,
             OrqixProperties properties, PlatformTransactionManager transactions,
-            com.orqix.shared.idempotency.IdempotencyService idempotency) {
+            com.orqix.shared.idempotency.IdempotencyService idempotency,
+            @org.springframework.context.annotation.Lazy WorkingCalendars calendars) {
+        this.calendars = calendars;
         this.idempotency = idempotency;
         this.jdbc = jdbc;
         this.json = json;
@@ -191,11 +194,11 @@ public class PollWaits {
         Settings s = settings(workspaceId, run.releaseId(), nodeId, CHECK);
         ObjectNode context = context(s, nodeId, resolver);
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        Instant deadline = now.plusSeconds(s.schedule().deadline());
+        Instant deadline = deadline(run, nodeId, CHECK, now, s);
         Instant first = now.plusSeconds(s.schedule().firstCheckOffset());
         UUID id = Ids.newId();
         if (!insert(id, run, nodeId, CHECK, connectionKey, connectionVersion, operation, timeoutSeconds, request, context,
-                s.schedule().maxChecks(), now, first, deadline)) {
+                maxChecks(s, now, deadline), now, first, deadline)) {
             return;
         }
         String system = systemName(workspaceId, connectionKey, connectionVersion);
@@ -262,11 +265,11 @@ public class PollWaits {
             }
         }
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        Instant deadline = now.plusSeconds(s.schedule().deadline());
+        Instant deadline = deadline(run, nodeId, FALLBACK, now, s);
         Instant first = now.plusSeconds(s.schedule().firstCheckOffset());
         UUID id = Ids.newId();
         if (!insert(id, run, nodeId, FALLBACK, f.path("connectionRef").asString(), version, f.path("operation").asString(),
-                f.path("timeoutSeconds").asInt(10), request, context(s, nodeId, resolver), s.schedule().maxChecks(), now,
+                f.path("timeoutSeconds").asInt(10), request, context(s, nodeId, resolver), maxChecks(s, now, deadline), now,
                 first, deadline)) {
             return;
         }
@@ -276,6 +279,43 @@ public class PollWaits {
         events.append(run.workspaceId(), run.id(), "POLL_STARTED", nodeId, null, Map.of("connectionKey",
                 f.path("connectionRef").asString(), "operation", f.path("operation").asString(), "fallback", true,
                 "deadline", deadline.toString()));
+    }
+
+    /**
+     * S139 (CG-W05): the deadline of a check, from now. With {@code timeoutCalendarRef} the authored time counts
+     * working time of the pinned calendar version; otherwise it is wall-clock time as before.
+     */
+    private Instant deadline(RunStore.RunRow run, String nodeId, String kind, Instant now, Settings s) {
+        ReleaseQueries.ReleaseView release = releases.require(run.workspaceId(), run.releaseId());
+        JsonNode node = release.node(nodeId);
+        JsonNode config = node == null ? null : node.path("config");
+        String calendar = config == null ? null : CHECK.equals(kind)
+                ? config.path("poll").path("timeoutCalendarRef").asString(null)
+                : config.path("timeoutCalendarRef").asString(null);
+        String duration = config == null ? null : CHECK.equals(kind) ? config.path("poll").path("giveUpAfter").asString(null)
+                : config.path("timeoutAfter").asString(null);
+        if (calendar == null || duration == null) {
+            return now.plusSeconds(s.schedule().deadline());
+        }
+        int version = 0;
+        for (JsonNode a : release.definition().path("dependencies").path("assets")) {
+            if ("calendar".equals(a.path("kind").asString("")) && calendar.equals(a.path("key").asString(""))) {
+                version = a.path("version").asInt();
+            }
+        }
+        return WorkingCalendars.due(calendars.pinned(run.workspaceId(), calendar, version), now, duration);
+    }
+
+    /** The planned checks over the real deadline (working time stretches it), never more than the limit. */
+    private static int maxChecks(Settings s, Instant now, Instant deadline) {
+        long seconds = java.time.Duration.between(now, deadline).getSeconds();
+        PollSchedule p = s.schedule();
+        if (seconds <= p.deadline()) {
+            return p.maxChecks();
+        }
+        int worst = PollSchedule.worstCase(p.every(), p.multiplier(), p.maxInterval(), seconds, p.immediate(),
+                p.finalCheck());
+        return Math.max(p.maxChecks(), Math.min(PollSchedule.CHECK_LIMIT, worst));
     }
 
     private ObjectNode context(Settings s, String nodeId, Function<String, JsonNode> resolver) {

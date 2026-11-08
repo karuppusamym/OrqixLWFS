@@ -115,6 +115,14 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       const payload = (Array.isArray(node.config.payload) ? node.config.payload : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return payload.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
     }
+    case 'waitForFirst': {
+      // S139: which branch won, and the values the branches declare (each exists only when its branch wins).
+      const branches = (Array.isArray(node.config.branches) ? node.config.branches : []) as Array<{ id?: string; payload?: Array<{ name?: string; type?: FieldType; title?: string }> }>
+      return [
+        base('branch', 'string', 'Branch that happened first', branches.map((b) => b.id ?? '').filter(Boolean)),
+        ...branches.flatMap((b) => (b.payload ?? []).filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))),
+      ]
+    }
     case 'externalTask': {
       const result = (Array.isArray(node.config.result) ? node.config.result : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return result.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))

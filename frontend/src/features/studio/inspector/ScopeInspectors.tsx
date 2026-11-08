@@ -8,6 +8,7 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type Definition, type SubprocessDef, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+import { MessageTriggerFields } from './WaitsAndStartsFields'
 
 /** Signal names follow the workflow schema (docs/build/S59). */
 export const SIGNAL_PATTERN = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
@@ -274,12 +275,13 @@ export function SubprocessesInspector() {
               <>
                 <FormField id={`scope-trigger-${s.id}`} label="Starts on">
                   {(ids) => <Select id={ids.input} value={s.trigger?.type ?? 'signal'} disabled={readOnly} onChange={(e) => {
-                    const type = e.target.value as 'error' | 'signal' | 'timer'
-                    patch(s.id, { trigger: type === 'signal' ? { type, signal: 'signal-name' } : type === 'timer' ? { type, after: 'P1D' } : { type } })
-                  }}><option value="signal">A signal of this request</option><option value="timer">A time after the request started</option><option value="error">An error raised in the request</option></Select>}
+                    const type = e.target.value as 'error' | 'signal' | 'timer' | 'message'
+                    patch(s.id, { trigger: type === 'signal' ? { type, signal: 'signal-name' } : type === 'timer' ? { type, after: 'P1D' } : type === 'message' ? { type, message: 'customer-cancelled', correlationField: '' } : { type } })
+                  }}><option value="signal">A signal of this request</option><option value="message">A message for this request</option><option value="timer">A time after the request started</option><option value="error">An error raised in the request</option></Select>}
                 </FormField>
                 {s.trigger?.type === 'signal' ? <FormField id={`scope-signal-${s.id}`} label="Signal" required>{(ids) => <CommitInput id={ids.input} value={s.trigger?.signal ?? ''} disabled={readOnly} onCommit={(v) => patch(s.id, { trigger: { type: 'signal', signal: v.trim() } })} />}</FormField> : null}
                 {s.trigger?.type === 'timer' ? <FormField id={`scope-after-${s.id}`} label="After" required description="For example P3D.">{(ids) => <CommitInput id={ids.input} value={s.trigger?.after ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => patch(s.id, { trigger: { type: 'timer', after: v.trim() } })} />}</FormField> : null}
+                {s.trigger?.type === 'message' ? <MessageTriggerFields scope={s} patch={(p) => patch(s.id, p)} /> : null}
                 {s.trigger?.type === 'error' ? <FormField id={`scope-code-${s.id}`} label="Only for the error code" optionalText>{(ids) => <CommitInput id={ids.input} value={s.trigger?.errorCode ?? ''} disabled={readOnly} onCommit={(v) => patch(s.id, { trigger: { type: 'error', ...(v.trim() ? { errorCode: v.trim().toUpperCase() } : {}) } })} />}</FormField> : null}
                 <div className="flex items-center gap-2">
                   <Checkbox id={`scope-interrupting-${s.id}`} checked={s.interrupting === true} disabled={readOnly || s.trigger?.type === 'error'} onCheckedChange={(v) => patch(s.id, { interrupting: v === true })} />

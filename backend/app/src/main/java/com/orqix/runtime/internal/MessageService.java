@@ -64,6 +64,13 @@ public class MessageService {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         policy.require(access, Permission.MESSAGE_SEND, "sendMessage", true);
         String key = IdempotencyService.requireKey(idempotencyKey);
+        if (request.name() != null && request.name().startsWith("orqix-")) {
+            // S139: names starting with orqix- are Orqix's own deliveries (callback and check branches of "Wait for the
+            // first"); nobody outside can send them.
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The message name is not valid.").withFieldErrors(
+                    List.of(new ApiException.FieldError("/name", "reserved", "Names starting with orqix- are"
+                            + " reserved.")));
+        }
         JsonNode payload = request.payload() == null || request.payload().isNull() ? json.object() : request.payload();
         List<ApiException.FieldError> shape = MessagePayloads.shape(payload);
         if (!shape.isEmpty()) {

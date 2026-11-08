@@ -370,6 +370,18 @@ final class TypeRules {
                 }
             }
         }
+        if (producer instanceof Node.WaitForFirst w && w.declaring(r.key()) != null) {
+            // S139: a branch's values exist only when that branch wins.
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && WaitsAndStartsRules.reachableWithoutBranch(rc, w, w.declaring(r.key()).id(), end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when " + q(w.declaring(r.key()).label())
+                            + " happens first, but " + q(end) + " can also be reached otherwise, so the result field "
+                            + q(entry.key()) + " cannot be required.");
+                    return;
+                }
+            }
+        }
         if (producer instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
             for (Node end : g.ends()) {
                 if (g.isReachable(end) && MessageRules.reachableWithoutMessage(rc, m, end)) {

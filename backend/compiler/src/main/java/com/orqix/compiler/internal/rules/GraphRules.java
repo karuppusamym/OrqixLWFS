@@ -116,6 +116,8 @@ final class GraphRules {
                 // S134: the routes of an AI task depend on its mode and autonomy; AiTaskRules counts them.
                 case AI_TASK -> rc.definition().execution().forEachOf(n.id()) != null ? Set.of(Route.NEXT)
                         : AiTaskRules.allowed((Node.AiTask) n);
+                // S139: one path per branch; WaitsAndStartsRules counts them.
+                case WAIT_FOR_FIRST -> Set.of(Route.BRANCH);
                 default -> Set.of(Route.NEXT);
             };
             if (rc.leaving(n).stream().anyMatch(Transition::bounded)) {
@@ -221,6 +223,9 @@ final class GraphRules {
                         rc.issues().blocker("WF_OUTGOING_INVALID", n.path(), n.id(), null, n.label()
                                 + " runs for each item, so it needs exactly one next step.");
                     }
+                }
+                case WAIT_FOR_FIRST -> {
+                    // Counted per branch by WaitsAndStartsRules (S139).
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);

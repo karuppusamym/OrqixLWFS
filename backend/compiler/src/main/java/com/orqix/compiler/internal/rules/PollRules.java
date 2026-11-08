@@ -37,7 +37,16 @@ final class PollRules {
             if (n instanceof Node.Http h && h.polls()) {
                 poll(rc, h);
             } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
-                fallback(rc, m);
+                fallback(rc, m, m.fallbackCheck(), m.payload(), m.timeoutAfter(), m.configPath("fallbackCheck"),
+                        "The safety-net check of " + q(m));
+            } else if (n instanceof Node.WaitForFirst w) {
+                // S139: a check branch is checked like a safety net; its mapped results fill the branch's values.
+                for (Node.FirstBranch b : w.branches()) {
+                    if ("check".equals(b.kind()) && b.check() != null) {
+                        fallback(rc, w, b.check(), b.payload(), null, b.path(w) + "/check",
+                                "The check of the branch " + q(b.label()) + " of " + q(w));
+                    }
+                }
             }
         }
     }
@@ -132,20 +141,21 @@ final class PollRules {
 
     // ------------------------------------------------------------------ CG-W03
 
-    private static void fallback(RuleContext rc, Node.WaitForMessage m) {
-        Node.FallbackCheck f = m.fallbackCheck();
-        String base = m.configPath("fallbackCheck");
+    private static void fallback(RuleContext rc, Node m, Node.FallbackCheck f, List<Node.PayloadField> payload,
+            String timeoutAfter, String base, String what) {
+        java.util.function.Function<String, Node.PayloadField> fieldOf = name -> payload.stream()
+                .filter(p -> p.name().equals(name)).findFirst().orElse(null);
         long every = PollSchedule.seconds(f.every());
         if (every < PollSchedule.MIN_FALLBACK_EVERY || every > PollSchedule.MAX_INTERVAL) {
-            rc.issues().blocker("WF_POLL_INTERVAL", base + "/every", m.id(), null, "The safety-net check of " + q(m)
+            rc.issues().blocker("WF_POLL_INTERVAL", base + "/every", m.id(), null, what
                     + " runs every " + PollSchedule.describe(Math.max(0, every)) + ". Choose from 1 minute to 1 day.");
         } else if (f.maxChecks() == null) {
-            long deadline = m.timeoutAfter() == null ? PollSchedule.MAX_DEADLINE
-                    : com.orqix.compiler.internal.model.Durations.minutes(m.timeoutAfter()) * 60;
+            long deadline = timeoutAfter == null ? PollSchedule.MAX_DEADLINE
+                    : com.orqix.compiler.internal.model.Durations.minutes(timeoutAfter) * 60;
             if (PollSchedule.worstCase(every, java.math.BigDecimal.ONE, every, deadline, false, false)
                     > PollSchedule.CHECK_LIMIT) {
-                rc.issues().blocker("WF_POLL_TOO_MANY_CHECKS", base + "/every", m.id(), null, "The safety-net check"
-                        + " of " + q(m) + " could run more than " + PollSchedule.CHECK_LIMIT + " times. Check less"
+                rc.issues().blocker("WF_POLL_TOO_MANY_CHECKS", base + "/every", m.id(), null, what
+                        + " could run more than " + PollSchedule.CHECK_LIMIT + " times. Check less"
                         + " often, set a time limit on the step, or set the most checks to make.");
             }
         }
@@ -161,7 +171,7 @@ final class PollRules {
         JsonNode operation = readOnly(rc, m, f.connectionRef(), f.operation(), base);
         for (Map.Entry<String, String> e : f.resultMapping().entrySet()) {
             String path = JsonPointers.append(base + "/resultMapping", e.getKey());
-            Node.PayloadField field = m.field(e.getKey());
+            Node.PayloadField field = fieldOf.apply(e.getKey());
             if (field == null) {
                 rc.issues().blocker("WF_POLL_FALLBACK_MAPPING", path, m.id(), null, q(e.getKey()) + " is not a value"
                         + " the message carries. Map only declared message values.");
@@ -180,7 +190,7 @@ final class PollRules {
                 }
             }
         }
-        for (Node.PayloadField field : m.payload()) {
+        for (Node.PayloadField field : payload) {
             if (field.required() && !f.resultMapping().containsKey(field.name())) {
                 rc.issues().blocker("WF_POLL_FALLBACK_MAPPING", base + "/resultMapping", m.id(), null, "The message"
                         + " value " + q(field.name()) + " is required, so the safety-net check must provide it.");
@@ -210,7 +220,7 @@ final class PollRules {
     private static JsonNode readOnly(RuleContext rc, Node n, String connection, String operationName, String base) {
         Connections.Pinned pinned = rc.connections().pinned(connection);
         if (pinned == null) {
-            if (n instanceof Node.WaitForMessage) {
+            if (!(n instanceof Node.Http)) {
                 rc.issues().blocker("WF_CONNECTION_UNDECLARED", base + "/connectionRef", n.id(), null, q(n)
                         + " checks the connection " + q(connection) + ", which is not listed in the workflow's"
                         + " dependencies.");
@@ -219,7 +229,7 @@ final class PollRules {
         }
         JsonNode operation = rc.connections().operation(connection, operationName);
         if (operation == null) {
-            if (n instanceof Node.WaitForMessage && pinned.status() == Connections.Status.OK) {
+            if (!(n instanceof Node.Http) && pinned.status() == Connections.Status.OK) {
                 rc.issues().blocker("WF_OPERATION_UNKNOWN", base + "/operation", n.id(), null, "The connection "
                         + q(connection) + " has no operation " + q(operationName) + ".");
             }

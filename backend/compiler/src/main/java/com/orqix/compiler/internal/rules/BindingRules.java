@@ -211,6 +211,8 @@ final class BindingRules {
                 usedKeys.add(http.connectionRef());
             } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
                 usedKeys.add(m.fallbackCheck().connectionRef()); // S129 safety-net check
+            } else if (n instanceof Node.WaitForFirst w) {
+                usedKeys.addAll(checkConnections(w)); // S139 check branches
             }
         }
         for (Dependency dup : rc.connections().duplicates()) {
@@ -374,7 +376,14 @@ final class BindingRules {
     static List<String> usedConnections(RuleContext rc) {
         return rc.definition().nodes().stream().flatMap(n -> n instanceof Node.Http h ? java.util.stream.Stream.of(h.connectionRef())
                 : n instanceof Node.WaitForMessage m && m.fallbackCheck() != null
-                        ? java.util.stream.Stream.of(m.fallbackCheck().connectionRef()) : java.util.stream.Stream.<String>empty())
+                        ? java.util.stream.Stream.of(m.fallbackCheck().connectionRef())
+                : n instanceof Node.WaitForFirst w ? checkConnections(w).stream() : java.util.stream.Stream.<String>empty())
                 .distinct().toList();
+    }
+
+    /** @return the connections the check branches of a "Wait for the first" step call (S139), in branch order */
+    static List<String> checkConnections(Node.WaitForFirst w) {
+        return w.branches().stream().filter(b -> b.check() != null).map(b -> b.check().connectionRef()).distinct()
+                .toList();
     }
 }

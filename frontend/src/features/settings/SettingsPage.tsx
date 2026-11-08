@@ -16,6 +16,8 @@ import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 import { ConnectorPackagesPanel } from './ConnectorPackagesPanel'
 import { FeaturesPanel } from './FeaturesPanel'
 import { McpServerPanel } from './McpServerPanel'
+import { WorkingCalendarsPanel } from './WorkingCalendarsPanel'
+import { SchedulesPanel } from './SchedulesPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -81,6 +83,8 @@ export function SettingsPage() {
             </TabsTrigger>
           ) : null}
           {showAssets ? <TabsTrigger value="assets">Shared assets</TabsTrigger> : null}
+          {showTemplates ? <TabsTrigger value="calendars">Working calendars</TabsTrigger> : null}
+          {showTemplates ? <TabsTrigger value="schedules">Schedules</TabsTrigger> : null}
           {showTemplates ? <TabsTrigger value="templates">Document templates</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
           {showAccess ? (
@@ -99,6 +103,8 @@ export function SettingsPage() {
         {showAccess ? <TabsContent value="documents"><DocumentSourcesPanel /></TabsContent> : null}
         {showTemplates ? <TabsContent value="templates"><DocumentTemplatesPanel /></TabsContent> : null}
         {showAssets ? <TabsContent value="assets"><SharedAssetsPanel /></TabsContent> : null}
+        {showTemplates ? <TabsContent value="calendars"><WorkingCalendarsPanel /></TabsContent> : null}
+        {showTemplates ? <TabsContent value="schedules"><SchedulesPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="retention"><AttachmentRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="agent-write-retention"><AgentWriteRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="exit-export"><ExitExportPanel /></TabsContent> : null}

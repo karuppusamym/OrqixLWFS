@@ -179,8 +179,25 @@ public final class BpmnDefaults {
                 adoptDefault(rule.key(), rule.value(), (ObjectNode) draft.get("retry"), (ObjectNode) target.get("retry"));
             }
         }
+        if ("waitForFirst".equals(type) && draft.path("branches").isArray() && target.path("branches").isArray()) {
+            // S139: the branches of "Wait for the first" keep their value titles like message waits do.
+            Map<String, JsonNode> before = new LinkedHashMap<>();
+            draft.get("branches").forEach(b -> before.putIfAbsent(b.path("id").asString(""), b));
+            for (JsonNode branch : target.get("branches")) {
+                JsonNode was = before.get(branch.path("id").asString(""));
+                if (was != null && was.isObject() && branch.isObject()) {
+                    adoptFields((ObjectNode) was, (ObjectNode) branch, "payload");
+                }
+            }
+        }
         String list = FIELD_LISTS.get(type);
-        if (list != null && draft.path(list).isArray() && target.path(list).isArray()) {
+        if (list != null) {
+            adoptFields(draft, target, list);
+        }
+    }
+
+    private static void adoptFields(ObjectNode draft, ObjectNode target, String list) {
+        if (draft.path(list).isArray() && target.path(list).isArray()) {
             Map<String, JsonNode> fields = new LinkedHashMap<>();
             draft.get(list).forEach(f -> fields.putIfAbsent(f.path("name").asString(""), f));
             for (JsonNode field : (ArrayNode) target.get(list)) {

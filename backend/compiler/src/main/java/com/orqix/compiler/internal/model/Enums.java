@@ -37,6 +37,8 @@ public final class Enums {
         AI_TASK("aiTask", "AI task"),
         /** Compute named outputs with Orqix expressions (CG-X01, S137). */
         CALCULATE("calculate", "Calculate"),
+        /** Wait for the first of several events: message, signal, callback, time or check (CG-W07, S139). */
+        WAIT_FOR_FIRST("waitForFirst", "Wait for the first"),
         END("end", "Finish");
 
         private final String json;
@@ -79,7 +81,9 @@ public final class Enums {
         /** AI task: AI could not produce a valid answer (disabled, refused, failed, over budget, invalid twice). */
         AI_UNAVAILABLE("aiUnavailable"),
         /** CG-E01 (S138): the bounded loop path of the step is used up; the request continues here instead. */
-        LIMIT_REACHED("limitReached");
+        LIMIT_REACHED("limitReached"),
+        /** Wait for the first (S139): the path of one branch; the transition names it in {@code branch}. */
+        BRANCH("branch");
 
         private final String json;
 

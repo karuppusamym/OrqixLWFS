@@ -81,7 +81,8 @@ public final class ModelReader {
                 Collections.unmodifiableMap(outputMapping),
                 readLayout(root.get("uiLayout")),
                 readStages(root.get("stages")),
-                readSubprocesses(root.get("subprocesses")));
+                readSubprocesses(root.get("subprocesses")),
+                WaitsReader.read(nodeArray, root.get("dependencies")));
     }
 
     private static List<WorkflowDefinition.Subprocess> readSubprocesses(JsonNode array) {
@@ -101,7 +102,10 @@ public final class ModelReader {
                         trigger == null ? null : text(trigger, "errorCode"),
                         trigger == null ? null : text(trigger, "signal"),
                         trigger == null ? null : text(trigger, "after"),
-                        s.path("interrupting").asBoolean(false)));
+                        s.path("interrupting").asBoolean(false),
+                        trigger == null ? null : text(trigger, "message"),
+                        trigger == null ? null : text(trigger, "correlationField"),
+                        trigger == null ? List.of() : payloadFields(trigger.get("payload"))));
             }
         }
         return List.copyOf(list);
@@ -209,6 +213,7 @@ public final class ModelReader {
                     inputsWithItem(c), payloadFields(c.get("result")),
                     c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120,
                     c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
+            case WAIT_FOR_FIRST -> new Node.WaitForFirst(index, id, label, firstBranches(c.get("branches")));
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
             case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue(),
@@ -293,6 +298,20 @@ public final class ModelReader {
                 f.has("maxChecks") ? f.get("maxChecks").intValue() : null, f);
     }
 
+    /** S139: the branches of a "Wait for the first" step, in authored order. */
+    private static List<Node.FirstBranch> firstBranches(JsonNode array) {
+        List<Node.FirstBranch> list = new ArrayList<>();
+        for (int i = 0; i < array.size(); i++) {
+            JsonNode b = array.get(i);
+            list.add(new Node.FirstBranch(i, b.get("id").stringValue(), b.get("label").stringValue(),
+                    b.get("kind").stringValue(), text(b, "message"), text(b, "correlationField"),
+                    payloadFields(b.get("payload")), text(b, "signal"), text(b, "after"), text(b, "untilField"),
+                    text(b, "atTime"), text(b, "workingDuration"), text(b, "calendarRef"), text(b, "tokenValidFor"),
+                    b.has("check") ? readFallback(b.get("check")) : null));
+        }
+        return List.copyOf(list);
+    }
+
     private static List<Node.PayloadField> payloadFields(JsonNode payload) {
         List<Node.PayloadField> fields = new ArrayList<>();
         if (payload != null) {
@@ -315,7 +334,8 @@ public final class ModelReader {
                 t.get("to").stringValue(), on, label == null ? null : label.stringValue(),
                 condition == null ? null : readCondition(condition),
                 t.has("aiLabel") ? t.get("aiLabel").stringValue() : null,
-                t.has("maxTraversals") ? t.get("maxTraversals").intValue() : null);
+                t.has("maxTraversals") ? t.get("maxTraversals").intValue() : null,
+                t.has("branch") ? t.get("branch").stringValue() : null);
     }
 
     /**

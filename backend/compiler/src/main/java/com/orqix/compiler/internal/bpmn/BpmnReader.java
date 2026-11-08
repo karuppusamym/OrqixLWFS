@@ -385,7 +385,24 @@ public final class BpmnReader {
                     trigger.put("after", duration.text());
                 }
             }
-            default -> unsupported(id, "The trigger '" + type + "' of '" + id + "' is not error, signal or timer.");
+            case "message" -> {
+                // S139 (CG-E08): a message handler; the orqix:message of the start event names the message.
+                El def = start.child(BPMN_NS, "messageEventDefinition");
+                El message = ext(start, "message");
+                if (def == null || message == null) {
+                    unsupported(id, "Handler '" + id + "' is started by a message; its start event needs a "
+                            + "messageEventDefinition and orqix:message.");
+                } else {
+                    putText(trigger, "message", message.attr("name"));
+                    putText(trigger, "correlationField", message.attr("correlationField"));
+                    ArrayNode payload = fields(id, message);
+                    if (!payload.isEmpty()) {
+                        trigger.set("payload", payload);
+                    }
+                }
+            }
+            default -> unsupported(id, "The trigger '" + type + "' of '" + id + "' is not error, signal, timer or"
+                    + " message.");
         }
     }
 
@@ -503,7 +520,8 @@ public final class BpmnReader {
                     putText(config, "signal", signal.attr("name"));
                 }
             }
-            case "eventBasedGateway" -> type = messageWithLimit(el, config);
+            case "eventBasedGateway" -> type = ext != null && ext.child(ORQIX_NS, "waitForFirst") != null
+                    ? waitForFirst(el, ext.child(ORQIX_NS, "waitForFirst"), config) : messageWithLimit(el, config);
             case "endEvent" -> {
                 El raise = ext == null ? null : ext.child(ORQIX_NS, "raise");
                 El outcome = ext == null ? null : ext.child(ORQIX_NS, "outcome");
@@ -882,7 +900,11 @@ public final class BpmnReader {
         El wait = ext == null ? null : ext.child(ORQIX_NS, "wait");
         El message = ext == null ? null : ext.child(ORQIX_NS, "message");
         if (wait != null) {
-            if (wait.attr("duration") != null) {
+            if (wait.attr("workingDuration") != null) {
+                // S139: working time of a shared calendar (the pinned version lives in dependencies.assets).
+                putText(config, "workingDuration", wait.attr("workingDuration"));
+                putText(config, "calendarRef", wait.attr("calendarKey"));
+            } else if (wait.attr("duration") != null) {
                 config.put("duration", wait.attr("duration"));
             } else {
                 putText(config, "untilField", wait.attr("untilField"));
@@ -921,6 +943,85 @@ public final class BpmnReader {
         }
     }
 
+    /** S139: "Wait for the first": the gateway lists its branches; each is the catch event {@code <id>__<branch>}. */
+    private String waitForFirst(El el, El first, ObjectNode config) {
+        String id = el.attr("id");
+        ArrayNode branches = config.putArray("branches");
+        String list = first.attr("branches");
+        for (String branchId : list == null ? new String[0] : list.split(",")) {
+            El catching = byId.get(id + "__" + branchId);
+            if (catching == null) {
+                for (El sibling : el.parent().children()) {
+                    if ((id + "__" + branchId).equals(sibling.attr("id"))) {
+                        catching = sibling;
+                    }
+                }
+            }
+            El marker = ext(catching, "first");
+            if (marker == null) {
+                unsupported(id, "The branch '" + branchId + "' of '" + id + "' needs its catch event '" + id + "__"
+                        + branchId + "' with orqix:first.");
+                return null;
+            }
+            ObjectNode b = branches.addObject();
+            b.put("id", branchId);
+            String name = catching.attr("name");
+            putText(b, "label", name != null && name.startsWith(el.attr("name") + ": ")
+                    ? name.substring(el.attr("name").length() + 2) : name);
+            String kind = marker.attr("kind");
+            putText(b, "kind", kind);
+            switch (kind == null ? "" : kind) {
+                case "signal" -> putText(b, "signal", ext(catching, "signal") == null ? null
+                        : ext(catching, "signal").attr("name"));
+                case "timer" -> {
+                    El wait = ext(catching, "wait");
+                    if (wait == null) {
+                        unsupported(id, "The time branch '" + branchId + "' of '" + id + "' needs orqix:wait.");
+                    } else if (wait.attr("duration") != null) {
+                        b.put("after", wait.attr("duration"));
+                    } else if (wait.attr("untilField") != null) {
+                        b.put("untilField", wait.attr("untilField"));
+                        if (wait.attr("atTime") != null && !"09:00".equals(wait.attr("atTime"))) {
+                            b.put("atTime", wait.attr("atTime"));
+                        }
+                    } else {
+                        putText(b, "workingDuration", wait.attr("workingDuration"));
+                        putText(b, "calendarRef", wait.attr("calendarKey"));
+                    }
+                }
+                default -> {
+                    El message = ext(catching, "message");
+                    if (message == null) {
+                        unsupported(id, "The branch '" + branchId + "' of '" + id + "' needs orqix:message.");
+                        continue;
+                    }
+                    if ("message".equals(kind)) {
+                        putText(b, "message", message.attr("name"));
+                        putText(b, "correlationField", message.attr("correlationField"));
+                    }
+                    if (message.attr("callbackTokenValidFor") != null) {
+                        b.put("tokenValidFor", message.attr("callbackTokenValidFor"));
+                    }
+                    ArrayNode payload = fields(id, message);
+                    if (!payload.isEmpty()) {
+                        b.set("payload", payload);
+                    }
+                    if (message.attr("fallbackCheckBase64") != null) {
+                        JsonNode check = base64Json(id, message.attr("fallbackCheckBase64"));
+                        if (check != null) {
+                            b.set("check", check);
+                        }
+                    }
+                }
+            }
+            firstBranches.computeIfAbsent(id, k -> new java.util.HashSet<>()).add(branchId);
+        }
+        return "waitForFirst";
+    }
+
+    /** S139: branch ids of each "Wait for the first" step. */
+    private final Map<String, java.util.Set<String>> firstBranches = new LinkedHashMap<>();
+
     private String messageWithLimit(El el, ObjectNode config) {
         String id = el.attr("id");
         El catching = byId.get(id + BpmnGenerator.MESSAGE_CATCH);
@@ -945,6 +1046,9 @@ public final class BpmnReader {
         }
         readMessage(id, message, config);
         putText(config, "timeoutAfter", limit.attr("after"));
+        if (limit.attr("calendarKey") != null) {
+            putText(config, "timeoutCalendarRef", limit.attr("calendarKey"));
+        }
         return "waitForMessage";
     }
 
@@ -1025,7 +1129,8 @@ public final class BpmnReader {
             case BpmnGenerator.POLL_ROUTE, "__toPollRoute" -> type.equals("http");
             case BpmnGenerator.AI_ROUTE, "__toAiRoute" -> type.equals("aiTask");
             case BpmnGenerator.MESSAGE_CATCH, "__toMessage", "__toTimeout" -> type.equals("waitForMessage");
-            default -> false;
+            default -> type.equals("waitForFirst") && firstBranches.getOrDefault(owner, java.util.Set.of())
+                    .contains(suffix.startsWith("__to__") ? suffix.substring("__to__".length()) : suffix.substring(2));
         };
         if (!known) {
             unsupported(id, "'" + id + "' uses the reserved '__' in its id but is not a generated part of a step "
@@ -1088,6 +1193,7 @@ public final class BpmnReader {
         String from;
         String on;
         String aiLabel = null;
+        String branch = null;
         if (source.contains("__")) {
             int at = source.indexOf("__");
             from = source.substring(0, at);
@@ -1148,6 +1254,13 @@ public final class BpmnReader {
                 }
                 case BpmnGenerator.MESSAGE_CATCH -> on = "next";
                 default -> {
+                    if ("waitForFirst".equals(type)
+                            && firstBranches.getOrDefault(from, java.util.Set.of()).contains(suffix.substring(2))) {
+                        on = "branch";
+                        aiLabel = null;
+                        branch = suffix.substring(2);
+                        break;
+                    }
                     unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which no connection can "
                             + "start from.");
                     return null;
@@ -1184,6 +1297,9 @@ public final class BpmnReader {
         }
         if (maxTraversals != null) {
             t.put("maxTraversals", maxTraversals);
+        }
+        if (branch != null) {
+            t.put("branch", branch);
         }
         if (flow.attr("name") != null) {
             t.put("label", flow.attr("name"));
@@ -1376,7 +1492,7 @@ public final class BpmnReader {
         return switch (node.get("type").stringValue()) {
             case "start", "end", "wait", "raiseError", "sendSignal", "waitForSignal" -> new int[] {36, 36};
             case "waitForMessage" -> node.get("config").has("timeoutAfter") ? new int[] {40, 40} : new int[] {36, 36};
-            case "branch", "parallelSplit", "parallelJoin" -> new int[] {40, 40};
+            case "branch", "parallelSplit", "parallelJoin", "waitForFirst" -> new int[] {40, 40};
             default -> new int[] {100, 80};
         };
     }

@@ -38,6 +38,7 @@ describe('BPMN notation mapping (STU01)', () => {
       externalTask: ['externalServiceTask', 'external service task'],
       wait: ['timerCatchEvent', 'intermediate timer catch event'],
       waitForMessage: ['messageCatchEvent', 'intermediate message catch event'],
+      waitForFirst: ['eventBasedGateway', 'event-based gateway'],
       waitForSignal: ['signalCatchEvent', 'intermediate signal catch event'],
       sendSignal: ['signalThrowEvent', 'intermediate signal throw event'],
       raiseError: ['errorEndEvent', 'error end event'],
@@ -50,7 +51,7 @@ describe('BPMN notation mapping (STU01)', () => {
 
   it('uses the shared bounding boxes: events 48x48, gateways 64x64, tasks and call activities 200x80', () => {
     expect(SHAPE_SIZES).toEqual({ event: { width: 48, height: 48 }, gateway: { width: 64, height: 64 }, task: { width: 200, height: 80 } })
-    const expected = (kind: NodeKind) => (kind.endsWith('Split') || kind.endsWith('Join') || kind === 'branch' ? 64 : ['start', 'end', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'].includes(kind) ? 48 : 200)
+    const expected = (kind: NodeKind) => (kind.endsWith('Split') || kind.endsWith('Join') || kind === 'branch' || kind === 'waitForFirst' ? 64 : ['start', 'end', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'].includes(kind) ? 48 : 200)
     for (const kind of ALL_KINDS) {
       expect(bpmnSize(kind).width, kind).toBe(expected(kind))
       expect(nodeSize(kind, 'bpmn'), kind).toEqual(bpmnSize(kind))

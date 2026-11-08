@@ -245,6 +245,9 @@
           },
           {
             "$ref": "#/$defs/calculateNode"
+          },
+          {
+            "$ref": "#/$defs/waitForFirstNode"
           }
         ]
       }
@@ -343,7 +346,8 @@
                 "enum": [
                   "decision",
                   "documentTemplate",
-                  "form"
+                  "form",
+                  "calendar"
                 ]
               },
               "key": {
@@ -1654,6 +1658,10 @@
             "poll": {
               "description": "Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set.",
               "$ref": "#/$defs/pollSettings"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while a check-until call waits. Only with poll.",
+              "$ref": "#/$defs/whileWaiting"
             }
           },
           "required": [
@@ -1762,6 +1770,10 @@
         "giveUpAfter": {
           "description": "Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE).",
           "$ref": "#/$defs/pollInterval"
+        },
+        "timeoutCalendarRef": {
+          "description": "S139 (CG-W05): count giveUpAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). One working day is the calendar's working hours of one day.",
+          "$ref": "#/$defs/key"
         },
         "maxChecks": {
           "description": "Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case.",
@@ -1888,6 +1900,199 @@
       ],
       "additionalProperties": false
     },
+    "whileWaiting": {
+      "description": "While the step waits (docs/build/S139, CG-W06).",
+      "type": "object",
+      "properties": {
+        "remind": {
+          "$ref": "#/$defs/waitReminder"
+        }
+      },
+      "required": [
+        "remind"
+      ],
+      "additionalProperties": false
+    },
+    "waitReminder": {
+      "description": "Reminders while waiting: every 'every' (wall-clock, PT1H to P30D, from the start of the wait) at most maxTimes (1 to 10, default 3) a message through the adapter (email or Teams). Each reminder is one journaled send with a stable id, so a retry never sends two copies. Email recipients are the literals in 'to' (on the adapter's allowlist) or one request field toField whose address is checked against the adapter's approved domains when each reminder is sent (D-CG7). Texts may use {{reference}}, {{workflow}}, {{step}}, {{since}}, {{count}}, {{maxTimes}} and the names of inputMapping.",
+      "type": "object",
+      "properties": {
+        "every": {
+          "$ref": "#/$defs/duration"
+        },
+        "maxTimes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "adapter": {
+          "$ref": "#/$defs/key"
+        },
+        "to": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254
+          }
+        },
+        "toField": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "additionalProperties": false
+        },
+        "inputMapping": {
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        }
+      },
+      "required": [
+        "every",
+        "adapter",
+        "template"
+      ],
+      "additionalProperties": false
+    },
+    "waitForFirstNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "waitForFirst"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait for the first of several events (docs/build/S139, CG-W07). 2 to 5 branches, each with exactly one path (on: branch, branch: <id>). The first branch to fire wins, the others are cancelled. Outputs: branch (the winning branch id) and the declared values of the message, callback and check branches (a required value only on its own branch's path).",
+          "properties": {
+            "branches": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/firstBranch"
+              }
+            }
+          },
+          "required": [
+            "branches"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "firstBranch": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,19}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "enum": [
+            "message",
+            "signal",
+            "callback",
+            "timer",
+            "check"
+          ]
+        },
+        "message": {
+          "description": "message: the message name.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+        },
+        "correlationField": {
+          "description": "message: the field whose value identifies the request.",
+          "$ref": "#/$defs/fieldRef"
+        },
+        "payload": {
+          "description": "message, callback and check: values the branch delivers.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/messagePayloadField"
+          }
+        },
+        "signal": {
+          "description": "signal: a signal of this request.",
+          "$ref": "#/$defs/signalName"
+        },
+        "tokenValidFor": {
+          "description": "callback: how long an issued callback token is valid (PT1M to P30D).",
+          "$ref": "#/$defs/duration"
+        },
+        "after": {
+          "description": "timer: a fixed time.",
+          "$ref": "#/$defs/duration"
+        },
+        "untilField": {
+          "description": "timer: a date field to wait until.",
+          "$ref": "#/$defs/fieldRef"
+        },
+        "atTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "workingDuration": {
+          "description": "timer: working time of calendarRef.",
+          "$ref": "#/$defs/duration"
+        },
+        "calendarRef": {
+          "$ref": "#/$defs/key"
+        },
+        "check": {
+          "description": "check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload.",
+          "$ref": "#/$defs/fallbackCheck"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "duration": {
       "description": "ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG).",
       "type": "string",
@@ -1975,11 +2180,25 @@
               "description": "Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField.",
               "type": "string",
               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "workingDuration": {
+              "description": "S139 (CG-W05): wait this much working time of calendarRef, for example P3D for three working days. One working day is the calendar's working hours of one day; hours and minutes are working hours and minutes. Instead of duration or untilField (WF_WAIT_CHOICE).",
+              "$ref": "#/$defs/duration"
+            },
+            "calendarRef": {
+              "description": "S139: key of the shared working calendar of workingDuration, pinned in dependencies.assets (kind calendar).",
+              "$ref": "#/$defs/key"
             }
           },
           "dependentRequired": {
             "atTime": [
               "untilField"
+            ],
+            "workingDuration": [
+              "calendarRef"
+            ],
+            "calendarRef": [
+              "workingDuration"
             ]
           },
           "additionalProperties": false
@@ -2170,7 +2389,20 @@
             "fallbackCheck": {
               "description": "Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed.",
               "$ref": "#/$defs/fallbackCheck"
+            },
+            "timeoutCalendarRef": {
+              "description": "S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar).",
+              "$ref": "#/$defs/key"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while the step waits for the message or the callback.",
+              "$ref": "#/$defs/whileWaiting"
             }
+          },
+          "dependentRequired": {
+            "timeoutCalendarRef": [
+              "timeoutAfter"
+            ]
           },
           "required": [
             "message",
@@ -2275,7 +2507,8 @@
             "lowConfidence",
             "needsReview",
             "aiUnavailable",
-            "limitReached"
+            "limitReached",
+            "branch"
           ]
         },
         "maxTraversals": {
@@ -2283,6 +2516,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10
+        },
+        "branch": {
+          "description": "Wait for the first only (docs/build/S139): the id of the branch this path is for; required when on is branch.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,19}$"
         },
         "aiLabel": {
           "description": "AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel.",
@@ -2327,6 +2565,30 @@
             "not": {
               "required": [
                 "aiLabel"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "on": {
+                "const": "branch"
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "then": {
+            "required": [
+              "branch"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "branch"
               ]
             }
           }
@@ -2825,6 +3087,10 @@
             "raiseErrorOnFailure": {
               "description": "Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it.",
               "$ref": "#/$defs/errorCode"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while the job is open.",
+              "$ref": "#/$defs/whileWaiting"
             }
           },
           "required": [
@@ -3010,8 +3276,28 @@
               "enum": [
                 "error",
                 "signal",
-                "timer"
+                "timer",
+                "message"
               ]
+            },
+            "message": {
+              "description": "message (docs/build/S139, CG-E08): the message name that starts the handler, for example customer-cancelled.",
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+            },
+            "correlationField": {
+              "description": "message: the required request field whose value identifies the request (/input/<key>).",
+              "$ref": "#/$defs/fieldRef"
+            },
+            "payload": {
+              "description": "message: values the message may carry; the handler's steps use them as /steps/<handler id>/<name>.",
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/messagePayloadField"
+              }
             },
             "errorCode": {
               "$ref": "#/$defs/errorCode"

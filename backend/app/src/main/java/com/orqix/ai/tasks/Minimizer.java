@@ -64,6 +64,21 @@ final class Minimizer {
         return new Result(sent, actions, problem);
     }
 
+    /**
+     * The text of a document (CG-A06) under a minimization action: {@code send} keeps it, the mask actions mask card
+     * numbers and e-mail addresses (or every digit); {@code hash} and {@code drop} return null (a document whose text
+     * may not be sent cannot be extracted).
+     */
+    static String maskText(String text, String action) {
+        return switch (action == null ? "send" : action) {
+            case "send" -> text;
+            case "mask", "maskCardNumbersAndEmails" -> EMAIL.matcher(CARD.matcher(text).replaceAll("[card number]"))
+                    .replaceAll("[e-mail address]");
+            case "maskDigits" -> text.replaceAll("\\d", "#");
+            default -> null;
+        };
+    }
+
     private static String text(JsonNode value) {
         return value.isString() ? value.asString() : value.toString();
     }

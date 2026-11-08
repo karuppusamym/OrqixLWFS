@@ -133,6 +133,11 @@ public class AiTaskJobs {
                 """).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId)
                 .param("node", nodeId).query(UUID.class).list();
         ids.forEach(id -> ai.endTurns(workspaceId, id));
+        // CG-A06: an open verification of the step ends with it.
+        jdbc.sql("""
+                UPDATE ai_document_verification SET status = 'cancelled'
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
+                """).param("ws", workspaceId).param("run", runId).param("node", nodeId).update();
     }
 
     // ---------------------------------------------------------------- worker protocol
@@ -213,8 +218,14 @@ public class AiTaskJobs {
             end(job, "cancelled", "The request ended before AI finished.", now);
             return false;
         }
-        ai.record(outcome.record());
+        UUID decisionId = ai.record(outcome.record());
         end(job, "completed", null, now);
+        if (outcome.verification() != null) {
+            // CG-A06: the extraction waits for a person to confirm or correct its fields; the engine is triggered
+            // when the verification is submitted (AiVerifications).
+            openVerification(job, decisionId, outcome, now);
+            return true;
+        }
         runs.mutate(job.workspaceId(), job.runId(), m -> {
             m.removeStep(job.nodeId());
             m.settle();
@@ -232,6 +243,52 @@ public class AiTaskJobs {
         variables.put(routeVariable(job.nodeId()), outcome.route());
         engine.resumeChild(run.engineProcessInstanceId(), job.nodeId(), variables);
         return true;
+    }
+
+    private void openVerification(Claimed job, UUID decisionId, AiTaskPort.Outcome outcome, Instant now) {
+        ObjectNode payload = outcome.verification();
+        var skill = jdbc.sql("SELECT skill_key, skill_version FROM ai_task_job WHERE id = :id").param("id", job.id())
+                .query((rs, n) -> Map.entry(rs.getString("skill_key"), rs.getInt("skill_version"))).single();
+        UUID id = com.orqix.shared.Ids.newId();
+        jdbc.sql("""
+                INSERT INTO ai_document_verification (id, workspace_id, run_id, node_id, occurrence, job_id, decision_id,
+                    attachment_id, skill_key, skill_version, document_type, provider, threshold, payload, ai_outputs,
+                    status, created_at)
+                VALUES (:id, :ws, :run, :node, :occ, :job, :decision, :attachment, :skill, :version, :type, :provider,
+                        :threshold, CAST(:payload AS jsonb), CAST(:outputs AS jsonb), 'open', :now)
+                """).param("id", id).param("ws", job.workspaceId()).param("run", job.runId()).param("node", job.nodeId())
+                .param("occ", job.occurrence()).param("job", job.id()).param("decision", decisionId)
+                .param("attachment", UUID.fromString(payload.path("attachmentId").asString()))
+                .param("skill", skill.getKey()).param("version", skill.getValue())
+                .param("type", payload.path("documentType").asString()).param("provider", payload.path("provider").asString())
+                .param("threshold", payload.path("threshold").decimalValue()).param("payload", json.write(payload))
+                .param("outputs", json.write(outcome.outputs())).param("now", Sql.ts(now)).update();
+        RunStore.RunRow run = runs.find(job.workspaceId(), job.runId()).orElseThrow();
+        String label = releases.require(job.workspaceId(), run.releaseId()).nodeLabel(job.nodeId());
+        runs.mutate(job.workspaceId(), job.runId(), m -> {
+            m.removeStep(job.nodeId());
+            ObjectNode step = json.object();
+            step.put("nodeId", job.nodeId()).put("label", label == null ? job.nodeId() : label).put("kind", "verify")
+                    .put("since", now.toString()).put("verificationId", id.toString());
+            step.putNull("candidateGroup").putNull("assigneeId").putNull("dueAt");
+            m.addStep(step);
+            m.settle();
+        });
+        int attention = 0;
+        for (JsonNode f : payload.path("fields")) {
+            attention += f.path("needsAttention").asBoolean(false) ? 1 : 0;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("route", outcome.route());
+        data.put("status", outcome.outputs().path("status").asString());
+        data.put("attempt", job.attempt());
+        if (outcome.outputs().has("confidence")) {
+            data.put("confidence", outcome.outputs().path("confidence").decimalValue());
+        }
+        events.append(job.workspaceId(), job.runId(), "AI_TASK_COMPLETED", job.nodeId(), null, data);
+        events.append(job.workspaceId(), job.runId(), "AI_VERIFICATION_OPENED", job.nodeId(), null,
+                Map.of("verificationId", id.toString(), "fields", payload.path("fields").size(), "needsAttention",
+                        attention));
     }
 
     private void end(Claimed job, String status, String error, Instant now) {

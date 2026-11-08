@@ -301,6 +301,10 @@ public class AuditWriter {
             Map.entry("ai.policy.updated", Set.of("regulated", "residency", "inputRetention", "version")),
             Map.entry("ai.decision.outcome-recorded", Set.of("runId", "outcome")),
             Map.entry("ai.eval-candidate.reviewed", Set.of("skillKey", "decision")),
+            // CG-A06 (S146 part B): provider ids and counts only; never values, file names or recognized text.
+            Map.entry("ai.ocr-settings.updated", Set.of("provider", "version")),
+            Map.entry("ai.verification.submitted", Set.of("runId", "verificationId", "outcome", "corrected",
+                    "confirmed")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.

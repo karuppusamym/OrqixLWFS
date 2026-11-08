@@ -3,7 +3,7 @@ import { chipFor, fieldInfo, type ConnectionLookup } from './fieldRefs'
 import { nodeById } from './graph'
 import { KINDS, ROUTE_LABEL } from './kinds'
 import { conditionValueText } from './decisionLogic'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
+import { conditionTerms, isAtomicCondition, tableUsesExpressions, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
 
 export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'at least', gt: 'greater than', lt: 'less than', lte: 'at most', in: 'is one of', between: 'between' }
 
@@ -93,7 +93,9 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
     case 'decision': {
       const table = def.decisions.find((d) => d.key === c.decisionRef)
       const ref = table?.rows[0]?.when.fieldRef
-      return ref ? `Based on ${fieldInfo(def, ref)?.label ?? ref}` : 'Rule table'
+      // S146: a table with formulas in its rows says so.
+      const formulas = table && tableUsesExpressions(table) ? ', with formulas' : ''
+      return ref ? `Based on ${fieldInfo(def, ref)?.label ?? ref}${formulas}` : 'Rule table'
     }
     case 'branch':
       return `${def.transitions.filter((t) => t.from === node.id).length} paths`

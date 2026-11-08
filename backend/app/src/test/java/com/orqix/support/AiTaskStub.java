@@ -88,6 +88,7 @@ public final class AiTaskStub {
         synchronized (AiTaskStub.class) {
             CALLS.add(new Call(path, headers, body));
         }
+        BODY.set(body);
         String all = body.toString();
         String data = requestData(all);
         boolean repairTurn = all.contains("Your answer was not valid");
@@ -152,9 +153,88 @@ public final class AiTaskStub {
         return start >= 0 && end > start ? all.substring(start, end) : all;
     }
 
+    /** The request data of the call being answered (set by handle; the stub serves one call at a time per thread). */
+    private static final ThreadLocal<JsonNode> BODY = new ThreadLocal<>();
+
+    /**
+     * CG-A06 document extraction: reads the numbered lines of the document input and answers the invoice fields from
+     * lines such as "Invoice number: X", "Invoice date: 2026-10-01", "Subtotal: 100.00", "VAT: 19.50",
+     * "Total: 119.50", "Currency: EUR" (the first line is the supplier), each with the line number it came from.
+     */
+    private static String document(double confidence) {
+        String lines = "";
+        for (String text : texts(BODY.get())) {
+            int start = text.indexOf("<request_data>");
+            int end = text.indexOf("</request_data>");
+            if (start >= 0 && end > start) {
+                JsonNode data = JSON.readTree(text.substring(start + 14, end));
+                for (JsonNode v : data) {
+                    if (v.path("lines").isString()) {
+                        lines = v.path("lines").asString();
+                    }
+                }
+            }
+        }
+        ObjectNode a = JSON.createObjectNode();
+        ObjectNode fields = a.putObject("fields");
+        ObjectNode conf = a.putObject("fieldConfidence");
+        ObjectNode sources = a.putObject("fieldSources");
+        java.util.regex.Pattern line = java.util.regex.Pattern.compile("^\\[L(\\d+)\\] (.*)$");
+        for (String row : lines.split("\n")) {
+            java.util.regex.Matcher m = line.matcher(row);
+            if (!m.matches()) {
+                continue;
+            }
+            int n = Integer.parseInt(m.group(1));
+            String t = m.group(2);
+            String[][] rules = {{"Invoice number: (\\S+)", "invoiceNumber", "s"}, {"Invoice date: (\\d{4}-\\d{2}-\\d{2})",
+                    "invoiceDate", "s"}, {"Subtotal: ([0-9.]+)", "subtotalAmount", "n"}, {"VAT: ([0-9.]+)", "taxAmount",
+                    "n"}, {"Total: ([0-9.]+)", "totalAmount", "n"}, {"Currency: ([A-Z]{3})", "currency", "s"}};
+            if (n == 1) {
+                fields.put("supplierName", t.strip());
+                conf.put("supplierName", confidence);
+                sources.put("supplierName", 1);
+            }
+            for (String[] r : rules) {
+                java.util.regex.Matcher v = java.util.regex.Pattern.compile(r[0]).matcher(t);
+                if (v.find()) {
+                    if ("n".equals(r[2])) {
+                        fields.put(r[1], new java.math.BigDecimal(v.group(1)));
+                    } else {
+                        fields.put(r[1], v.group(1));
+                    }
+                    conf.put(r[1], confidence);
+                    sources.put(r[1], n);
+                }
+            }
+        }
+        a.put("confidence", confidence);
+        return a.toString();
+    }
+
+    private static List<String> texts(JsonNode node) {
+        List<String> out = new ArrayList<>();
+        if (node == null) {
+            return out;
+        }
+        if (node.isString()) {
+            out.add(node.asString());
+        }
+        for (JsonNode child : node) {
+            out.addAll(texts(child));
+        }
+        return out;
+    }
+
     private static String answer(String all, String data) {
         double confidence = data.contains("unsure") ? 0.4 : 0.95;
         ObjectNode a = JSON.createObjectNode();
+        if (all.contains("<run_facts>")) {
+            return runExplanation(all);
+        }
+        if (all.contains("one extract task") && all.contains("recognized text of a")) {
+            return document(confidence);
+        }
         if (all.contains("one classify task")) {
             String label = data.contains("urgent") ? "unusual" : "routine";
             a.put("label", label).put("confidence", confidence);
@@ -174,6 +254,40 @@ public final class AiTaskStub {
         } else {
             a.put("summary", "A short summary.").put("confidence", confidence);
         }
+        return a.toString();
+    }
+
+    /**
+     * S146 part C ("Explain this request"): cites the first two facts and an unknown fact id, suggests the first
+     * permitted action plus one that is never permitted ({@code deleteRequest}), so callers can check the filter.
+     */
+    private static String runExplanation(String all) {
+        JsonNode user = JSON.readTree(all);
+        String text = "";
+        for (JsonNode m : user.path("messages")) {
+            if ("user".equals(m.path("role").asString())) {
+                text = m.path("content").isString() ? m.path("content").asString() : m.path("content").toString();
+            }
+        }
+        int start = text.indexOf("<run_facts>");
+        int end = text.indexOf("</run_facts>");
+        JsonNode data = start >= 0 && end > start
+                ? JSON.readTree(text.substring(start + "<run_facts>".length(), end)) : JSON.createObjectNode();
+        ObjectNode a = JSON.createObjectNode();
+        a.put("summary", "Stub explanation: the request is " + data.path("lifecycle").asString("unknown") + ".");
+        a.put("cause", "Stub cause from the facts.");
+        ArrayNode evidence = a.putArray("evidence");
+        JsonNode facts = data.path("facts");
+        for (int i = 0; i < Math.min(2, facts.size()); i++) {
+            evidence.add(facts.get(i).path("id").asString());
+        }
+        evidence.add("F999");
+        ArrayNode actions = a.putArray("suggestedActions");
+        if (data.path("permittedActions").size() > 0) {
+            actions.addObject().put("actionId", data.path("permittedActions").get(0).path("id").asString())
+                    .put("why", "Stub reason.");
+        }
+        actions.addObject().put("actionId", "deleteRequest").put("why", "Not permitted.");
         return a.toString();
     }
 

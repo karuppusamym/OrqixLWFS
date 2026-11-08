@@ -4,6 +4,7 @@ import { newId } from './state'
 import { createWaitHandlers } from './waits'
 import { createWaitsAndStartsHandlers } from './waitsAndStarts'
 import { createAiSkillHandlers } from './aiSkills'
+import { createDocumentExtractionHandlers } from './documentExtraction'
 
 type S = components['schemas']
 
@@ -79,6 +80,8 @@ export function createCallbackHandlers(): HttpHandler[] {
     ...createWaitsAndStartsHandlers(),
     // S134: AI skills and run AI decisions.
     ...createAiSkillHandlers(),
+    // S146 part B: document extraction (OCR settings, verification tasks).
+    ...createDocumentExtractionHandlers(),
     http.get(`${B}/callback-waits`, ({ request }) => {
       const runId = new URL(request.url).searchParams.get('runId')
       return HttpResponse.json({ items: runId ? waits.filter((w) => w.runId === runId) : waits })

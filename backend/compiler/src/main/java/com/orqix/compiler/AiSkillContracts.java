@@ -74,10 +74,10 @@ public final class AiSkillContracts {
         Set<String> labels = keys(document.path("labels"), "key", "/labels", "label", problems);
         keys(document.path("fields"), "name", "/fields", "field", problems);
         keys(document.path("outcomes"), "key", "/outcomes", "outcome", problems);
-        for (String member : List.of("labels", "fields", "score", "outcomes", "summary")) {
+        for (String member : List.of("labels", "fields", "score", "outcomes", "summary", "document")) {
             boolean belongs = switch (member) {
                 case "labels" -> mode.equals("classify");
-                case "fields" -> mode.equals("extract");
+                case "fields", "document" -> mode.equals("extract");
                 case "score" -> mode.equals("score");
                 case "outcomes" -> mode.equals("recommend");
                 default -> mode.equals("summarize");
@@ -95,11 +95,37 @@ public final class AiSkillContracts {
                 problems.add(new Problem("/evaluation/minRecall/" + label, "There is no label " + label + "."));
             }
         }
+        documentProblems(document, problems);
         if (document.path("confidence").path("samples").asInt(1) > 1
                 && !"selfConsistency".equals(document.path("confidence").path("method").asString("single"))) {
             problems.add(new Problem("/confidence/samples", "Several samples need the method selfConsistency."));
         }
         return problems;
+    }
+
+    /**
+     * Document skills (CG-A06): exactly the declared {@code attachmentInput} has type {@code attachment}, and a
+     * {@code custom} document declares its own fields.
+     */
+    private static void documentProblems(JsonNode skill, List<Problem> problems) {
+        String attachmentInput = DocumentTemplates.attachmentInput(skill);
+        for (var e : skill.path("input").properties()) {
+            boolean attachment = "attachment".equals(e.getValue().path("type").asString());
+            if (attachment && !e.getKey().equals(attachmentInput)) {
+                problems.add(new Problem("/input/" + e.getKey() + "/type", "An attachment input is allowed only as the"
+                        + " document input of an extract skill (document.attachmentInput)."));
+            }
+        }
+        if (attachmentInput != null) {
+            JsonNode declared = skill.path("input").path(attachmentInput);
+            if (!"attachment".equals(declared.path("type").asString(""))) {
+                problems.add(new Problem("/document/attachmentInput", "The document input " + attachmentInput
+                        + " must be an input of type attachment."));
+            }
+            if ("custom".equals(DocumentTemplates.documentType(skill)) && !skill.path("fields").isArray()) {
+                problems.add(new Problem("/fields", "A custom document declares the fields to extract."));
+            }
+        }
     }
 
     /** Problems of an evaluation suite ({@code kind: evaluationSuite}); empty when valid. */
@@ -191,10 +217,11 @@ public final class AiSkillContracts {
         }
         Map<String, String> fields = new LinkedHashMap<>();
         Set<String> requiredFields = new LinkedHashSet<>();
-        for (JsonNode f : document.path("fields")) {
-            fields.put(f.path("name").asString(), f.path("type").asString());
-            if (f.path("required").asBoolean(false)) {
-                requiredFields.add(f.path("name").asString());
+        // A document skill may take its fields from its document-type template (CG-A06).
+        for (DocumentTemplates.Field f : DocumentTemplates.effectiveFields(document)) {
+            fields.put(f.name(), f.type());
+            if (f.required()) {
+                requiredFields.add(f.name());
             }
         }
         List<String> outcomes = new ArrayList<>();

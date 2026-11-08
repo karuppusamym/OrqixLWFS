@@ -6686,6 +6686,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain why this request is stuck and which permitted action would unblock it (CG-A07)
+         * @description Read-only. Builds a bounded fact set from the request's timeline, current steps, waits, effects, the
+         *     health of the connections it uses and the published workflow model, with no request data values (field
+         *     names at most), and lists the actions the caller may take now (computed with the same permission checks
+         *     as the actions themselves; actions that need someone else are listed as askAdministrator). The
+         *     explanation comes from the AI profile through the provider SPI when AI is available (strict JSON
+         *     answer, temperature 0, metered as ai_generation kind aiExplain, workspace residency rule applied) and
+         *     from rules otherwise (`source` rules with `fallbackReason`). Suggested actions are always ids from
+         *     `permittedActions`; anything else the model suggests is dropped and reported in `droppedActions`.
+         *     It never performs an action: the request, its tasks, waits and engine state do not change. A POST
+         *     because the model call is metered and audited; no Idempotency-Key and no expectedVersion. An AI answer
+         *     is reused for the same caller and request state for up to two minutes (`ai.cached`).
+         */
+        post: operations["explainRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/searchable-fields": {
         parameters: {
             query?: never;
@@ -7600,6 +7633,145 @@ export interface paths {
          * @description An override names the final label or outcome and a reason; it becomes a candidate evaluation case.
          */
         post: operations["recordAiDecisionOutcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-ocr-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The OCR provider of document extraction and the providers this deployment offers
+         * @description local (on this deployment) is always allowed. A cloud provider is allowed only when the workspace AI
+         *     policy's residency rule names one of its residency tags, or, in a workspace that is not regulated and has no
+         *     residency rule, once an administrator chooses it.
+         */
+        get: operations["getAiOcrSettings"];
+        /**
+         * Choose the OCR provider of document extraction
+         * @description expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT); a provider the residency rule does not
+         *     admit is 422.
+         */
+        put: operations["updateAiOcrSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-document-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Built-in document-type templates of extract skills (invoice, ID document, bank statement) */
+        get: operations["listAiDocumentTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Open verification tasks of document extractions in the workspace */
+        get: operations["listAiVerifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Verification tasks of a run */
+        get: operations["listRunAiVerifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A verification task: the document reference and the extracted fields with confidence and source
+         * @description Needs request-data visibility. sourceText comes from the file's OCR result while it exists (quarantine and
+         *     removal delete it).
+         */
+        get: operations["getAiVerification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm or correct the extracted fields; the step continues with the verified values
+         * @description verified continues on next with the verified values as the step outputs; escalated (reason required) takes
+         *     needsReview. Every field that needs attention must be confirmed or corrected. The decision record gets the
+         *     human outcome and corrections become a pending evaluation candidate. The initiator of the request cannot
+         *     verify (403 SELF_APPROVAL_DENIED); a stale expectedVersion or a closed task is 409 TASK_VERSION_CONFLICT.
+         */
+        post: operations["submitAiVerification"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11554,6 +11726,78 @@ export interface components {
             connections?: components["schemas"]["ConnectionVolume"][];
             asOf: components["schemas"]["Timestamp"];
         };
+        ExplainRunRequest: {
+            /** @description Answer from the rules without calling a model. */
+            preferRules?: boolean | null;
+        };
+        /** @description A fact written by Orqix from codes, times, labels and keys; never request data values. */
+        ExplainFact: {
+            id: string;
+            /** @enum {string} */
+            kind: "run" | "attention" | "effect" | "connection" | "circuit" | "binding" | "step" | "wait" | "check" | "task" | "event" | "model" | "suspension" | "child";
+            text: string;
+            nodeId: string | null;
+            /** Format: date-time */
+            at: string | null;
+            /**
+             * Format: int64
+             * @description The timeline entry the fact comes from.
+             */
+            eventSeq: number | null;
+        };
+        ExplainPermittedAction: {
+            /** @description Stable id such as retryRun or reassignTask:<taskId>. */
+            id: string;
+            /** @description The API operation behind the action (null when someone else must act). */
+            operationId: string | null;
+            /**
+             * @description operate opens the existing operator dialog with its usual confirmation; open a settings page; askAdministrator means someone else must act.
+             * @enum {string}
+             */
+            kind: "operate" | "open" | "askAdministrator";
+            label: string;
+            description: string;
+            permission: string;
+            nodeId: string | null;
+            /** @description The effect, wait, task or connection the action applies to. */
+            targetId: string | null;
+        };
+        ExplainSuggestedAction: {
+            actionId: string;
+            why: string;
+        };
+        ExplainAiInfo: {
+            profile: string;
+            model: string;
+            promptVersion: string;
+            cached: boolean;
+        };
+        RunExplanation: {
+            runId: components["schemas"]["Uuid"];
+            runVersion: number;
+            lifecycle: string;
+            /** @enum {string} */
+            source: "ai" | "rules";
+            summary: string;
+            cause: string;
+            /** @description Ids of facts that support the explanation. */
+            evidence: string[];
+            suggestedActions: components["schemas"]["ExplainSuggestedAction"][];
+            facts: components["schemas"]["ExplainFact"][];
+            permittedActions: components["schemas"]["ExplainPermittedAction"][];
+            /** @description Action ids the model suggested that the caller may not take; never shown as actions. */
+            droppedActions: string[];
+            /**
+             * @description Why the rules answered although AI was wanted.
+             * @enum {string|null}
+             */
+            fallbackReason: "aiOff" | "featureOff" | "notConfigured" | "residency" | "budget" | "unavailable" | "invalidAnswer" | null;
+            ai: components["schemas"]["ExplainAiInfo"] | null;
+            /** @constant */
+            readOnly: true;
+            stateDigest: string;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
         McpServer: {
             /** @description false until a workspace administrator switches it on */
             enabled: boolean;
@@ -12008,6 +12252,8 @@ export interface components {
             };
             /** @description Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied) */
             matchedRows?: number[];
+            /** @description S146: the evaluated formula entries of a table that uses them (every test of every row, the results of matching rows); absent otherwise */
+            expressions?: components["schemas"]["DecisionExpressionEntry"][];
         };
         /** @description Expression type notation: number, integer (a number), string, boolean, date or any; {"list": T}; {"row": {column: T}}. */
         ExpressionType: ("number" | "integer" | "string" | "boolean" | "date" | "any") | {
@@ -12073,6 +12319,19 @@ export interface components {
                 /** @description Zero-based offset of the part the problem is about. */
                 position: number;
             } | null;
+        };
+        DecisionExpressionEntry: {
+            /** @description Zero-based row index. */
+            row: number;
+            /** @description Zero-based term index of a test; -1 for a result */
+            term: number;
+            /** @enum {string} */
+            kind: "input" | "output";
+            /** @description The column (fieldRef) of a test, or the result name */
+            target: string;
+            expression: string;
+            /** @description A test gives true, false or null (does not match); a result its value */
+            value: string | number | boolean | null;
         };
         WorkflowTestCase: {
             id: string;
@@ -12520,7 +12779,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai" | "verify";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -13010,7 +13269,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter" | "ai" | "verify";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -14538,6 +14797,162 @@ export interface components {
             value?: string;
             reason?: string;
         };
+        AiOcrProvider: {
+            id: string;
+            /** @enum {string} */
+            kind: "local" | "azureDocumentIntelligence" | "textract";
+            label: string;
+            residency: string[];
+            allowed: boolean;
+            refusal: string | null;
+        };
+        AiOcrSettings: {
+            /** @description The provider in use (the deployment default until an administrator chooses one). */
+            provider: string;
+            chosen: boolean;
+            version: number;
+            updatedAt: components["schemas"]["Timestamp"] | null;
+            /** @description Why the provider in use is not allowed now (extractions then end on aiUnavailable). */
+            refusal: string | null;
+            providers: components["schemas"]["AiOcrProvider"][];
+        };
+        AiOcrSettingsUpdate: {
+            provider: string;
+            expectedVersion: number;
+        };
+        AiDocumentTemplateField: {
+            name: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            required: boolean;
+            description: string | null;
+            /** @enum {string|null} */
+            hint: "iban" | "currency" | "country" | "pastDate" | "futureDate" | null;
+        };
+        AiDocumentTemplate: {
+            /** @enum {string} */
+            type: "invoice" | "idDocument" | "bankStatement";
+            label: string;
+            fields: components["schemas"]["AiDocumentTemplateField"][];
+            checks: {
+                /** @enum {string} */
+                kind: "sum" | "after" | "lineItems";
+                target: string;
+                plus: string[];
+                minus: string[];
+                other: string | null;
+                tolerance: number;
+            }[];
+        };
+        AiDocumentTemplateList: {
+            items: components["schemas"]["AiDocumentTemplate"][];
+        };
+        AiVerificationSummary: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            nodeId: string;
+            occurrence: number;
+            decisionId: components["schemas"]["Uuid"];
+            skillKey: string;
+            skillVersion: number;
+            /** @enum {string} */
+            documentType: "invoice" | "idDocument" | "bankStatement" | "custom";
+            provider: string;
+            /** @enum {string} */
+            status: "open" | "verified" | "escalated" | "cancelled";
+            version: number;
+            fieldCount: number;
+            needsAttention: number;
+            createdAt: components["schemas"]["Timestamp"];
+            runReference?: string | null;
+            ownRequest?: boolean;
+        };
+        AiVerificationQueue: {
+            items: components["schemas"]["AiVerificationSummary"][];
+        };
+        AiVerificationList: {
+            items: components["schemas"]["AiVerificationSummary"][];
+            canVerify: boolean;
+        };
+        /** @description A rectangle normalized to the page (0..1 from the top left). */
+        AiBox: {
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+        };
+        AiVerificationField: {
+            name: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            required: boolean;
+            description?: string | null;
+            hint?: string | null;
+            /** @description The extracted value (null when not found). */
+            value: unknown;
+            confidence: number | null;
+            needsAttention: boolean;
+            problems: {
+                code: string;
+                message: string;
+            }[];
+            source: {
+                /** @enum {string} */
+                kind: "ocrLine" | "ocrKeyValue" | "none";
+                page?: number;
+                line?: number;
+                box?: components["schemas"]["AiBox"] | null;
+                span?: {
+                    start: number;
+                    end: number;
+                };
+            };
+            sourceText?: string | null;
+        };
+        AiVerification: components["schemas"]["AiVerificationSummary"] & {
+            threshold: number;
+            canSubmit: boolean;
+            attachment: {
+                id: components["schemas"]["Uuid"];
+                name: string;
+                contentType: string;
+                available: boolean;
+                /** @enum {string|null} */
+                unavailableReason: "removed" | "quarantined" | "scanBlocked" | null;
+            };
+            pages: {
+                number: number;
+                width: number;
+                height: number;
+                unit: string;
+            }[];
+            fields: components["schemas"]["AiVerificationField"][];
+            decision: {
+                decidedBy: string | null;
+                decidedAt: components["schemas"]["Timestamp"] | null;
+                corrected: string[];
+            };
+        };
+        AiVerificationSubmit: {
+            expectedVersion: number;
+            /**
+             * @default verified
+             * @enum {string}
+             */
+            outcome: "verified" | "escalated";
+            reason?: string;
+            /** @description Accept values that fail a validation hint or cross-field check. */
+            acknowledgeProblems?: boolean;
+            /** @description Field name to the person's answer: confirm keeps the value, correct sets value, clear removes it. */
+            fields?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    action: "confirm" | "correct" | "clear";
+                    /** @description The corrected value (correct only). */
+                    value?: unknown;
+                };
+            };
+        };
         AiStatus: {
             enabled: boolean;
             /** @description Why AI is unavailable (no key, credentials rejected, all profiles excluded, budget exhausted) */
@@ -15732,8 +16147,13 @@ export interface components {
                 includeTo?: boolean;
             };
         };
-        /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
-        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+        /** @description An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date("2026-06-30"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available. */
+        decisionExpressionTerm: {
+            fieldRef: components["schemas"]["fieldRef"];
+            expression: components["schemas"]["expression"];
+        };
+        /** @description One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121). */
+        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"] | components["schemas"]["decisionExpressionTerm"];
         decisionCondition: components["schemas"]["decisionTerm"] | {
             all: components["schemas"]["decisionTerm"][];
         } | {
@@ -15853,6 +16273,12 @@ export interface components {
             calendarRef?: components["schemas"]["key"];
             /** @description check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload. */
             check?: components["schemas"]["fallbackCheck"];
+        };
+        /** @description The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results. */
+        decisionRowOutput: {
+            [key: string]: components["schemas"]["literal"] | {
+                expression: components["schemas"]["expression"];
+            };
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -16386,7 +16812,7 @@ export interface components {
             };
             rows: {
                 when: components["schemas"]["decisionCondition"];
-                then: components["schemas"]["decisionOutput"];
+                then: components["schemas"]["decisionRowOutput"];
                 /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
                 effective?: {
                     from?: components["schemas"]["calendarDate"];
@@ -17208,8 +17634,13 @@ export interface components {
                 } | {
                     any: components["schemas"]["decisionTerm"][];
                 };
-                /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
-                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+                /** @description One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121). */
+                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"] | components["schemas"]["decisionExpressionTerm"];
+                /** @description An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date("2026-06-30"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available. */
+                decisionExpressionTerm: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    expression: components["schemas"]["expression"];
+                };
                 /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
                 inCondition: {
                     fieldRef: components["schemas"]["fieldRef"];
@@ -17250,7 +17681,7 @@ export interface components {
                     };
                     rows: {
                         when: components["schemas"]["decisionCondition"];
-                        then: components["schemas"]["decisionOutput"];
+                        then: components["schemas"]["decisionRowOutput"];
                         /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
                         effective?: {
                             from?: components["schemas"]["calendarDate"];
@@ -17261,6 +17692,12 @@ export interface components {
                 };
                 decisionOutput: {
                     [key: string]: components["schemas"]["literal"];
+                };
+                /** @description The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results. */
+                decisionRowOutput: {
+                    [key: string]: components["schemas"]["literal"] | {
+                        expression: components["schemas"]["expression"];
+                    };
                 };
                 scalarFormField: {
                     /**
@@ -29414,6 +29851,37 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    explainRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExplainRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The explanation with its facts and the caller's permitted actions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunExplanation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listSearchableFields: {
         parameters: {
             query?: never;
@@ -30791,6 +31259,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAiOcrSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiOcrSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAiOcrSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiOcrSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiOcrSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAiDocumentTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDocumentTemplateList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAiVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerificationQueue"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRunAiVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerificationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAiVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerification"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitAiVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                verificationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiVerificationSubmit"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiVerification"];
                 };
             };
             400: components["responses"]["BadRequest"];

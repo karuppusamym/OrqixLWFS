@@ -1,6 +1,7 @@
 package com.orqix.runtime.engine;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 
 import org.flowable.bpmn.model.FlowElement;
@@ -86,7 +87,7 @@ public class AiTaskDelegate implements JavaDelegate, TriggerableJavaDelegate, Fl
         if (result != null) {
             JsonNode outputs = json.parse(result.toString());
             forEach.record(execution, execution.getCurrentActivityId(), outputs,
-                    "decided".equals(outputs.path("status").asString(null)));
+                    List.of("decided", "verified").contains(outputs.path("status").asString("")));
         }
     }
 

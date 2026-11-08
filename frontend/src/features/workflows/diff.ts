@@ -1,7 +1,7 @@
 import { sameJson } from '@/features/studio/model/ops'
 import { KINDS } from '@/features/studio/model/kinds'
 import { OPERATOR_LABEL } from '@/features/studio/model/summary'
-import { isAtomicCondition, type Condition, type DecisionRow, type Definition, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { isAtomicCondition, isExpressionCondition, type AtomicCondition, isExpressionTerm, isOutputExpression, type Condition, type DecisionCondition, type DecisionRow, type Definition, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { humanize } from '@/lib/text'
 
 /**
@@ -27,16 +27,19 @@ function show(value: unknown): string {
 
 function describeRow(row: DecisionRow): string {
   const outputs = Object.entries(row.then)
-    .map(([k, v]) => `${k} = ${String(v)}`)
+    .map(([k, v]) => `${k} = ${isOutputExpression(v) ? `formula: ${v.expression}` : String(v)}`)
     .join(', ')
   return `${describeCondition(row.when)} → ${outputs}`
 }
 
-function describeCondition(condition: Condition | undefined): string {
+function describeCondition(condition: Condition | DecisionCondition | undefined): string {
   if (!condition) return '(none)'
-  if (isAtomicCondition(condition)) return `${condition.fieldRef} ${OPERATOR_LABEL[condition.operator]} ${show(condition.value)}`
-  const join = condition.all ? ' AND ' : ' OR '
-  return `(${(condition.all ?? condition.any ?? []).map(describeCondition).join(join)})`
+  if (isExpressionTerm(condition)) return `${condition.fieldRef} formula: ${condition.expression}`
+  if (isExpressionCondition(condition as Condition)) return `formula: ${(condition as { expression: string }).expression}`
+  if (isAtomicCondition(condition as Condition)) { const c = condition as AtomicCondition; return `${c.fieldRef} ${OPERATOR_LABEL[c.operator]} ${show(c.value)}` }
+  const group = condition as { all?: Array<Condition | DecisionCondition>; any?: Array<Condition | DecisionCondition> }
+  const join = group.all ? ' AND ' : ' OR '
+  return `(${(group.all ?? group.any ?? []).map(describeCondition).join(join)})`
 }
 
 function stepName(def: Definition, id: string): string {

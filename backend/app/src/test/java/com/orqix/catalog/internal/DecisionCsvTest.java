@@ -220,6 +220,40 @@ class DecisionCsvTest {
             """;
 
     @Test
+    void formulaCellsRoundTripAndWhatCsvCannotHoldIsRefused() throws Exception {
+        // S146: a test and a result written as Orqix expressions, and a date column of formulas only.
+        JsonNode source = table("""
+                {"hitPolicy":"FIRST","rows":[
+                  {"when":{"all":[{"fieldRef":"/input/amount","operator":"gte","value":1000},
+                                  {"fieldRef":"/input/due","expression":"input.due < date(\\"2026-06-30\\")"}]},
+                   "then":{"route":{"expression":"if input.amount > 5000 then \\"cfo\\" else \\"finance\\""}}},
+                  {"when":{"fieldRef":"/input/amount","expression":"input.amount > coalesce(input.limit, 500)"},"then":{"route":"limit"}}],
+                 "default":{"route":"standard"}}
+                """);
+        String csv = DecisionCsv.export(source);
+        assertThat(csv.lines().findFirst().orElseThrow()).isEqualTo(
+                "hitPolicy:FIRST,effectiveFrom,effectiveTo,in:number:/input/amount,in:expression:/input/due,out:text:route");
+        assertThat(csv).contains("'=input.due < date(\"\"2026-06-30\"\")", "'=input.amount > coalesce(input.limit, 500)");
+        DecisionCsv.Parsed back = parse(csv);
+        assertThat(back.ok()).as(back.problems().toString()).isTrue();
+        assertThat(DecisionCsv.same(source.path("rows"), back.table().path("rows"))).isTrue();
+        // Without the apostrophe a hand-typed formula reads the same.
+        assertThat(DecisionCsv.same(parse(csv.replace("'=", "=")).table().path("rows"), source.path("rows"))).isTrue();
+        // A comparison in a column of formulas only, an empty formula and a long formula are refused with positions.
+        String head = "hitPolicy:FIRST,effectiveFrom,effectiveTo,in:expression:/input/due,out:text:route\n";
+        assertThat(first(head + "rule,,,eq 1,x\ndefault,,,,y\n").code()).isEqualTo("formula");
+        assertThat(first(head + "rule,,,=,x\ndefault,,,,y\n").code()).isEqualTo("formula");
+        assertThat(parse(head + "rule,,,=" + "a".repeat(1500) + ",x\ndefault,,,,y\n").ok()).isTrue();
+        assertThat(first(head + "rule,,,=" + "a".repeat(2100) + ",x\ndefault,,,,y\n").code()).isEqualTo("cellTooLong");
+        // A formula with a line break or an edge space cannot be written exactly: refused, never changed.
+        for (String expression : new String[] {"input.due <\\n today()", "input.due < today() "}) {
+            JsonNode bad = table("{\"hitPolicy\":\"FIRST\",\"rows\":[{\"when\":{\"fieldRef\":\"/input/due\",\"expression\":\""
+                    + expression + "\"},\"then\":{\"route\":\"x\"}}],\"default\":{\"route\":\"y\"}}");
+            assertThatThrownBy(() -> DecisionCsv.export(bad)).isInstanceOf(DecisionCsv.NotRepresentable.class);
+        }
+    }
+
+    @Test
     void exportsAndReadsBackTheIdenticalTable() throws Exception {
         JsonNode source = table(TABLE);
         String csv = DecisionCsv.export(source);
@@ -256,17 +290,26 @@ class DecisionCsvTest {
         assertThat(back.table().path("rows").get(2).path("then").path("route").asString()).isEqualTo("- dash");
 
         // Every risky first character, and the apostrophe itself, survives a round trip (text results).
-        for (String risky : new String[] {"=SUM(A1)", "+1", "-1", "@cmd", "'quoted"}) {
+        // S146: a text starting with = would read back as a formula, so it is refused rather than changed (the
+        // compiler never allows such a text anyway: WF_LITERAL_UNSAFE).
+        String eq = "{\"hitPolicy\":\"UNIQUE\",\"rows\":[{\"when\":{\"fieldRef\":\"/input/a\",\"operator\":\"eq\",\"value\":\"k\"},"
+                + "\"then\":{\"r\":\"=SUM(A1)\"}}],\"default\":{\"r\":\"d\"}}";
+        assertThatThrownBy(() -> DecisionCsv.export(table(eq))).isInstanceOf(DecisionCsv.NotRepresentable.class);
+        for (String risky : new String[] {"+1", "-1", "@cmd", "'quoted"}) {
             String json = "{\"hitPolicy\":\"UNIQUE\",\"rows\":[{\"when\":{\"fieldRef\":\"/input/a\",\"operator\":\"eq\",\"value\":\"k\"},"
                     + "\"then\":{\"r\":\"" + risky + "\"}}],\"default\":{\"r\":\"d\"}}";
             String out = DecisionCsv.export(table(json));
             assertThat(out).as(risky).contains("'" + risky);
             assertThat(parse(out).table().path("rows").get(0).path("then").path("r").asString()).as(risky).isEqualTo(risky);
         }
-        // A plain "=" or "@" typed by hand into a cell is data, not a formula; it is just parsed as text, never run.
+        // A plain "@" typed by hand into a cell is data; it is just parsed as text, never run. A cell starting with "="
+        // is an Orqix formula (S146), only ever checked by the compiler (this one does not parse), never run here.
         assertThat(parse("hitPolicy:UNIQUE,effectiveFrom,effectiveTo,in:text:/input/a,out:text:r\n"
-                + "rule,,,eq k,=cmd|' /C calc'!A0\ndefault,,,,d\n").table().path("rows").get(0).path("then").path("r").asString())
-                .isEqualTo("=cmd|' /C calc'!A0");
+                + "rule,,,eq k,@cmd\ndefault,,,,d\n").table().path("rows").get(0).path("then").path("r").asString())
+                .isEqualTo("@cmd");
+        assertThat(parse("hitPolicy:UNIQUE,effectiveFrom,effectiveTo,in:text:/input/a,out:text:r\n"
+                + "rule,,,eq k,=cmd|' /C calc'!A0\ndefault,,,,d\n").table().path("rows").get(0).path("then").path("r")
+                .path("expression").asString()).isEqualTo("cmd|' /C calc'!A0");
     }
 
     @Test

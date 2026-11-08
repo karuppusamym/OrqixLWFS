@@ -18,6 +18,9 @@ import tools.jackson.databind.node.ObjectNode;
  */
 public final class DecisionTables {
 
+    /** The DMN {@code expressionLanguage} of an entry written as an Orqix expression (S146). */
+    public static final String ORQIX_EXPRESSION_LANGUAGE = DmnExport.ORQIX_EXPRESSION_LANGUAGE;
+
     private DecisionTables() {
     }
 
@@ -38,7 +41,8 @@ public final class DecisionTables {
      * @throws IllegalArgumentException with the first problem
      */
     public static void check(String tableJson) {
-        read(tableJson, "table");
+        // S146: formula entries must at least parse; their types are checked in the workflow that uses the table.
+        com.orqix.compiler.internal.eval.ExpressionTable.fields(read(tableJson, "table"));
     }
 
     /**
@@ -52,6 +56,45 @@ public final class DecisionTables {
     /** Evaluates the table with the canonical semantics (see {@link DecisionEvaluator}). */
     public static DecisionEvaluator.Result evaluate(String tableJson, java.util.Map<String, Object> values) {
         return com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.evaluate(read(tableJson, "table"), values);
+    }
+
+    /**
+     * Evaluates a table that may use Orqix expression entries (S146).
+     *
+     * @param typesJson the pinned types of its expressions (as the BPMN decision task carries them), or null to infer
+     *                  them from the values
+     */
+    public static DecisionEvaluator.Result evaluate(String tableJson, java.util.Map<String, Object> values,
+            String typesJson) {
+        return com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.evaluate(read(tableJson, "table"), values,
+                typesJson == null ? null : StrictJson.parse(typesJson));
+    }
+
+    /** @return true when a row of the table has an input or output entry written as an Orqix expression (S146) */
+    public static boolean usesExpressions(String tableJson) {
+        return read(tableJson, "table").usesExpressions();
+    }
+
+    /**
+     * @return every field the table reads, sorted: the tested columns and, for expression entries, the fields their
+     *         expressions name
+     * @throws IllegalArgumentException when the table is malformed or an expression has a syntax problem
+     */
+    public static java.util.SortedSet<String> fields(String tableJson) {
+        return new java.util.TreeSet<>(com.orqix.compiler.internal.eval.ExpressionTable.fields(read(tableJson, "table")));
+    }
+
+    /**
+     * The variables of the deployed engine DMN of a table that uses expressions (S146), besides {@code asOf}: the
+     * compared fields as {@code in<n>}, each input entry expression's result as boolean {@code x<k>} (no value is
+     * false) and each output entry expression's value as {@code y<k>} (null when its row did not match).
+     *
+     * @param values   the field values the canonical evaluation used
+     * @param result   that evaluation
+     */
+    public static java.util.Map<String, Object> engineVariables(String tableJson, java.util.Map<String, Object> values,
+            DecisionEvaluator.Result result) {
+        return DmnGenerator.engineVariables(read(tableJson, "table"), values, result);
     }
 
     private static DecisionTable read(String tableJson, String key) {

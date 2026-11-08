@@ -15,14 +15,14 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * AWS Signature Version 4 (header signing) for Bedrock calls. The S132 signer is internal to the integration module,
+ * AWS Signature Version 4 (header signing) for Bedrock and Textract (CG-A06) calls. The S132 signer is internal to the integration module,
  * so the AI module keeps its own copy; both are checked against the AWS {@code get-vanilla} test vector.
  */
-final class SigV4 {
+public final class SigV4 {
 
-    static final DateTimeFormatter AMZ_DATE = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+    public static final DateTimeFormatter AMZ_DATE = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
 
-    record Credentials(String accessKeyId, String secretAccessKey, String sessionToken) {
+    public record Credentials(String accessKeyId, String secretAccessKey, String sessionToken) {
         @Override
         public String toString() {
             return "Credentials[" + accessKeyId + "]";
@@ -36,7 +36,7 @@ final class SigV4 {
      * @param canonicalPath the path exactly as it appears in the canonical request (already URI-encoded as AWS requires)
      * @param headers       headers to sign, including {@code host} and {@code x-amz-date}
      */
-    static String authorization(Credentials credentials, String region, String service, String method,
+    public static String authorization(Credentials credentials, String region, String service, String method,
             String canonicalPath, String query, Map<String, String> headers, byte[] body, Instant now) {
         TreeMap<String, String> signed = new TreeMap<>();
         headers.forEach((k, v) -> signed.put(k.toLowerCase(Locale.ROOT), v.strip().replaceAll("\\s+", " ")));
@@ -58,7 +58,7 @@ final class SigV4 {
     }
 
     /** RFC 3986 encoding of one path segment as AWS uses it (unreserved characters kept). */
-    static String encode(String segment) {
+    public static String encode(String segment) {
         StringBuilder out = new StringBuilder();
         for (byte b : segment.getBytes(StandardCharsets.UTF_8)) {
             char c = (char) (b & 0xff);
@@ -71,7 +71,7 @@ final class SigV4 {
         return out.toString();
     }
 
-    static byte[] sha256(byte[] value) {
+    public static byte[] sha256(byte[] value) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(value);
         } catch (NoSuchAlgorithmException e) {
@@ -79,7 +79,7 @@ final class SigV4 {
         }
     }
 
-    static String hex(byte[] value) {
+    public static String hex(byte[] value) {
         return HexFormat.of().formatHex(value);
     }
 

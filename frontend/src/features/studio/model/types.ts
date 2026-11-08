@@ -82,9 +82,60 @@ export interface EffectiveWindow {
   to?: string
 }
 
+/**
+ * A decision-row test written as an Orqix expression (CG-D04, docs/build/S146): it belongs to the column `fieldRef`,
+ * must reference that field and matches when it gives true (false or no value does not match).
+ */
+export interface ExpressionTerm {
+  fieldRef: string
+  expression: string
+  operator?: never
+  value?: never
+  all?: never
+  any?: never
+}
+/** One test of a decision row: a comparison of its column or a formula (S146). */
+export type DecisionTerm = AtomicCondition | ExpressionTerm
+/** The condition of a decision row: one test, or tests that must all (all) or any (any) hold. */
+export type DecisionCondition = DecisionTerm | { all?: DecisionTerm[]; any?: DecisionTerm[]; fieldRef?: never; operator?: never; value?: never; expression?: never }
+/** A row result computed by an Orqix expression (S146); its type is the type of the default's literal. */
+export interface OutputExpression {
+  expression: string
+}
+export type OutputEntry = Literal | OutputExpression
+
+export function isExpressionTerm(t: unknown): t is ExpressionTerm {
+  return typeof t === 'object' && t !== null && typeof (t as ExpressionTerm).fieldRef === 'string' && typeof (t as ExpressionTerm).expression === 'string'
+}
+export function isOutputExpression(v: unknown): v is OutputExpression {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) && typeof (v as OutputExpression).expression === 'string'
+}
+/** The tests of a decision row in order (one for a single test). */
+export function decisionTerms(c: DecisionCondition): DecisionTerm[] {
+  return 'all' in c && c.all ? c.all : 'any' in c && c.any ? c.any : 'fieldRef' in c && typeof c.fieldRef === 'string' ? [c as DecisionTerm] : []
+}
+/** True when any test or result of the table is a formula (S146). */
+export function tableUsesExpressions(table: { rows: DecisionRow[] }): boolean {
+  return table.rows.some(r => decisionTerms(r.when).some(isExpressionTerm) || Object.values(r.then ?? {}).some(isOutputExpression))
+}
+/** The comparisons of a decision row; formula tests are left out. */
+export function comparisonTerms(c: DecisionCondition): AtomicCondition[] {
+  return decisionTerms(c).filter((t): t is AtomicCondition => !isExpressionTerm(t))
+}
+
+/**
+ * The comparisons of a decision row as an ordinary condition, for tools that only understand comparisons (case
+ * generation, path checks). Formula tests are left out, so the result may hold more often than the row.
+ */
+export function comparisonCondition(c: DecisionCondition): Condition {
+  if ('any' in c && c.any) return { any: comparisonTerms(c) }
+  if ('all' in c && c.all) return { all: comparisonTerms(c) }
+  return isExpressionTerm(c) ? { all: [] } : (c as AtomicCondition)
+}
+
 export interface DecisionRow {
-  when: Condition
-  then: Record<string, Literal>
+  when: DecisionCondition
+  then: Record<string, OutputEntry>
   effective?: EffectiveWindow
 }
 

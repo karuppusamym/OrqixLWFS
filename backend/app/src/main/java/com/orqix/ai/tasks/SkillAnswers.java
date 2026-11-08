@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import com.orqix.compiler.DocumentTemplates;
 import com.orqix.shared.json.Json;
 
 import tools.jackson.databind.JsonNode;
@@ -22,7 +23,8 @@ final class SkillAnswers {
 
     /** A validated answer. {@code reported} is the model's own confidence, used only as a weak signal. */
     record Answer(String mode, String label, ObjectNode fields, BigDecimal score, String recommendation, String text,
-            List<String> reasons, List<String> quotes, Double reported, ObjectNode fieldConfidence) {
+            List<String> reasons, List<String> quotes, Double reported, ObjectNode fieldConfidence,
+            ObjectNode fieldSources) {
 
         /** The value samples are compared on (label, outcome, rounded score, fields, summary presence). */
         String vote() {
@@ -39,11 +41,21 @@ final class SkillAnswers {
     private final Json json;
     private final JsonNode skill;
     private final String mode;
+    /** The fields an extract skill extracts (its own, or its document template's: CG-A06). */
+    private final List<DocumentTemplates.Field> fields;
+    /** The document type when the skill reads a request file, else null. */
+    private final String documentType;
 
     SkillAnswers(Json json, JsonNode skill) {
         this.json = json;
         this.skill = skill;
         this.mode = skill.path("mode").asString();
+        this.fields = DocumentTemplates.effectiveFields(skill);
+        this.documentType = "extract".equals(mode) ? DocumentTemplates.documentType(skill) : null;
+    }
+
+    List<DocumentTemplates.Field> fields() {
+        return fields;
     }
 
     String system() {
@@ -58,11 +70,19 @@ final class SkillAnswers {
                 s.append("Give up to 3 reasons; each quotes the exact sentence of the request data it rests on.\n");
             }
             case "extract" -> {
+                if (documentType != null) {
+                    s.append("The request data contains the recognized text of a ").append(documentType)
+                            .append(" document (field ").append(DocumentTemplates.attachmentInput(skill))
+                            .append(") as numbered lines, each starting with [L<number>].\n");
+                }
                 s.append("Extract these fields (null when the request data does not contain the value):\n");
-                skill.path("fields").forEach(f -> s.append("- ").append(f.path("name").asString()).append(" (")
-                        .append(f.path("type").asString()).append(")").append(f.has("description") ? ": "
-                        + f.path("description").asString() : "").append('\n'));
+                fields.forEach(f -> s.append("- ").append(f.name()).append(" (").append(f.type()).append(")")
+                        .append(f.description() != null ? ": " + f.description() : "").append('\n'));
                 s.append("Give a confidence between 0 and 1 for each field.\n");
+                if (documentType != null) {
+                    s.append("For each field give in fieldSources the number of the line the value was read from"
+                            + " (null when absent). Write dates as YYYY-MM-DD and amounts as plain numbers.\n");
+                }
             }
             case "score" -> s.append("Give a score from ").append(skill.path("score").path("min").asString())
                     .append(" to ").append(skill.path("score").path("max").asString()).append(". ")
@@ -102,19 +122,26 @@ final class SkillAnswers {
                 reasons(props, required);
             }
             case "extract" -> {
-                ObjectNode fields = object();
+                ObjectNode values = object();
                 ObjectNode confidence = object();
-                for (JsonNode f : skill.path("fields")) {
-                    String name = f.path("name").asString();
-                    ArrayNode types = ((ObjectNode) fields.get("properties")).putObject(name).putArray("type");
-                    types.add("date".equals(f.path("type").asString()) ? "string" : f.path("type").asString()).add("null");
-                    ((ArrayNode) fields.get("required")).add(name);
+                ObjectNode sources = object();
+                for (DocumentTemplates.Field f : fields) {
+                    String name = f.name();
+                    ArrayNode types = ((ObjectNode) values.get("properties")).putObject(name).putArray("type");
+                    types.add("date".equals(f.type()) ? "string" : f.type()).add("null");
+                    ((ArrayNode) values.get("required")).add(name);
                     ((ObjectNode) confidence.get("properties")).putObject(name).put("type", "number");
                     ((ArrayNode) confidence.get("required")).add(name);
+                    ((ObjectNode) sources.get("properties")).putObject(name).putArray("type").add("integer").add("null");
+                    ((ArrayNode) sources.get("required")).add(name);
                 }
-                props.set("fields", fields);
+                props.set("fields", values);
                 props.set("fieldConfidence", confidence);
                 required.add("fields").add("fieldConfidence");
+                if (documentType != null) {
+                    props.set("fieldSources", sources);
+                    required.add("fieldSources");
+                }
             }
             case "score" -> {
                 props.putObject("score").put("type", "number");
@@ -195,7 +222,7 @@ final class SkillAnswers {
                 if (label == null || !labels.contains(label)) {
                     return "label must be one of: " + String.join(", ", labels) + ".";
                 }
-                return new Answer(mode, label, null, null, null, null, reasons, quotes, reported, null);
+                return new Answer(mode, label, null, null, null, null, reasons, quotes, reported, null, null);
             }
             case "extract" -> {
                 if (!answer.path("fields").isObject()) {
@@ -203,21 +230,27 @@ final class SkillAnswers {
                 }
                 ObjectNode fields = json.object();
                 ObjectNode confidence = json.object();
-                for (JsonNode f : skill.path("fields")) {
-                    String name = f.path("name").asString();
+                ObjectNode sources = documentType == null ? null : json.object();
+                for (DocumentTemplates.Field f : this.fields) {
+                    String name = f.name();
                     JsonNode value = answer.path("fields").path(name);
                     if (value.isMissingNode() || value.isNull()) {
                         continue;
                     }
-                    String problem = typeProblem(name, f.path("type").asString(), value);
+                    String problem = typeProblem(name, f.type(), value);
                     if (problem != null) {
                         return problem;
                     }
                     fields.set(name, value);
+                    JsonNode line = answer.path("fieldSources").path(name);
+                    if (sources != null && line.isIntegralNumber() && line.asInt() >= 1) {
+                        sources.put(name, line.asInt());
+                    }
                     double c = answer.path("fieldConfidence").path(name).asDouble(reported == null ? 0.5 : reported);
                     confidence.put(name, Math.max(0, Math.min(1, c)));
                 }
-                return new Answer(mode, null, fields, null, null, null, List.of(), List.of(), reported, confidence);
+                return new Answer(mode, null, fields, null, null, null, List.of(), List.of(), reported, confidence,
+                        sources);
             }
             case "score" -> {
                 if (!answer.path("score").isNumber()) {
@@ -229,7 +262,7 @@ final class SkillAnswers {
                 if (score.compareTo(min) < 0 || score.compareTo(max) > 0) {
                     return "score must be between " + min.toPlainString() + " and " + max.toPlainString() + ".";
                 }
-                return new Answer(mode, null, null, score, null, null, reasons, quotes, reported, null);
+                return new Answer(mode, null, null, score, null, null, reasons, quotes, reported, null, null);
             }
             case "recommend" -> {
                 Set<String> outcomes = new LinkedHashSet<>();
@@ -239,7 +272,7 @@ final class SkillAnswers {
                     return "recommendation must be one of: " + String.join(", ", outcomes) + ".";
                 }
                 return new Answer(mode, null, null, null, outcome, cut(answer.path("rationale").asString(""), 2000),
-                        List.of(), List.of(), reported, null);
+                        List.of(), List.of(), reported, null, null);
             }
             default -> {
                 String summary = answer.path("summary").asString(null);
@@ -250,7 +283,7 @@ final class SkillAnswers {
                 if (summary.length() > max) {
                     return "summary must be at most " + max + " characters.";
                 }
-                return new Answer(mode, null, null, null, null, summary, List.of(), List.of(), reported, null);
+                return new Answer(mode, null, null, null, null, summary, List.of(), List.of(), reported, null, null);
             }
         }
     }

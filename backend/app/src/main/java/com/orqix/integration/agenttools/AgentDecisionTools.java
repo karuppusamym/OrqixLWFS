@@ -55,12 +55,25 @@ public class AgentDecisionTools {
         for (JsonNode row : table.path("rows")) {
             collect(row.path("when"), fields, types);
         }
+        // S146: formula entries read every field they name.
+        if (DecisionTables.usesExpressions(content)) {
+            for (String ref : DecisionTables.fields(content)) {
+                String name = ref.substring(ref.lastIndexOf('/') + 1).replaceAll("[^A-Za-z0-9_]", "_");
+                fields.putIfAbsent(name, ref);
+                types.putIfAbsent(name, "any");
+            }
+        }
         ObjectNode schema = json.object();
         schema.put("type", "object");
         ObjectNode properties = schema.putObject("properties");
         var required = schema.putArray("required");
         fields.forEach((name, ref) -> {
-            properties.putObject(name).put("type", types.getOrDefault(name, "string"));
+            String type = types.getOrDefault(name, "string");
+            if ("any".equals(type)) {
+                properties.putObject(name).putArray("type").add("string").add("number").add("boolean");
+            } else {
+                properties.putObject(name).put("type", type);
+            }
             required.add(name);
         });
         schema.put("additionalProperties", false);
@@ -78,6 +91,10 @@ public class AgentDecisionTools {
         }
         String name = ref.substring(ref.lastIndexOf('/') + 1).replaceAll("[^A-Za-z0-9_]", "_");
         fields.putIfAbsent(name, ref);
+        if (when.has("expression")) {
+            types.putIfAbsent(name, "any"); // S146: a formula test; its value may be a number, text or true/false
+            return;
+        }
         JsonNode value = when.path("value");
         if (value.isArray() && !value.isEmpty()) {
             value = value.get(0);

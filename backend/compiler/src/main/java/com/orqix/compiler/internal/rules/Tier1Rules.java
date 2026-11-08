@@ -57,6 +57,16 @@ public final class Tier1Rules {
         if (!"deny".equals(root.path("security").path("selfApproval").asString())) issues.blocker("WF_TIER1_SELF_APPROVAL", "/security/selfApproval", null, null, "Tier-1 always denies requester self-approval.");
         for (JsonNode table : root.path("decisions")) {
             if (!"UNIQUE".equals(table.path("hitPolicy").asString())) issues.blocker("WF_TIER1_RULE_POLICY", "/decisions", null, null, "Tier-1 requires mutually exclusive UNIQUE rules.");
+            // S146: formula entries cannot be proven exclusive, so Tier-1 tables use plain comparisons only.
+            boolean formulas = false;
+            for (JsonNode row : table.path("rows")) {
+                JsonNode when = row.path("when");
+                formulas |= when.has("expression");
+                for (JsonNode term : when.path("all")) formulas |= term.has("expression");
+                for (JsonNode term : when.path("any")) formulas |= term.has("expression");
+                for (JsonNode value : row.path("then")) formulas |= value.isObject();
+            }
+            if (formulas) issues.blocker("WF_TIER1_RULE_EXPRESSION", "/decisions", null, null, "Tier-1 rule tables use comparisons and fixed results only, not formulas.");
         }
         if (!root.has("terminalNotification")) issues.blocker("WF_TIER1_TERMINAL_NOTIFICATION", "/terminalNotification", null, null, "Configure the terminal case email.");
         Set<String> visiting = new HashSet<>(), done = new HashSet<>();

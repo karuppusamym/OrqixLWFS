@@ -49,6 +49,7 @@ tags:
   - name: Access
   - name: AI
   - name: AiSkills
+  - name: Completion
   - name: Expressions
   - name: Migration
   - name: Conversation
@@ -8759,6 +8760,45 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---------------------------------------------------------------- end of S141 TaskActions paths
+  # ---------------------------------------------------------------- S146 Completion: operator explain paths
+  /workspaces/{workspaceId}/runs/{runId}/explain:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Completion]
+      operationId: explainRun
+      summary: Explain why this request is stuck and which permitted action would unblock it (CG-A07)
+      description: |
+        Read-only. Builds a bounded fact set from the request's timeline, current steps, waits, effects, the
+        health of the connections it uses and the published workflow model, with no request data values (field
+        names at most), and lists the actions the caller may take now (computed with the same permission checks
+        as the actions themselves; actions that need someone else are listed as askAdministrator). The
+        explanation comes from the AI profile through the provider SPI when AI is available (strict JSON
+        answer, temperature 0, metered as ai_generation kind aiExplain, workspace residency rule applied) and
+        from rules otherwise (`source` rules with `fallbackReason`). Suggested actions are always ids from
+        `permittedActions`; anything else the model suggests is dropped and reported in `droppedActions`.
+        It never performs an action: the request, its tasks, waits and engine state do not change. A POST
+        because the model call is metered and audited; no Idempotency-Key and no expectedVersion. An AI answer
+        is reused for the same caller and request state for up to two minutes (`ai.cached`).
+      x-orqix-permission: run.operate
+      x-orqix-audit: ai.run.explained
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExplainRunRequest' }
+      responses:
+        '200':
+          description: The explanation with its facts and the caller's permitted actions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunExplanation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ---------------------------------------------------------------- end S146 Completion: operator explain paths
 
   # ---------------------------------------------------------------- S142 BulkAndSearch paths (CG-O01, CG-O04, CG-O05)
   /workspaces/{workspaceId}/workflows/{workflowId}/searchable-fields:
@@ -9989,6 +10029,174 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
   # ---- end AiSkills ----
+
+  # ---- S146 part B: DocumentExtraction (CG-A06) ----
+  /workspaces/{workspaceId}/ai-ocr-settings:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: getAiOcrSettings
+      summary: 'The OCR provider of document extraction and the providers this deployment offers'
+      description: |
+        local (on this deployment) is always allowed. A cloud provider is allowed only when the workspace AI
+        policy's residency rule names one of its residency tags, or, in a workspace that is not regulated and has no
+        residency rule, once an administrator chooses it.
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill | workspace.manage-access
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiOcrSettings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Completion]
+      operationId: updateAiOcrSettings
+      summary: 'Choose the OCR provider of document extraction'
+      description: |
+        expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT); a provider the residency rule does not
+        admit is 422.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: ai.ocr-settings.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiOcrSettingsUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiOcrSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/ai-document-templates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: listAiDocumentTemplates
+      summary: 'Built-in document-type templates of extract skills (invoice, ID document, bank statement)'
+      x-orqix-permission: workflow.read | ai.evaluate | ai.approve-skill
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDocumentTemplateList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/ai-verifications:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Completion]
+      operationId: listAiVerifications
+      summary: 'Open verification tasks of document extractions in the workspace'
+      x-orqix-permission: run.operate | ai.evaluate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerificationQueue' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Completion]
+      operationId: listRunAiVerifications
+      summary: 'Verification tasks of a run'
+      x-orqix-permission: run.read | initiator | taskParticipant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerificationList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: verificationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      tags: [Completion]
+      operationId: getAiVerification
+      summary: 'A verification task: the document reference and the extracted fields with confidence and source'
+      description: |
+        Needs request-data visibility. sourceText comes from the file's OCR result while it exists (quarantine and
+        removal delete it).
+      x-orqix-permission: run.read-data | initiator | taskParticipant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerification' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/ai-verifications/{verificationId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - name: verificationId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [Completion]
+      operationId: submitAiVerification
+      summary: 'Confirm or correct the extracted fields; the step continues with the verified values'
+      description: |
+        verified continues on next with the verified values as the step outputs; escalated (reason required) takes
+        needsReview. Every field that needs attention must be confirmed or corrected. The decision record gets the
+        human outcome and corrections become a pending evaluation candidate. The initiator of the request cannot
+        verify (403 SELF_APPROVAL_DENIED); a stale expectedVersion or a closed task is 409 TASK_VERSION_CONFLICT.
+      x-orqix-permission: taskParticipant | run.operate | ai.evaluate
+      x-orqix-audit: ai.verification.submitted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiVerificationSubmit' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiVerification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---- end S146 part B: DocumentExtraction ----
 
   /workspaces/{workspaceId}/ai/status:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -15400,6 +15608,86 @@ components:
         connections: { type: array, items: { $ref: '#/components/schemas/ConnectionVolume' }, description: 'Only with connection.read' }
         asOf: { $ref: '#/components/schemas/Timestamp' }
     # ---------------------------------------------------------------- end of S142 BulkAndSearch schemas
+    # -------------------------------------------------------------- S146 Completion: operator explain schemas
+    ExplainRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        preferRules: { type: [boolean, 'null'], description: Answer from the rules without calling a model. }
+    ExplainFact:
+      type: object
+      additionalProperties: false
+      required: [id, kind, text, nodeId, at, eventSeq]
+      description: "A fact written by Orqix from codes, times, labels and keys; never request data values."
+      properties:
+        id: { type: string, maxLength: 8 }
+        kind:
+          type: string
+          enum: [run, attention, effect, connection, circuit, binding, step, wait, check, task, event, model, suspension, child]
+        text: { type: string, maxLength: 400 }
+        nodeId: { type: [string, 'null'] }
+        at: { type: [string, 'null'], format: date-time }
+        eventSeq: { type: [integer, 'null'], format: int64, description: The timeline entry the fact comes from. }
+    ExplainPermittedAction:
+      type: object
+      additionalProperties: false
+      required: [id, operationId, kind, label, description, permission, nodeId, targetId]
+      properties:
+        id: { type: string, maxLength: 120, description: "Stable id such as retryRun or reassignTask:<taskId>." }
+        operationId: { type: [string, 'null'], description: The API operation behind the action (null when someone else must act). }
+        kind:
+          type: string
+          enum: [operate, open, askAdministrator]
+          description: "operate opens the existing operator dialog with its usual confirmation; open a settings page; askAdministrator means someone else must act."
+        label: { type: string }
+        description: { type: string }
+        permission: { type: string }
+        nodeId: { type: [string, 'null'] }
+        targetId: { type: [string, 'null'], description: "The effect, wait, task or connection the action applies to." }
+    ExplainSuggestedAction:
+      type: object
+      additionalProperties: false
+      required: [actionId, why]
+      properties:
+        actionId: { type: string }
+        why: { type: string, maxLength: 200 }
+    ExplainAiInfo:
+      type: object
+      additionalProperties: false
+      required: [profile, model, promptVersion, cached]
+      properties:
+        profile: { type: string }
+        model: { type: string }
+        promptVersion: { type: string }
+        cached: { type: boolean }
+    RunExplanation:
+      type: object
+      additionalProperties: false
+      required: [runId, runVersion, lifecycle, source, summary, cause, evidence, suggestedActions, facts, permittedActions, droppedActions, fallbackReason, ai, readOnly, stateDigest, generatedAt]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        runVersion: { type: integer }
+        lifecycle: { type: string }
+        source: { type: string, enum: [ai, rules] }
+        summary: { type: string, maxLength: 1200 }
+        cause: { type: string, maxLength: 1200 }
+        evidence: { type: array, items: { type: string }, description: Ids of facts that support the explanation. }
+        suggestedActions: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ExplainSuggestedAction' } }
+        facts: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/ExplainFact' } }
+        permittedActions: { type: array, items: { $ref: '#/components/schemas/ExplainPermittedAction' } }
+        droppedActions: { type: array, items: { type: string }, description: "Action ids the model suggested that the caller may not take; never shown as actions." }
+        fallbackReason:
+          type: [string, 'null']
+          enum: [aiOff, featureOff, notConfigured, residency, budget, unavailable, invalidAnswer, null]
+          description: Why the rules answered although AI was wanted.
+        ai:
+          oneOf:
+            - { $ref: '#/components/schemas/ExplainAiInfo' }
+            - { type: 'null' }
+        readOnly: { type: boolean, const: true }
+        stateDigest: { type: string }
+        generatedAt: { $ref: '#/components/schemas/Timestamp' }
+    # -------------------------------------------------------------- end S146 Completion: operator explain schemas
     McpServer:
       type: object
       additionalProperties: false
@@ -15993,6 +16281,11 @@ components:
           type: array
           description: Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied)
           items: { type: integer, minimum: 0 }
+        expressions:
+          type: array
+          description: 'S146: the evaluated formula entries of a table that uses them (every test of every row, the results of matching rows); absent otherwise'
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/DecisionExpressionEntry' }
 
     # ---------------------------------------------------------------- Expressions (CG-X01, docs/build/S137)
     ExpressionType:
@@ -16057,6 +16350,20 @@ components:
             message: { type: string }
             position: { type: integer, minimum: 0, description: Zero-based offset of the part the problem is about. }
     # ---------------------------------------------------------------- end of Expressions
+
+    # ---------------------------------------------------------------- S146 part A: decision expressions
+    DecisionExpressionEntry:
+      type: object
+      additionalProperties: false
+      required: [row, term, kind, target, expression, value]
+      properties:
+        row: { type: integer, minimum: 0, description: Zero-based row index. }
+        term: { type: integer, minimum: -1, description: 'Zero-based term index of a test; -1 for a result' }
+        kind: { type: string, enum: [input, output] }
+        target: { type: string, description: 'The column (fieldRef) of a test, or the result name' }
+        expression: { type: string }
+        value: { type: [string, number, boolean, 'null'], description: 'A test gives true, false or null (does not match); a result its value' }
+    # ---------------------------------------------------------------- end of S146 part A schemas
 
     WorkflowTestCase:
       type: object
@@ -16595,7 +16902,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai, verify] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -17214,7 +17521,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter, ai, verify] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -19036,6 +19343,194 @@ components:
         value: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,39}$' }
         reason: { type: string, maxLength: 1000 }
     # ---- end AiSkills schemas ----
+    # ---- S146 part B: DocumentExtraction schemas (CG-A06) ----
+    AiOcrProvider:
+      type: object
+      required: [id, kind, label, residency, allowed, refusal]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [local, azureDocumentIntelligence, textract] }
+        label: { type: string }
+        residency: { type: array, items: { type: string } }
+        allowed: { type: boolean }
+        refusal: { type: [string, 'null'] }
+    AiOcrSettings:
+      type: object
+      required: [provider, chosen, version, updatedAt, refusal, providers]
+      properties:
+        provider: { type: string, description: 'The provider in use (the deployment default until an administrator chooses one).' }
+        chosen: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        refusal: { type: [string, 'null'], description: 'Why the provider in use is not allowed now (extractions then end on aiUnavailable).' }
+        providers: { type: array, items: { $ref: '#/components/schemas/AiOcrProvider' } }
+    AiOcrSettingsUpdate:
+      type: object
+      required: [provider, expectedVersion]
+      properties:
+        provider: { type: string, pattern: '^[a-z][a-z0-9-]{0,39}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+    AiDocumentTemplateField:
+      type: object
+      required: [name, type, required, description, hint]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, integer, boolean, date] }
+        required: { type: boolean }
+        description: { type: [string, 'null'] }
+        hint: { type: [string, 'null'], enum: [iban, currency, country, pastDate, futureDate, null] }
+    AiDocumentTemplate:
+      type: object
+      required: [type, label, fields, checks]
+      properties:
+        type: { type: string, enum: [invoice, idDocument, bankStatement] }
+        label: { type: string }
+        fields: { type: array, items: { $ref: '#/components/schemas/AiDocumentTemplateField' } }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [kind, target, plus, minus, other, tolerance]
+            properties:
+              kind: { type: string, enum: [sum, after, lineItems] }
+              target: { type: string }
+              plus: { type: array, items: { type: string } }
+              minus: { type: array, items: { type: string } }
+              other: { type: [string, 'null'] }
+              tolerance: { type: number }
+    AiDocumentTemplateList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiDocumentTemplate' } }
+    AiVerificationSummary:
+      type: object
+      required: [id, runId, nodeId, occurrence, decisionId, skillKey, skillVersion, documentType, provider, status, version, fieldCount, needsAttention, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        occurrence: { type: integer }
+        decisionId: { $ref: '#/components/schemas/Uuid' }
+        skillKey: { type: string }
+        skillVersion: { type: integer }
+        documentType: { type: string, enum: [invoice, idDocument, bankStatement, custom] }
+        provider: { type: string }
+        status: { type: string, enum: [open, verified, escalated, cancelled] }
+        version: { type: integer }
+        fieldCount: { type: integer }
+        needsAttention: { type: integer }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        runReference: { type: [string, 'null'] }
+        ownRequest: { type: boolean }
+    AiVerificationQueue:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiVerificationSummary' } }
+    AiVerificationList:
+      type: object
+      required: [items, canVerify]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AiVerificationSummary' } }
+        canVerify: { type: boolean }
+    AiBox:
+      type: object
+      description: 'A rectangle normalized to the page (0..1 from the top left).'
+      required: [x, y, w, h]
+      properties:
+        x: { type: number }
+        y: { type: number }
+        w: { type: number }
+        h: { type: number }
+    AiVerificationField:
+      type: object
+      required: [name, type, required, value, confidence, needsAttention, problems, source]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, integer, boolean, date] }
+        required: { type: boolean }
+        description: { type: [string, 'null'] }
+        hint: { type: [string, 'null'] }
+        value: { description: 'The extracted value (null when not found).' }
+        confidence: { type: [number, 'null'] }
+        needsAttention: { type: boolean }
+        problems:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        source:
+          type: object
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [ocrLine, ocrKeyValue, none] }
+            page: { type: integer }
+            line: { type: integer }
+            box: { oneOf: [{ $ref: '#/components/schemas/AiBox' }, { type: 'null' }] }
+            span:
+              type: object
+              required: [start, end]
+              properties:
+                start: { type: integer }
+                end: { type: integer }
+        sourceText: { type: [string, 'null'] }
+    AiVerification:
+      allOf:
+        - $ref: '#/components/schemas/AiVerificationSummary'
+        - type: object
+          required: [threshold, canSubmit, attachment, pages, fields, decision]
+          properties:
+            threshold: { type: number }
+            canSubmit: { type: boolean }
+            attachment:
+              type: object
+              required: [id, name, contentType, available, unavailableReason]
+              properties:
+                id: { $ref: '#/components/schemas/Uuid' }
+                name: { type: string }
+                contentType: { type: string }
+                available: { type: boolean }
+                unavailableReason: { type: [string, 'null'], enum: [removed, quarantined, scanBlocked, null] }
+            pages:
+              type: array
+              items:
+                type: object
+                required: [number, width, height, unit]
+                properties:
+                  number: { type: integer }
+                  width: { type: number }
+                  height: { type: number }
+                  unit: { type: string }
+            fields: { type: array, items: { $ref: '#/components/schemas/AiVerificationField' } }
+            decision:
+              type: object
+              required: [decidedBy, decidedAt, corrected]
+              properties:
+                decidedBy: { type: [string, 'null'] }
+                decidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+                corrected: { type: array, items: { type: string } }
+    AiVerificationSubmit:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        outcome: { type: string, enum: [verified, escalated], default: verified }
+        reason: { type: string, maxLength: 1000 }
+        acknowledgeProblems: { type: boolean, description: 'Accept values that fail a validation hint or cross-field check.' }
+        fields:
+          type: object
+          description: 'Field name to the person''s answer: confirm keeps the value, correct sets value, clear removes it.'
+          additionalProperties:
+            type: object
+            required: [action]
+            properties:
+              action: { type: string, enum: [confirm, correct, clear] }
+              value: { description: 'The corrected value (correct only).' }
+    # ---- end S146 part B: DocumentExtraction schemas ----
     AiStatus:
       type: object
       required: [enabled, profiles]

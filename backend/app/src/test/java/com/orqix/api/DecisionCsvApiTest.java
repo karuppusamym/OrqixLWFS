@@ -128,10 +128,15 @@ class DecisionCsvApiTest extends com.orqix.support.RuntimeTestBase {
         var mismatch = importCsv("dana.designer", wf, "\"r1\"", "hitPolicy:FIRST,effectiveFrom,effectiveTo,in:text:/input/amount,out:text:route\n"
                 + "rule,,,eq five,a\ndefault,,,,b\n");
         assertThat(mismatch.status()).as(mismatch.toString()).isEqualTo(422);
-        var unsafe = importCsv("dana.designer", wf, "\"r1\"", HEAD + "rule,,,gte 1,,=cmd()\ndefault,,,,,b\n");
+        var unsafe = importCsv("dana.designer", wf, "\"r1\"", HEAD + "rule,,,gte 1,,a;b\ndefault,,,,,b\n");
         assertThat(unsafe.status()).isEqualTo(422);
         assertThat(unsafe.body().path("fieldErrors").get(0).path("code").asString()).isEqualTo("WF_LITERAL_UNSAFE");
         assertThat(unsafe.body().path("fieldErrors").get(0).path("pointer").asString()).isEqualTo("/csv/lines/2/columns/6");
+        // S146: a cell starting with = is a formula, which only the compiler reads: an unknown function is refused.
+        var formula = importCsv("dana.designer", wf, "\"r1\"", HEAD + "rule,,,gte 1,,=cmd()\ndefault,,,,,b\n");
+        assertThat(formula.status()).isEqualTo(422);
+        assertThat(formula.body().path("fieldErrors").get(0).path("code").asString()).isEqualTo("WF_EXPRESSION_INVALID");
+        assertThat(formula.body().path("fieldErrors").get(0).path("pointer").asString()).isEqualTo("/csv/lines/2/columns/6");
         assertThat(revision(wf)).isEqualTo(1);
         // The same overlapping rows are valid under FIRST.
         assertThat(importCsv("dana.designer", wf, "\"r1\"", HEAD + "rule,,,gte 100,,a\nrule,,,gte 200,,b\ndefault,,,,,c\n").status())

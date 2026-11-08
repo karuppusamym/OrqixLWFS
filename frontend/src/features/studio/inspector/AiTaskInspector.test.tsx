@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiRouteSlots } from './AiTaskInspector'
+import { aiRouteSlots, attachmentFieldRefs, DOCUMENT_TYPE_LABEL } from './AiTaskInspector'
 
 describe('aiRouteSlots (docs/build/S134)', () => {
   it('offers one path per label when the task decides, plus low confidence and AI unavailable', () => {
@@ -19,5 +19,16 @@ describe('aiRouteSlots (docs/build/S134)', () => {
   it('gives extraction a review path and other modes next and AI unavailable', () => {
     expect(aiRouteSlots('extract', 'auto', []).map((s) => s.on)).toEqual(['next', 'needsReview', 'aiUnavailable'])
     expect(aiRouteSlots('score', 'suggest', []).map((s) => s.on)).toEqual(['next', 'aiUnavailable'])
+  })
+})
+
+describe('document extraction in the AI task (CG-A06)', () => {
+  it('offers only request files for a document input', () => {
+    const def = { inputSchema: { type: 'object', properties: {
+      invoice: { type: 'string', title: 'Invoice', format: 'attachment' },
+      purpose: { type: 'string', title: 'Purpose' },
+    } } } as unknown as Parameters<typeof attachmentFieldRefs>[0]
+    expect(attachmentFieldRefs(def)).toEqual(['/input/invoice'])
+    expect(DOCUMENT_TYPE_LABEL.bankStatement).toBe('Bank statement')
   })
 })

@@ -13,11 +13,14 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel, type FieldInfo } from '../model/fieldRefs'
 import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
-import { conditionTerms, isAtomicCondition, type Aggregation, type Condition, type DecisionTable, type HitPolicy, type Literal, type WorkflowNode } from '../model/types'
+import { decisionTerms, isAtomicCondition, isExpressionTerm, type Aggregation, type Condition, type DecisionCondition, type DecisionTable, type HitPolicy, type Literal, type OutputEntry, type WorkflowNode } from '../model/types'
+import { studioScope } from '../model/expressionScope'
+import { decisionFields, literalType } from '@/lib/expr/decision'
+import { DecisionConditionEditor, DecisionResultCell } from './DecisionFormulaCells'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { DecisionCsvSection } from './DecisionCsvSection'
 import { SharedDecisionSection } from './SharedDecisionSection'
-import { ConditionEditor, convertValue, defaultLiteral, LiteralInput } from './ConditionEditor'
+import { convertValue, defaultLiteral, LiteralInput } from './ConditionEditor'
 import { DecisionDmnSection } from './DecisionDmnSection'
 import { outputValues } from '../model/decisionLogic'
 
@@ -90,7 +93,11 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   const def = useStudio((s) => s.definition)
   const ref = node.config.decisionRef as string | undefined
   const table = def.decisions.find((d) => d.key === ref)
-  const fields = useMemo(() => availableFields(def, node.id, connections).filter(f => f.type !== 'array' && f.type !== 'date'), [def, node.id, connections])
+  const available = useMemo(() => availableFields(def, node.id, connections), [def, node.id, connections])
+  const fields = useMemo(() => available.filter(f => f.type !== 'array' && f.type !== 'date'), [available])
+  // S146: formula tests may belong to any single-value column, dates included.
+  const formulaFields = useMemo(() => available.filter(f => f.type !== 'array'), [available])
+  const formulaContext = useMemo(() => studioScope(def, node.id, connections), [def, node.id, connections])
   const [pendingField, setPendingField] = useState('')
   const [keyError, setKeyError] = useState<string>()
   const [newKey, setNewKey] = useState('')
@@ -119,7 +126,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
 
   const keys = Object.keys(table.default)
-  const fieldRef = (table.rows[0] ? conditionTerms(table.rows[0].when)[0]?.fieldRef : undefined) ?? (pendingField || fields.find((f) => f.type === 'number')?.ref || fields[0]?.ref || '')
+  const fieldRef = (table.rows[0] ? decisionTerms(table.rows[0].when)[0]?.fieldRef : undefined) ?? (pendingField || fields.find((f) => f.type === 'number')?.ref || fields[0]?.ref || '')
   const info = fields.find((f) => f.ref === fieldRef)
   const save = (next: DecisionTable) => store.getState().apply((d) => upsertDecision(d, next))
 
@@ -130,7 +137,8 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
     save({
       ...table,
       rows: table.rows.map((r) => {
-        const old = conditionTerms(r.when)[0]
+        const first = decisionTerms(r.when)[0]
+        const old = first && !isExpressionTerm(first) ? first : undefined
         const operator = numeric ? (old?.operator ?? 'eq') : old?.operator === 'in' && next?.type === 'string' ? 'in' : 'eq'
         const sample = defaultLiteral(next?.type, next?.enumValues)
         const scalarValue = old && typeof old.value === typeof sample ? old.value : sample
@@ -145,10 +153,10 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
     save({ ...table, rows: [...table.rows, row] })
   }
 
-  const setRowWhen = (index: number, when: Condition) => {
+  const setRowWhen = (index: number, when: DecisionCondition) => {
     save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, when } : r)) })
   }
-  const setRowOutput = (index: number, key: string, value: Literal) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
+  const setRowOutput = (index: number, key: string, value: OutputEntry) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
   const setDefaultOutput = (key: string, value: Literal) => save({ ...table, default: { ...table.default, [key]: value } })
   /** Sets one edge of a row's date window; clearing both removes the window. */
   const setRowWindow = (index: number, change: { from?: string; to?: string }) => {
@@ -179,7 +187,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
 
   const removeResultKey = (key: string) => {
-    const strip = (o: Record<string, Literal>) => Object.fromEntries(Object.entries(o).filter(([k]) => k !== key))
+    const strip = <T,>(o: Record<string, T>) => Object.fromEntries(Object.entries(o).filter(([k]) => k !== key)) as Record<string, T>
     save({ ...table, default: strip(table.default), rows: table.rows.map((r) => ({ ...r, then: strip(r.then) })) })
   }
 
@@ -188,7 +196,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
       <InspectorSection title="Basic">
         <div className="space-y-1.5">
           <Label htmlFor={`dec-field-${node.id}`}>Input field</Label>
-          <Select id={`dec-field-${node.id}`} data-field="table" value={fieldRef} disabled={readOnly || table.rows.some(r => !isAtomicCondition(r.when))} onChange={(e) => setField(e.target.value)}>
+          <Select id={`dec-field-${node.id}`} data-field="table" value={fieldRef} disabled={readOnly || table.rows.some(r => isExpressionTerm(r.when) || !isAtomicCondition(r.when as Condition))} onChange={(e) => setField(e.target.value)}>
             {!info && fieldRef ? <option value={fieldRef}>{fieldRef}</option> : null}
             {fields.map((f) => (
               <option key={f.ref} value={f.ref}>
@@ -247,7 +255,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
                   </div>
                 ) : null}
               </div>
-              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} disabled={readOnly} allowSets onChange={(c) => setRowWhen(i, c)} />
+              <DecisionConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} formulaFields={formulaFields} context={formulaContext} disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
               <fieldset disabled={readOnly} className="grid grid-cols-2 gap-3 border-t border-border pt-3">
                 <legend className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Applies to requests submitted</legend>
                 <div className="space-y-1.5">
@@ -262,10 +270,8 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
               <div className="space-y-2 border-t border-border pt-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Then</p>
                 {keys.map((k) => (
-                  <div key={k} className="space-y-1.5">
-                    <Label htmlFor={`dec-${node.id}-r${i}-out-${k}`}>{humanize(k)}</Label>
-                    <LiteralInput id={`dec-${node.id}-r${i}-out-${k}`} info={undefined} value={row.then[k] ?? ''} disabled={readOnly} label={humanize(k)} dataField={`rows.${i}.then.${k}`} onCommit={(v) => setRowOutput(i, k, v)} />
-                  </div>
+                  <DecisionResultCell key={k} id={`dec-${node.id}-r${i}-out-${k}`} label={humanize(k)} value={row.then[k]} expected={literalType(table.default[k])} fallback={table.default[k] ?? ''}
+                    context={formulaContext} disabled={readOnly} dataField={`rows.${i}.then.${k}`} formulaAllowed={!(table.hitPolicy === 'PRIORITY' && table.priority?.output === k)} onCommit={(v) => setRowOutput(i, k, v)} />
                 ))}
               </div>
             </li>
@@ -287,7 +293,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
           ))}
         </div>
 
-        <TestRule dated={table.rows.some(r => r.effective)} key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={[...new Set(table.rows.flatMap(r => conditionTerms(r.when).map(t => t.fieldRef)))].map(ref => ({ ref, info: fields.find(f => f.ref === ref) }))} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
+        <TestRule dated={table.rows.some(r => r.effective)} key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={testInputs(table, available)} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
       </InspectorSection>
 
       <SharedDecisionSection table={table} />
@@ -345,6 +351,12 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   )
 }
 
+/** Every field the table reads, also the fields named inside formulas (S146), in first-use order. */
+function testInputs(table: DecisionTable, available: FieldInfo[]): Array<{ ref: string; info: Pick<FieldInfo, 'type' | 'enumValues'> | undefined }> {
+  const refs = [...new Set([...table.rows.flatMap(r => decisionTerms(r.when).map(t => t.fieldRef)), ...decisionFields(table)])]
+  return refs.map(ref => ({ ref, info: available.find(f => f.ref === ref) }))
+}
+
 function TestRule({
   dated,
   fieldRef,
@@ -394,7 +406,7 @@ function TestRule({
       <h4 className="flex items-center gap-1.5 text-sm font-semibold">
         <FlaskConical className="size-4" aria-hidden="true" /> Test this rule
       </h4>
-      {inputs.filter(input => input.ref !== fieldRef).map(input => <div key={input.ref}><Label htmlFor={`test-${tableKey}-${input.ref}`}>Sample: {input.ref}</Label><LiteralInput id={`test-${tableKey}-${input.ref}`} info={input.info} value={samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)} label={`Sample: ${input.ref}`} onCommit={v => setSamples(old => ({ ...old, [input.ref]: v }))} /></div>)}
+      {inputs.filter(input => input.ref !== fieldRef).map(input => <div key={input.ref}><Label htmlFor={`test-${tableKey}-${input.ref}`}>Sample: {input.ref}{input.info?.type === 'date' ? ' (YYYY-MM-DD)' : ''}</Label><LiteralInput id={`test-${tableKey}-${input.ref}`} info={input.info} value={samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)} label={`Sample: ${input.ref}`} onCommit={v => setSamples(old => ({ ...old, [input.ref]: v }))} /></div>)}
       <div className="space-y-1.5">
         <Label htmlFor={`test-${tableKey}`}>Sample value</Label>
         <LiteralInput id={`test-${tableKey}`} info={info} value={sample} label="Sample value" onCommit={setSample} />
@@ -410,8 +422,24 @@ function TestRule({
             <strong>{outputsInWords(result.output)}</strong>
           </p>
         ) : null}
+        {result ? <FormulaResults result={result} /> : null}
       </div>
       {error ? <ProblemAlert error={error} /> : null}
     </div>
+  )
+}
+
+/** What the formulas of the table gave (S146), when the evaluation reports them. */
+function FormulaResults({ result }: { result: DecisionEvaluateResult }) {
+  const entries = (result as { expressions?: Array<{ row: number; kind: string; target: string; expression: string; value: unknown }> }).expressions ?? []
+  if (!entries.length) return null
+  return (
+    <ul className="mt-2 space-y-1 text-xs text-muted-foreground" aria-label="Formula results">
+      {entries.map((e, i) => (
+        <li key={i}>
+          Row {e.row + 1}, {e.kind === 'input' ? `test of ${e.target}` : `result ${humanize(e.target)}`}: <span className="font-mono">{e.expression}</span> gave {e.value === null || e.value === undefined ? 'no value' : String(e.value)}
+        </li>
+      ))}
+    </ul>
   )
 }

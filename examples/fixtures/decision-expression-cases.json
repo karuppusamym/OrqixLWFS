@@ -1,0 +1,316 @@
+{
+  "description": "Decision tables with Orqix expressions as input and output entries (S146 part A, doc 29 CG-D04). Read by the Java DecisionExpressionCasesTest and the TypeScript decision.test.ts; both must give these results. A case has a table (a decisions[] entry without key and version), optional pinned types (absent: inferred from the values), values by fieldRef (numbers are exact decimals, dates are YYYY-MM-DD text; reserved $now and $asOf), and either expect (matchedRow, matchedRows, usedDefault, output, expressions) or error: true (the evaluation stops with a problem). Numbers compare by value. expressions are ordered by row, then the row's input entries by term, then its output entries by result name.",
+  "cases": [
+    {
+      "name": "input expression true selects its row",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > input.limit"}, "then": {"route": "review"}},
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"route": "auto"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number", "limit": "number"}},
+      "values": {"/input/amount": 150, "/input/limit": 100},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"route": "review"},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": true}]}
+    },
+    {
+      "name": "input expression false falls through",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > input.limit"}, "then": {"route": "review"}},
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"route": "auto"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number", "limit": "number"}},
+      "values": {"/input/amount": 50, "/input/limit": 100},
+      "expect": {"matchedRow": 1, "matchedRows": [1], "usedDefault": false, "output": {"route": "auto"},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": false}]}
+    },
+    {
+      "name": "a test without a value does not match",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > input.limit"}, "then": {"route": "review"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number", "limit": "number"}},
+      "values": {"/input/amount": 50, "/input/limit": null},
+      "expect": {"matchedRow": null, "matchedRows": [], "usedDefault": true, "output": {"route": "none"},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": null}]}
+    },
+    {
+      "name": "date comparison in a decision row",
+      "table": {"hitPolicy": "UNIQUE", "rows": [
+        {"when": {"fieldRef": "/input/due", "expression": "input.due < date(\"2026-06-30\")"}, "then": {"term": "early"}},
+        {"when": {"fieldRef": "/input/due", "expression": "input.due >= date(\"2026-06-30\")"}, "then": {"term": "late"}}
+      ], "default": {"term": "unknown"}},
+      "types": {"input": {"due": "date"}},
+      "values": {"/input/due": "2026-03-01"},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"term": "early"},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/due", "value": true},
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/due", "value": false}]}
+    },
+    {
+      "name": "today() uses $now",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/due", "expression": "input.due <= addDays(today(), 10)"}, "then": {"urgent": true}}
+      ], "default": {"urgent": false}},
+      "types": {"input": {"due": "date"}},
+      "values": {"/input/due": "2026-03-05", "$now": "2026-03-01T12:00:00Z"},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"urgent": true},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/input/due", "value": true}]}
+    },
+    {
+      "name": "today() falls back to the start of $asOf",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/due", "expression": "input.due = today()"}, "then": {"urgent": true}, "effective": {"from": "2026-01-01"}}
+      ], "default": {"urgent": false}},
+      "types": {"input": {"due": "date"}},
+      "values": {"/input/due": "2026-03-05", "$asOf": "2026-03-05"},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"urgent": true},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/input/due", "value": true}]}
+    },
+    {
+      "name": "a row outside its window does not apply although its test is true",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"rate": 1}, "effective": {"to": "2025-12-31"}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"rate": 2}, "effective": {"from": "2026-01-01"}}
+      ], "default": {"rate": 0}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 20, "$asOf": "2026-02-01"},
+      "expect": {"matchedRow": 1, "matchedRows": [1], "usedDefault": false, "output": {"rate": 2},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/amount", "value": true}]}
+    },
+    {
+      "name": "output expression computes a number",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 1000}, "then": {"fee": {"expression": "round(input.amount * 0.025, 2)"}, "route": "standard"}}
+      ], "default": {"fee": 0, "route": "small"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 1234.5},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"fee": 30.86, "route": "standard"},
+        "expressions": [{"row": 0, "term": -1, "kind": "output", "target": "fee", "value": 30.86}]}
+    },
+    {
+      "name": "exact decimals in an output expression",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/a", "operator": "gte", "value": 0}, "then": {"total": {"expression": "input.a + input.b"}}}
+      ], "default": {"total": 0}},
+      "types": {"input": {"a": "number", "b": "number"}},
+      "values": {"/input/a": 0.1, "/input/b": 0.2},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"total": 0.3},
+        "expressions": [{"row": 0, "term": -1, "kind": "output", "target": "total", "value": 0.3}]}
+    },
+    {
+      "name": "text and boolean output expressions",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/region", "operator": "ne", "value": "XX"}, "then": {"code": {"expression": "upper(input.region)"}, "eu": {"expression": "input.region in [\"de\", \"fr\"]"}}}
+      ], "default": {"code": "NONE", "eu": false}},
+      "types": {"input": {"region": "string"}},
+      "values": {"/input/region": "de"},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"code": "DE", "eu": true},
+        "expressions": [
+          {"row": 0, "term": -1, "kind": "output", "target": "code", "value": "DE"},
+          {"row": 0, "term": -1, "kind": "output", "target": "eu", "value": true}]}
+    },
+    {
+      "name": "the default is used without evaluating outputs",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 1000}, "then": {"fee": {"expression": "input.amount / 0"}}}
+      ], "default": {"fee": 0}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 5},
+      "expect": {"matchedRow": null, "matchedRows": [], "usedDefault": true, "output": {"fee": 0}, "expressions": []}
+    },
+    {
+      "name": "a selected row whose result has no value stops",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"share": {"expression": "input.amount / input.count"}}}
+      ], "default": {"share": 0}},
+      "types": {"input": {"amount": "number", "count": "number"}},
+      "values": {"/input/amount": 5, "/input/count": 0},
+      "error": true
+    },
+    {
+      "name": "a later matching row without a value does not matter under FIRST",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"share": 1}},
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"share": {"expression": "input.amount / input.count"}}}
+      ], "default": {"share": 0}},
+      "types": {"input": {"amount": "number", "count": "number"}},
+      "values": {"/input/amount": 5, "/input/count": 0},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"share": 1},
+        "expressions": [{"row": 1, "term": -1, "kind": "output", "target": "share", "value": null}]}
+    },
+    {
+      "name": "UNIQUE stops when two rows apply",
+      "table": {"hitPolicy": "UNIQUE", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"route": "a"}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 20"}, "then": {"route": "b"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 30},
+      "error": true
+    },
+    {
+      "name": "UNIQUE with one applying row",
+      "table": {"hitPolicy": "UNIQUE", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"route": "a"}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 20"}, "then": {"route": "b"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 15},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"route": "a"},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/amount", "value": false}]}
+    },
+    {
+      "name": "ANY allows overlapping rows with equal results (5 equals 5.00)",
+      "table": {"hitPolicy": "ANY", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"rate": 5}},
+        {"when": {"fieldRef": "/input/amount", "operator": "gt", "value": 20}, "then": {"rate": {"expression": "input.amount / input.amount * 5.00"}}}
+      ], "default": {"rate": 0}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 30},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"rate": 5},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 1, "term": -1, "kind": "output", "target": "rate", "value": 5}]}
+    },
+    {
+      "name": "ANY stops when overlapping rows give different results",
+      "table": {"hitPolicy": "ANY", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 10"}, "then": {"rate": 5}},
+        {"when": {"fieldRef": "/input/amount", "operator": "gt", "value": 20}, "then": {"rate": {"expression": "input.amount"}}}
+      ], "default": {"rate": 0}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 30},
+      "error": true
+    },
+    {
+      "name": "COLLECT sums literal and computed results",
+      "table": {"hitPolicy": "COLLECT", "aggregation": "SUM", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"points": 10}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount >= 100"}, "then": {"points": {"expression": "input.amount / 10"}}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount >= 1000"}, "then": {"points": 500}}
+      ], "default": {"points": 0}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 250},
+      "expect": {"matchedRow": 0, "matchedRows": [0, 1], "usedDefault": false, "output": {"points": 35},
+        "expressions": [
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 1, "term": -1, "kind": "output", "target": "points", "value": 25},
+          {"row": 2, "term": 0, "kind": "input", "target": "/input/amount", "value": false}]}
+    },
+    {
+      "name": "COLLECT COUNT with expressions",
+      "table": {"hitPolicy": "COLLECT", "aggregation": "COUNT", "rows": [
+        {"when": {"fieldRef": "/input/a", "expression": "input.a > 1"}, "then": {"n": 1}},
+        {"when": {"fieldRef": "/input/a", "expression": "input.a > 2"}, "then": {"n": 1}},
+        {"when": {"fieldRef": "/input/a", "expression": "input.a > 3"}, "then": {"n": 1}}
+      ], "default": {"n": 0}},
+      "types": {"input": {"a": "number"}},
+      "values": {"/input/a": 3},
+      "expect": {"matchedRow": 0, "matchedRows": [0, 1], "usedDefault": false, "output": {"n": 2},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/a", "value": true},
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/a", "value": true},
+          {"row": 2, "term": 0, "kind": "input", "target": "/input/a", "value": false}]}
+    },
+    {
+      "name": "All row with a comparison and an expression",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"all": [
+          {"fieldRef": "/input/region", "operator": "eq", "value": "EU"},
+          {"fieldRef": "/input/amount", "expression": "input.amount > input.limit"}]}, "then": {"route": "eu-review"}}
+      ], "default": {"route": "standard"}},
+      "types": {"input": {"region": "string", "amount": "number", "limit": "number"}},
+      "values": {"/input/region": "US", "/input/amount": 500, "/input/limit": 100},
+      "expect": {"matchedRow": null, "matchedRows": [], "usedDefault": true, "output": {"route": "standard"},
+        "expressions": [{"row": 0, "term": 1, "kind": "input", "target": "/input/amount", "value": true}]}
+    },
+    {
+      "name": "Any row with an expression alternative",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"any": [
+          {"fieldRef": "/input/region", "operator": "eq", "value": "EU"},
+          {"fieldRef": "/input/amount", "expression": "input.amount > input.limit"}]}, "then": {"route": "review"}}
+      ], "default": {"route": "standard"}},
+      "types": {"input": {"region": "string", "amount": "number", "limit": "number"}},
+      "values": {"/input/region": "US", "/input/amount": 500, "/input/limit": 100},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"route": "review"},
+        "expressions": [{"row": 0, "term": 1, "kind": "input", "target": "/input/amount", "value": true}]}
+    },
+    {
+      "name": "a comparison still needs its field value",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"all": [
+          {"fieldRef": "/input/region", "operator": "eq", "value": "EU"},
+          {"fieldRef": "/input/amount", "expression": "input.amount > 1"}]}, "then": {"route": "eu"}}
+      ], "default": {"route": "standard"}},
+      "types": {"input": {"region": "string", "amount": "number"}},
+      "values": {"/input/amount": 5},
+      "error": true
+    },
+    {
+      "name": "PRIORITY ranks literal priority results; other results may be computed",
+      "table": {"hitPolicy": "PRIORITY", "priority": {"output": "level", "order": ["high", "low"]}, "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"level": "low", "note": {"expression": "\"amount \" + string(input.amount)"}}},
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount > 100"}, "then": {"level": "high", "note": {"expression": "\"large \" + string(input.amount)"}}}
+      ], "default": {"level": "low", "note": "none"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 150},
+      "expect": {"matchedRow": 1, "matchedRows": [1], "usedDefault": false, "output": {"level": "high", "note": "large 150"},
+        "expressions": [
+          {"row": 0, "term": -1, "kind": "output", "target": "note", "value": "amount 150"},
+          {"row": 1, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 1, "term": -1, "kind": "output", "target": "note", "value": "large 150"}]}
+    },
+    {
+      "name": "step results in expressions",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/steps/score/value", "expression": "steps.score.value >= 700 and input.amount < 5000"}, "then": {"approved": true}}
+      ], "default": {"approved": false}},
+      "types": {"input": {"amount": "number"}, "steps": {"score": {"value": "number"}}},
+      "values": {"/steps/score/value": 720, "/input/amount": 1000},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"approved": true},
+        "expressions": [{"row": 0, "term": 0, "kind": "input", "target": "/steps/score/value", "value": true}]}
+    },
+    {
+      "name": "inferred types from the values",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount * 2 > input.limit"}, "then": {"route": {"expression": "if input.vip then \"vip\" else \"double\""}}}
+      ], "default": {"route": "none"}},
+      "values": {"/input/amount": 60, "/input/limit": 100, "/input/vip": false},
+      "expect": {"matchedRow": 0, "matchedRows": [0], "usedDefault": false, "output": {"route": "double"},
+        "expressions": [
+          {"row": 0, "term": 0, "kind": "input", "target": "/input/amount", "value": true},
+          {"row": 0, "term": -1, "kind": "output", "target": "route", "value": "double"}]}
+    },
+    {
+      "name": "an inferred text field cannot be added to a number",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount + 1 > 2"}, "then": {"route": "x"}}
+      ], "default": {"route": "none"}},
+      "values": {"/input/amount": "5"},
+      "error": true
+    },
+    {
+      "name": "an output expression of the wrong type stops",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 0}, "then": {"route": {"expression": "input.amount"}}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 5},
+      "error": true
+    },
+    {
+      "name": "an input expression that is not true or false stops",
+      "table": {"hitPolicy": "FIRST", "rows": [
+        {"when": {"fieldRef": "/input/amount", "expression": "input.amount + 1"}, "then": {"route": "x"}}
+      ], "default": {"route": "none"}},
+      "types": {"input": {"amount": "number"}},
+      "values": {"/input/amount": 5},
+      "error": true
+    }
+  ]
+}

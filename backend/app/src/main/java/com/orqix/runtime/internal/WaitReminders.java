@@ -264,7 +264,8 @@ public class WaitReminders {
             return "The adapter no longer exists.";
         }
         Set<String> approved = new java.util.HashSet<>();
-        json.parse(adapter.configJson()).path("allowedRecipientDomains")
+        String config = adapter.configJson() == null || adapter.configJson().isBlank() ? "{}" : adapter.configJson();
+        json.parse(config).path("allowedRecipientDomains")
                 .forEach(d -> approved.add(d.asString().toLowerCase(Locale.ROOT)));
         String domain = m.group(1).toLowerCase(Locale.ROOT);
         return approved.contains(domain) ? null : "The address's domain " + domain + " is not approved by the adapter.";

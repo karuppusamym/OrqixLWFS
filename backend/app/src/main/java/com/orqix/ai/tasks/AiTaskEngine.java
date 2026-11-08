@@ -65,10 +65,11 @@ public class AiTaskEngine implements AiTaskPort {
     private final Clock clock;
     private final JdbcClient jdbc;
     private final TransactionTemplate independentTx;
+    private final DocumentStage documents;
 
     public AiTaskEngine(AiSkills skills, ProviderRegistry providers, ModelPolicy modelPolicy, AiLedger ledger,
             com.orqix.ai.AiProperties ai, AiTaskProperties properties, TurnVault vault, Json json, Clock clock,
-            JdbcClient jdbc, PlatformTransactionManager transactions) {
+            JdbcClient jdbc, PlatformTransactionManager transactions, DocumentStage documents) {
         this.skills = skills;
         this.providers = providers;
         this.modelPolicy = modelPolicy;
@@ -81,6 +82,7 @@ public class AiTaskEngine implements AiTaskPort {
         this.jdbc = jdbc;
         this.independentTx = new TransactionTemplate(transactions);
         this.independentTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.documents = documents;
     }
 
     @Override
@@ -370,7 +372,28 @@ public class AiTaskEngine implements AiTaskPort {
             deadline = lease.deadline();
         }
         guardrails.put("deadlineSeconds", timeout);
-        Inference inf = infer(request.workspaceId(), version, profile, minimized.sent(), samples, deadline,
+        // CG-A06: a document skill reads the mapped request file through OCR first; the model sees its lines.
+        ObjectNode sent = minimized.sent();
+        DocumentStage.Prepared document = null;
+        if (DocumentStage.applies(version)) {
+            document = documents.prepare(request, version, minimized.actions(), deadline);
+            ObjectNode facts = guardrails.putObject("document");
+            if (document.refusal() != null) {
+                facts.put("refused", true);
+                return unavailable(ctx, profile, null, document.refusal());
+            }
+            ctx.document = document;
+            facts.put("provider", document.providerId()).put("pages", document.document().pages().size())
+                    .put("lines", document.document().lines().size()).put("ocrReused", document.reused())
+                    .put("fileSha256", document.sha256());
+            if (!document.reused()) {
+                meterOcr(ctx, document.providerId());
+            }
+            sent = minimized.sent().deepCopy();
+            sent.set(com.orqix.compiler.DocumentTemplates.attachmentInput(version.document()),
+                    documents.sent(version, document));
+        }
+        Inference inf = infer(request.workspaceId(), version, profile, sent, samples, deadline,
                 maxCost, lease, request.jobId());
         ctx.inference = inf;
         if (inf.leaseLost()) {
@@ -395,7 +418,57 @@ public class AiTaskEngine implements AiTaskPort {
         }
 
         // Stage 8: routing.
+        if (document != null) {
+            return documentRoute(ctx, profile, consensus, inf, document);
+        }
         return route(ctx, profile, consensus, raw, calibrated.value());
+    }
+
+    /**
+     * Routing of a document extraction (CG-A06): per-field confidence, source and validation; a needsReview outcome
+     * carries the verification payload, so the step waits for a person to confirm or correct the fields.
+     */
+    private Outcome documentRoute(Context ctx, ProviderRegistry.Resolved profile, Consensus consensus, Inference inf,
+            DocumentStage.Prepared document) {
+        AiSkills.Version version = ctx.version;
+        List<DocumentStage.FieldResult> results = documents.fields(version, document.document(), consensus.answer(),
+                inf.answers(), inf.samples(), inf.repairs(), r -> calibrate(version, profile.profileId(), r).value());
+        ObjectNode values = json.object();
+        ObjectNode confidences = json.object();
+        double raw = 1;
+        for (DocumentStage.FieldResult r : results) {
+            if (r.value() != null) {
+                values.set(r.field().name(), r.value());
+            }
+            if (r.confidence() != null) {
+                confidences.put(r.field().name(), r.confidence());
+            }
+            if (r.raw() != null) {
+                raw = Math.min(raw, r.raw());
+            }
+        }
+        SkillAnswers.Answer chosen = consensus.answer();
+        SkillAnswers.Answer answer = new SkillAnswers.Answer("extract", null, values, null, null, null, List.of(),
+                List.of(), chosen.reported(), confidences, chosen.fieldSources());
+        Outcome outcome = route(ctx, profile, new Consensus(answer, consensus.agreement()), raw,
+                DocumentStage.overall(results));
+        ObjectNode output = (ObjectNode) outcome.record().output();
+        ObjectNode sources = output.putObject("fieldSources");
+        ObjectNode problems = output.putObject("fieldProblems");
+        for (DocumentStage.FieldResult r : results) {
+            sources.set(r.field().name(), r.source());
+            if (!r.problems().isEmpty()) {
+                ArrayNode codes = problems.putArray(r.field().name());
+                r.problems().forEach(p -> codes.add(p.code()));
+            }
+        }
+        output.putObject("document").put("attachmentId", document.attachmentId().toString())
+                .put("provider", document.providerId()).put("pages", document.document().pages().size());
+        if (!"needsReview".equals(outcome.route())) {
+            return outcome;
+        }
+        return new Outcome(outcome.route(), outcome.outputs(), outcome.record(),
+                documents.verification(version, document, results, ctx.request.minConfidence()));
     }
 
     /** Per-task facts collected through the stages. */
@@ -410,6 +483,7 @@ public class AiTaskEngine implements AiTaskPort {
         final ArrayNode downgrades;
         String effective;
         Inference inference;
+        DocumentStage.Prepared document;
 
         Context(TaskRequest request, AiSkills.Version version, AiSkills.Policy policy, Minimizer.Result minimized,
                 String digest, ObjectNode guardrails, long started) {
@@ -488,8 +562,8 @@ public class AiTaskEngine implements AiTaskPort {
                 }
                 case "extract" -> {
                     boolean missing = false;
-                    for (JsonNode f : ctx.version.document().path("fields")) {
-                        if (f.path("required").asBoolean(false) && !answer.fields().has(f.path("name").asString())) {
+                    for (var f : com.orqix.compiler.DocumentTemplates.effectiveFields(ctx.version.document())) {
+                        if (f.required() && !answer.fields().has(f.name())) {
                             missing = true;
                         }
                     }
@@ -645,8 +719,9 @@ public class AiTaskEngine implements AiTaskPort {
         }
         TaskRequest r = ctx.request;
         try {
+            String kind = ctx.document != null ? "aiExtract" : "aiTask";
             independentTx.executeWithoutResult(status -> ledger.record(new AiLedger.Entry(r.workspaceId(),
-                    r.initiatorId(), "aiTask", AiSkillsText.cut(profile.profileId(), 32),
+                    r.initiatorId(), kind, AiSkillsText.cut(profile.profileId(), 32),
                     inf.modelUsed() == null ? profile.model() : inf.modelUsed(), profile.model(), PROMPT_VERSION,
                     Math.min(20, inf.calls()), false, inf.inputTokens(), inf.outputTokens(), inf.costUsd(),
                     (System.nanoTime() - ctx.started) / 1_000_000,
@@ -657,7 +732,61 @@ public class AiTaskEngine implements AiTaskPort {
         }
     }
 
+    /** One metering row per cloud OCR analysis (kind aiOcr; the services' prices are not known here, so no cost). */
+    private void meterOcr(Context ctx, String provider) {
+        if (com.orqix.ai.ocr.OcrProperties.LOCAL.equals(provider)) {
+            return;
+        }
+        TaskRequest r = ctx.request;
+        try {
+            independentTx.executeWithoutResult(status -> ledger.record(new AiLedger.Entry(r.workspaceId(),
+                    r.initiatorId(), "aiOcr", "ocr", AiSkillsText.cut(provider, 64), AiSkillsText.cut(provider, 64),
+                    PROMPT_VERSION, 1, false, null, null, null, (System.nanoTime() - ctx.started) / 1_000_000,
+                    AiLedger.Outcome.SUCCESS, r.workflowId(), null, null)));
+        } catch (RuntimeException e) {
+            log.warn("OCR metering failed: {}", e.getClass().getSimpleName());
+        }
+    }
+
     // ================================================================== records
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean recordVerification(UUID workspaceId, UUID runId, UUID decisionId, ObjectNode finalFields,
+            List<String> corrected, String reason, UUID decidedBy) {
+        var found = jdbc.sql("""
+                SELECT skill_key, input_values FROM ai_decision_record
+                WHERE workspace_id = :ws AND run_id = :run AND id = :id FOR UPDATE
+                """).param("ws", workspaceId).param("run", runId).param("id", decisionId)
+                .query((rs, n) -> new String[] {rs.getString("skill_key"), rs.getString("input_values")}).optional();
+        if (found.isEmpty()) {
+            return false;
+        }
+        Instant now = clock.instant();
+        String outcome = corrected.isEmpty() ? "accepted" : "overridden";
+        String value = corrected.isEmpty() ? "verified" : AiSkillsText.cut("corrected: " + String.join(", ", corrected),
+                200);
+        jdbc.sql("""
+                UPDATE ai_decision_record SET human_outcome = :outcome, human_value = :value, human_reason = :reason,
+                       human_by = :by, human_at = :now
+                WHERE id = :id
+                """).param("outcome", outcome).param("value", value)
+                .param("reason", reason == null ? null : AiSkillsText.cut(reason, 1000)).param("by", decidedBy)
+                .param("now", Sql.ts(now)).param("id", decisionId).update();
+        if (!corrected.isEmpty()) {
+            ObjectNode expected = json.object();
+            expected.set("fields", finalFields);
+            jdbc.sql("""
+                    INSERT INTO ai_eval_candidate (id, workspace_id, skill_key, decision_id, input, expected, status,
+                                                   created_at)
+                    VALUES (:id, :ws, :skill, :decision, CAST(:input AS jsonb), CAST(:expected AS jsonb), 'pending', :now)
+                    ON CONFLICT (decision_id) DO UPDATE SET expected = EXCLUDED.expected, status = 'pending'
+                    """).param("id", Ids.newId()).param("ws", workspaceId).param("skill", found.get()[0])
+                    .param("decision", decisionId).param("input", found.get()[1])
+                    .param("expected", json.write(expected)).param("now", Sql.ts(now)).update();
+        }
+        return true;
+    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

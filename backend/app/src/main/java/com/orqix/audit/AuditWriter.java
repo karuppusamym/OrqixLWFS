@@ -186,6 +186,9 @@ public class AuditWriter {
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome", "workflowId")),
             Map.entry("ai.workflow.explained", Set.of("profile", "model", "promptVersion", "revision", "releaseNumber",
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
+            // S146 part C (CG-A07): counts and codes only, never facts, prompts or the explanation.
+            Map.entry("ai.run.explained", Set.of("source", "profile", "model", "promptVersion", "cached", "factCount",
+                    "suggestedCount", "droppedCount", "fallbackReason")),
             Map.entry("ai.form.suggested", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "outcome", "changesSuggested", "changesRejected")),
             // Conversational authoring (STU02, docs/build/S95): counts only, never the instruction, turns or draft.
@@ -318,6 +321,10 @@ public class AuditWriter {
             Map.entry("ai.policy.updated", Set.of("regulated", "residency", "inputRetention", "version")),
             Map.entry("ai.decision.outcome-recorded", Set.of("runId", "outcome")),
             Map.entry("ai.eval-candidate.reviewed", Set.of("skillKey", "decision")),
+            // CG-A06 (S146 part B): provider ids and counts only; never values, file names or recognized text.
+            Map.entry("ai.ocr-settings.updated", Set.of("provider", "version")),
+            Map.entry("ai.verification.submitted", Set.of("runId", "verificationId", "outcome", "corrected",
+                    "confirmed")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.

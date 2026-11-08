@@ -47,11 +47,24 @@ public final class AiTaskFixtures {
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.model", "test/pricey");
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.input-per-million", "50");
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.output-per-million", "100");
+        // S146 part C: "Explain this request" answers through the stub, never the agent OpenRouter stand-in.
+        System.setProperty("orqix.ai.operator-explain.profile", "task-openai");
         System.setProperty("orqix.ai.tasks.poll-interval", "200ms");
         System.setProperty("orqix.ai.tasks.recover-interval", "1s");
         writeSecret("ai-stub-key", AiTaskStub.KEY);
         writeSecret("ai-stub-aws", "{\"accessKeyId\":\"AKIDTESTONLY\",\"secretAccessKey\":\"test-secret-not-real\"}");
         writeSecret("ai-turn-state-key", TURN_STATE_KEY);
+        // CG-A06 (S146 part B): a cloud OCR provider declared by the deployment, served by the shared WireMock stub
+        // (allowlisted egress host); workspaces use it only after choosing it under a matching residency rule.
+        String ocr = "orqix.ocr.providers.stub-azure.";
+        System.setProperty(ocr + "kind", "azureDocumentIntelligence");
+        System.setProperty(ocr + "base-url", Stub.baseUrl() + "/ocr/azure");
+        System.setProperty(ocr + "secret-ref", "ocr-stub-key");
+        System.setProperty(ocr + "residency[0]", "eu");
+        System.setProperty(ocr + "label", "Azure (EU, test stub)");
+        System.setProperty(ocr + "poll-interval", "50ms");
+        System.setProperty(ocr + "timeout", "20s");
+        writeSecret("ocr-stub-key", OcrStub.KEY);
     }
 
     private static void endpoint(String id, String kind, String baseUrl, String secretRef, String residency) {

@@ -126,7 +126,15 @@ Insights shows it as "Human work".
 
 ## Results
 
-See the session report for the full backend `verify` and frontend check totals of this branch.
+- Backend `mvnw -o clean verify` (8 November 2026): compiler 1,183 tests, 0 failures; application 1,360 tests,
+  1 error, 1 failure, 5 skipped. The error is the pre-existing `ArchitectureTest.modulithStructureIsValid` (see Merge
+  notes). The failure, `BankingWorkflowsTest.creditEveryRunRecords...` (409 on cancel, run version moved), passed
+  42/42 when rerun alone: timing on a loaded machine.
+- Frontend: typecheck, lint and `api:check` pass; Vitest 1,696 tests: the Studio canvas failures of the first run were
+  fixed (heatmap mounted only for `run.read`); the remaining failure is the pre-existing `notation.test.ts` (see Merge
+  notes). Studio, analytics, runs and Insights suites: 469 tests, only that one failing.
+- `tools/contract-check/contract_check.py`: PASS (142 checks). Redocly lint: 2 errors, both pre-existing unquoted
+  inline descriptions with commas (`WorkingCalendarContent.zone`, schedule `input`); none in the Analytics blocks.
 
 ## Merge notes
 
@@ -145,6 +153,8 @@ See the session report for the full backend `verify` and frontend check totals o
   `AnalyticsOutboxWriter.TYPES` so the run is re-projected with its new release.
 - Pre-existing on the base (not from this branch): `ArchitectureTest.modulithStructureIsValid` fails because
   `runtime.internal.WaitReminders` (S139) calls `com.orqix.compiler.internal.json.StrictJson`.
+- Pre-existing on the base (not from this branch): frontend `studio/model/notation.test.ts` "maps every step kind to
+  a shape" expects 21 step kinds and finds 22 (a Wave C kind).
 
 ## Not done
 

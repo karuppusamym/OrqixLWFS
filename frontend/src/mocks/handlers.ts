@@ -1,4 +1,5 @@
 import { filterLoadedTasks, parseDueFilter } from '@/features/tasks/taskFilters'
+import { mockRunExplanation } from './runExplain'
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
@@ -1505,6 +1506,15 @@ export function createHandlers(): HttpHandler[] {
         resumeRun(run, g.user, input.reason.trim())
         return { status: 200, body: toRunDetail(run, g.user) }
       })
+    }),
+    // CG-A07 (S146 part C): read-only explanation; rule-based in mock mode, changes nothing.
+    http.post(`${B}/workspaces/:ws/runs/:id/explain`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      return HttpResponse.json(mockRunExplanation(toRunDetail(run, g.user)))
     }),
     http.get(`${B}/workspaces/:ws/runs/:id/diagnosis`, async ({ params }) => {
       await slow()

@@ -172,6 +172,9 @@ public class AuditWriter {
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome", "workflowId")),
             Map.entry("ai.workflow.explained", Set.of("profile", "model", "promptVersion", "revision", "releaseNumber",
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
+            // S146 part C (CG-A07): counts and codes only, never facts, prompts or the explanation.
+            Map.entry("ai.run.explained", Set.of("source", "profile", "model", "promptVersion", "cached", "factCount",
+                    "suggestedCount", "droppedCount", "fallbackReason")),
             Map.entry("ai.form.suggested", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "outcome", "changesSuggested", "changesRejected")),
             // Conversational authoring (STU02, docs/build/S95): counts only, never the instruction, turns or draft.

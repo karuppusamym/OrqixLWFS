@@ -47,6 +47,8 @@ public final class AiTaskFixtures {
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.model", "test/pricey");
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.input-per-million", "50");
         System.setProperty("orqix.ai.model-providers.profiles.task-pricey.output-per-million", "100");
+        // S146 part C: "Explain this request" answers through the stub, never the agent OpenRouter stand-in.
+        System.setProperty("orqix.ai.operator-explain.profile", "task-openai");
         System.setProperty("orqix.ai.tasks.poll-interval", "200ms");
         System.setProperty("orqix.ai.tasks.recover-interval", "1s");
         writeSecret("ai-stub-key", AiTaskStub.KEY);

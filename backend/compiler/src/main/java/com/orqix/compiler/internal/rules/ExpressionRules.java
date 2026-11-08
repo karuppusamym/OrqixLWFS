@@ -54,14 +54,18 @@ public final class ExpressionRules {
         form(rc);
     }
 
-    /** @return the expression type of a request field, or null for a file */
+    /**
+     * @return the expression type of a request field, or null when formulas cannot use it: a file, or a time of day or
+     *     date-time (S140), which the expression language has no type for; comparing them as text would be wrong
+     *     across time-zone offsets
+     */
     static ExprType ofField(FormSchema.Field f) {
         return switch (f.type()) {
             case NUMBER, INTEGER -> ExprType.NUMBER;
             case STRING -> ExprType.STRING;
             case BOOLEAN -> ExprType.BOOLEAN;
             case DATE -> ExprType.DATE;
-            case ATTACHMENT -> null;
+            case ATTACHMENT, TIME, DATETIME -> null;
             case ARRAY -> {
                 if (f.items() == null) yield null;
                 if (f.items().type() == FieldKind.OBJECT || !f.items().rowFields().isEmpty()) {
@@ -94,7 +98,7 @@ public final class ExpressionRules {
             case DATE -> ExprType.DATE;
             case ARRAY -> new ExprType.ListOf(t.items() == null ? ExprType.ANY : ofFieldType(t.items()));
             case OBJECT -> ExprType.ANY;
-            case ATTACHMENT -> null;
+            case ATTACHMENT, TIME, DATETIME -> null;
         };
     }
 

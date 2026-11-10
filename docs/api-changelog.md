@@ -117,4 +117,4 @@ section, after copying the section's content under a heading for that release be
 ## r0-2026-11-08 (Waves A to D, baseline)
 
 First recorded baseline of `/api/v1`: 456 operations, as described in the change record of 2026-11-08
-(`docs/release/orqix-change-record-2026-11-08.pdf`). Earlier changes are in the R0 release notes in `docs/release`.
+(`docs/release/orqix-change-record-2026-11-10.pdf`). Earlier changes are in the R0 release notes in `docs/release`.

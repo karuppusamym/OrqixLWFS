@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Users } from 'lucide-react'
 import { useState } from 'react'
 import * as endpoints from '@/api/endpoints'
-import { keys, useAccessOverview, useWorkflows } from '@/api/queries'
+import { keys, useAccessOverview, useConnections, useResourceGrants, useWorkflowOrganization, useWorkflows } from '@/api/queries'
 import type { components } from '@/api/schema'
 import { useWorkspace } from '@/app/workspace'
 import { useAnnounce } from '@/components/common/Announcer'
@@ -57,6 +57,7 @@ const PERMISSION_HELP: Record<GrantPermission, string> = {
   'ai.evaluate': 'Can run AI evaluation suites and read shadow dashboards and the AI review queue',
   'run.bulk-operate': 'Can run and confirm bulk operations on requests by filter (retry, cancel, suspend, resume, move to a release); also needs the operator role',
   'alert.manage': 'Can manage alert rules and destinations and read alert incidents',
+  'data.reveal': 'Can reveal masked personal and sensitive answers (each reveal is recorded)',
 }
 const PERMISSIONS = Object.keys(PERMISSION_HELP) as GrantPermission[]
 
@@ -94,6 +95,7 @@ export function AccessPanel() {
       <RolesSection ws={workspace.id} bindings={query.data.roleBindings} people={people} />
       <GroupsSection ws={workspace.id} groups={query.data.groups} people={people} />
       <GrantsSection ws={workspace.id} grants={query.data.grants} people={people} />
+      <ResourceGrantsSection ws={workspace.id} people={people} />
     </div>
   )
 }
@@ -281,6 +283,149 @@ function GrantsSection({ ws, grants, people }: { ws: string; grants: components[
         onConfirm={() => removing && remove.mutate(removing.id, { onSuccess: () => setRemoving(null) })} onCancel={() => setRemoving(null)}
         error={remove.isError ? <ProblemAlert error={toProblem(remove.error)} context={{ action: 'remove the permission' }} /> : undefined}>
         {removing ? <p>{principalName(removing.principal)} can no longer {(PERMISSION_HELP[removing.permission] ?? removing.permission).replace(/^Can /, '').toLowerCase()} unless a role or another grant allows it.</p> : null}
+      </ConfirmDialog>
+    </section>
+  )
+}
+
+type ResourceType = components['schemas']['ResourceGrant']['resourceType']
+type ResourcePermission = components['schemas']['ResourcePermission']
+type ResourceGrant = components['schemas']['ResourceGrant']
+
+const RESOURCE_TYPE_LABEL: Record<ResourceType, string> = {
+  folder: 'Folder',
+  workflow: 'Workflow',
+  decision: 'Shared decision table',
+  connection: 'Connection',
+}
+const RESOURCE_TYPES = Object.keys(RESOURCE_TYPE_LABEL) as ResourceType[]
+
+const RESOURCE_PERMISSION_LABEL: Record<ResourcePermission, string> = {
+  'workflow.read': 'Can view',
+  'workflow.edit': 'Can edit',
+  'workflow.publish': 'Can publish',
+  'workflow.start': 'Can start requests',
+  'run.read': 'Can see its requests',
+  'run.operate': 'Can operate its requests',
+  'connection.read': 'Can view',
+  'connection.manage': 'Can change the address and test it',
+}
+
+/** What each resource type accepts (the server refuses the rest). */
+const RESOURCE_PERMISSIONS: Record<ResourceType, ResourcePermission[]> = {
+  folder: ['workflow.read', 'workflow.edit', 'workflow.publish', 'workflow.start', 'run.read', 'run.operate'],
+  workflow: ['workflow.read', 'workflow.edit', 'workflow.publish', 'workflow.start', 'run.read', 'run.operate'],
+  decision: ['workflow.read', 'workflow.edit'],
+  connection: ['connection.read', 'connection.manage'],
+}
+
+/**
+ * Grants on one folder, workflow, shared decision table or connection (CG-I01). A grant only adds that permission on that
+ * one resource, for example "HR designers edit only the HR folder".
+ */
+function ResourceGrantsSection({ ws, people }: { ws: string; people: { id: string; name: string }[] }) {
+  const query = useResourceGrants(ws)
+  const [adding, setAdding] = useState(false)
+  const [resourceType, setResourceType] = useState<ResourceType>('folder')
+  const [resourceId, setResourceId] = useState('')
+  const [permission, setPermission] = useState<ResourcePermission>('workflow.edit')
+  const [principal, setPrincipal] = useState<PrincipalRef>({ type: 'idpGroup', value: '' })
+  const [removing, setRemoving] = useState<ResourceGrant | null>(null)
+  const folders = useWorkflowOrganization(ws, adding && resourceType === 'folder')
+  const workflows = useWorkflows(ws, {}, adding && resourceType === 'workflow')
+  const connections = useConnections(ws, adding && resourceType === 'connection')
+  const options: { id: string; name: string }[] =
+    resourceType === 'folder' ? (folders.data?.folders ?? []).map((f) => ({ id: f.id, name: f.name }))
+      : resourceType === 'workflow' ? (workflows.data?.pages.flatMap((p) => p.items) ?? []).map((w) => ({ id: w.id, name: w.name }))
+        : resourceType === 'connection' ? (connections.data?.items ?? []).map((c) => ({ id: c.key, name: c.name }))
+          : []
+  const resetForm = () => { setResourceId(''); setPrincipal({ type: 'idpGroup', value: '' }) }
+  const add = useAccessChange(ws, () => endpoints.createResourceGrant(ws, { resourceType, resourceId: resourceId.trim(), permission, principal: { type: principal.type, value: principal.value.trim() } }), 'Access added.')
+  const remove = useAccessChange(ws, (id: string) => endpoints.deleteResourceGrant(ws, id), 'Access removed.')
+  const resourceLabel = (g: ResourceGrant) => g.resourceName ?? (g.resourceType === 'connection' || g.resourceType === 'decision' ? g.resourceId : 'No longer exists')
+
+  return (
+    <section aria-labelledby="resource-grants-heading" className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id="resource-grants-heading">Access to single resources</h2>
+          <p className="text-sm text-muted-foreground">Give a permission on one folder, workflow, shared decision table or connection only, for example letting HR designers edit only the HR folder.</p>
+        </div>
+        {!adding ? <Button variant="secondary" onClick={() => { add.reset(); setAdding(true) }}><Plus aria-hidden="true" /> Add access</Button> : null}
+      </div>
+      {adding ? (
+        <form aria-label="Add access to a single resource" className="space-y-3 rounded-card border border-border bg-surface p-4" onSubmit={(e) => { e.preventDefault(); add.mutate(undefined, { onSuccess: () => { setAdding(false); resetForm() } }) }}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="resource-grant-type">Resource type</Label>
+              <Select id="resource-grant-type" value={resourceType} onChange={(e) => {
+                const next = e.target.value as ResourceType
+                setResourceType(next)
+                setResourceId('')
+                if (!RESOURCE_PERMISSIONS[next].includes(permission)) setPermission(RESOURCE_PERMISSIONS[next][0]!)
+              }}>
+                {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{RESOURCE_TYPE_LABEL[t]}</option>)}
+              </Select>
+            </div>
+            {options.length ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="resource-grant-id">{RESOURCE_TYPE_LABEL[resourceType]}</Label>
+                <Select id="resource-grant-id" value={resourceId} onChange={(e) => setResourceId(e.target.value)}>
+                  <option value="">Choose one</option>
+                  {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="resource-grant-id">{resourceType === 'decision' || resourceType === 'connection' ? `${RESOURCE_TYPE_LABEL[resourceType]} key` : `${RESOURCE_TYPE_LABEL[resourceType]} ID`}</Label>
+                <Input id="resource-grant-id" value={resourceId} maxLength={200} spellCheck={false} aria-describedby="resource-grant-id-hint" onChange={(e) => setResourceId(e.target.value)} />
+                <p id="resource-grant-id-hint" className="text-xs text-muted-foreground">
+                  {resourceType === 'decision' ? 'The key of the shared decision table, as shown under Shared assets.'
+                    : resourceType === 'connection' ? 'The key of the connection, as shown under Connections.'
+                      : `Copy the ID from the ${resourceType}'s address.`}
+                </p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="resource-grant-permission">Permission</Label>
+              <Select id="resource-grant-permission" value={permission} onChange={(e) => setPermission(e.target.value as ResourcePermission)}>
+                {RESOURCE_PERMISSIONS[resourceType].map((p) => <option key={p} value={p}>{RESOURCE_PERMISSION_LABEL[p]}</option>)}
+              </Select>
+            </div>
+          </div>
+          <PrincipalFields id="resource-grant-principal" value={principal} onChange={setPrincipal} people={people} />
+          {add.isError ? <ProblemAlert error={toProblem(add.error)} context={{ action: 'add the access' }} /> : null}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" loading={add.isPending} disabled={!principal.value.trim() || !resourceId.trim()}>Add access</Button>
+            <Button type="button" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+          </div>
+        </form>
+      ) : null}
+      {query.isPending ? <LoadingBlock rows={2} label="Loading access to single resources" />
+        : query.isError ? <QueryError error={query.error} onRetry={() => void query.refetch()} what="access to single resources" />
+          : (
+            <div className="overflow-x-auto rounded-card border border-border bg-surface">
+              <Table>
+                <caption className="sr-only">Access to single resources</caption>
+                <THead><TR><TH>Person or group</TH><TH>Resource</TH><TH>Permission</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
+                <TBody>
+                  {query.data.items.map((g) => (
+                    <TR key={g.id}>
+                      <TD className="font-semibold">{principalName(g.principal)}<span className="block text-xs font-normal text-muted-foreground">{principalKind(g.principal)}</span></TD>
+                      <TD>{resourceLabel(g)}<span className="block text-xs text-muted-foreground">{RESOURCE_TYPE_LABEL[g.resourceType]}</span></TD>
+                      <TD>{RESOURCE_PERMISSION_LABEL[g.permission] ?? g.permission}</TD>
+                      <TD><Button size="sm" variant="ghost" aria-label={`Remove ${RESOURCE_PERMISSION_LABEL[g.permission] ?? g.permission} on ${resourceLabel(g)} from ${principalName(g.principal)}`} onClick={() => { remove.reset(); setRemoving(g) }}><Trash2 aria-hidden="true" /> Remove</Button></TD>
+                    </TR>
+                  ))}
+                  {query.data.items.length === 0 ? <TR><TD colSpan={4} className="text-muted-foreground">No access to single resources is granted.</TD></TR> : null}
+                </TBody>
+              </Table>
+            </div>
+          )}
+      <ConfirmDialog open={removing !== null} title="Remove this access?" confirmLabel="Remove access" destructive pending={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing.id, { onSuccess: () => setRemoving(null) })} onCancel={() => setRemoving(null)}
+        error={remove.isError ? <ProblemAlert error={toProblem(remove.error)} context={{ action: 'remove the access' }} /> : undefined}>
+        {removing ? <p>{principalName(removing.principal)} loses &quot;{(RESOURCE_PERMISSION_LABEL[removing.permission] ?? removing.permission).toLowerCase()}&quot; on {resourceLabel(removing)} within 60 seconds, unless a role or another grant allows it.</p> : null}
       </ConfirmDialog>
     </section>
   )

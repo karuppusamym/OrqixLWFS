@@ -8,9 +8,17 @@ import { Label } from '@/components/ui/label'
 import { ALL_FILE_TYPES, FILE_TYPES } from '@/api/attachments'
 import { FormPattern, MAX_PATTERN_LENGTH } from '@/lib/form/pattern'
 import type { QuestionRules } from '../model/formRules'
-import { FIELD_KIND_LABELS, SEARCHABLE_KINDS, type FieldKind, type FormFieldModel } from '../model/ops'
+import { CLASSIFIABLE_KINDS, FIELD_KIND_LABELS, isProtectedClassification, SEARCHABLE_KINDS, type FieldKind, type FormFieldModel } from '../model/ops'
+import type { DataClassification } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea } from './controls'
 import { RowColumnsEditor } from './RowColumnsEditor'
+
+const CLASSIFICATIONS: { value: DataClassification; label: string }[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'personal', label: 'Personal' },
+  { value: 'sensitive', label: 'Sensitive' },
+]
 
 export const ALL_FIELD_KINDS: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'time', 'dateTime', 'yesNo', 'choice', 'checklist', 'tags', 'lookup', 'collection', 'file']
 
@@ -369,10 +377,24 @@ function QuestionDetails({
           <Checkbox id={`${p}-incident-editable`} checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
           Allow operator correction during an incident before data is consumed
         </label> : null}
-        {incidentEditable && SEARCHABLE_KINDS.has(f.kind) ? <label htmlFor={`${p}-searchable`} className="flex items-center gap-2 text-sm">
+        {incidentEditable && SEARCHABLE_KINDS.has(f.kind) && !isProtectedClassification(f.classification) ? <label htmlFor={`${p}-searchable`} className="flex items-center gap-2 text-sm">
           <Checkbox id={`${p}-searchable`} checked={!!f.searchable} disabled={readOnly} onCheckedChange={checked => onChange({searchable: checked === true})} />
           Operators can search requests by this answer (at most 10 questions)
         </label> : null}
+        {incidentEditable && CLASSIFIABLE_KINDS.has(f.kind) ? (
+          <FormField label="Data classification" optionalText id={`${p}-classification`} description="Personal and sensitive answers are masked for everyone and revealed only with permission. Sensitive answers are also encrypted at rest. They cannot be searchable.">
+            {(ids) => (
+              <Select id={ids.input} aria-describedby={ids.describedBy} value={f.classification ?? ''} disabled={readOnly}
+                onChange={(e) => {
+                  const next = (e.target.value || undefined) as DataClassification | undefined
+                  onChange({ classification: next, ...(isProtectedClassification(next) ? { searchable: false } : {}) })
+                }}>
+                <option value="">Not classified</option>
+                {CLASSIFICATIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </Select>
+            )}
+          </FormField>
+        ) : null}
         <FormField label="Field key" id={`${p}-key`} error={keyError} description={keyDescription}>
           {(ids) => (
             <CommitInput

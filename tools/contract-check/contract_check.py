@@ -35,6 +35,7 @@ from jsonschema.exceptions import SchemaError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from consistency_gates import check_consistency, fix_line_endings  # noqa: E402
+import contract_diff  # noqa: E402
 
 SCHEMA_FAILURE_CODES = {"WF_SCHEMA_INVALID", "WF_SCHEMA_VERSION_UNSUPPORTED"}
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
@@ -579,6 +580,33 @@ def check_openapi(report: Report, root: Path) -> dict[str, Any] | None:
     return document
 
 
+def check_compatibility(report: Report, root: Path, document: dict[str, Any] | None) -> None:
+    """CG-K05 (docs/api-compatibility.md): no breaking change against the recorded baseline, deprecations carry their
+    release and headers, and the generated changelog section is current."""
+    report.section("API compatibility (contract_diff.py against contracts/compat/openapi-v1-baseline.json)")
+    if document is None:
+        report.fail("contracts/openapi.yaml could not be loaded")
+        return
+    for problem in contract_diff.deprecation_problems(document):
+        report.fail(problem)
+    try:
+        baseline = contract_diff.load_baseline(root)
+    except FileNotFoundError:
+        report.fail(f"{contract_diff.BASELINE.as_posix()} is missing")
+        return
+    diff = contract_diff.compare(baseline, contract_diff.build_surface(document))
+    if diff.breaking:
+        for item in diff.breaking:
+            report.fail(f"breaking change: {item}")
+    else:
+        report.ok(f"no breaking change against {baseline['releases'][-1]} ({len(diff.additive)} additive, "
+                  f"{len(diff.deprecated)} deprecated)")
+    if contract_diff.changelog_is_current(root, contract_diff.changelog_section(baseline, diff)):
+        report.ok(f"{contract_diff.CHANGELOG.as_posix()} generated section is current")
+    else:
+        report.fail(f"{contract_diff.CHANGELOG.as_posix()} is out of date: run python tools/contract-check/contract_diff.py --changelog")
+
+
 def main(argv: list[str] | None = None) -> int:
     default_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description="Orqix contract/schema/fixture/OpenAPI consistency check")
@@ -598,6 +626,7 @@ def main(argv: list[str] | None = None) -> int:
     check_compiler_cases(report, root, schemas)
     document = check_openapi(report, root)
     check_consistency(report, root, document, skip_node=args.skip_node)
+    check_compatibility(report, root, document)
 
     print()
     if report.failures:

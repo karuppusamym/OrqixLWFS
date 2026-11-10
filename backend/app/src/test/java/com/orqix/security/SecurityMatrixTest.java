@@ -76,7 +76,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "searchLookupOptions".equals(operationId)
                             // S143: dry runs of a migration, a migration batch and a move change nothing.
                             || "planRunMigration".equals(operationId) || "previewMigrationBatch".equals(operationId)
-                            || "planRunMove".equals(operationId))
+                            || "planRunMove".equals(operationId)
+                            // S147: the bundle promotion plan reads both workspaces and changes nothing.
+                            || "checkBundlePromotion".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -417,6 +419,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("decisionId", UUID.randomUUID().toString());
         // S146 part B: document extraction verification tasks (the workspace is invisible to foreign principals).
         ids.put("verificationId", UUID.randomUUID().toString());
+        // S147: release bundles; the workspace is invisible to foreign principals, so an unknown id proves the 404.
+        ids.put("bundleId", UUID.randomUUID().toString());
         // S139: a real working calendar, so a foreign call is refused by access, not by a missing resource; the
         // workspace is invisible to foreign principals, so an unknown schedule id proves the 404 as well.
         String calendarKey = "matrix-" + UUID.randomUUID().toString().substring(0, 8);
@@ -459,8 +463,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         if ("listSharedAssetOwnerCandidates".equals(operationId)) {
             path += "?kind=decision";
         }
-        if ("clearWorkflowCanary".equals(operationId)) {
+        if ("clearWorkflowCanary".equals(operationId) || "deleteGitConnection".equals(operationId)) {
             path += "?expectedVersion=1";
+        }
+        if ("previewGitImport".equals(operationId)) {
+            path += "?branch=main";
         }
         MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method.toUpperCase()),
                 "/api/v1" + path).with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf)
@@ -704,6 +711,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "placeLegalHold" -> Map.of("runId", UUID.randomUUID().toString(), "reason", "Foreign attempt");
             case "releaseLegalHold" -> Map.of("reason", "Foreign attempt");
             case "startRetentionSweep" -> Map.of("dryRun", true);
+            // S147 Git sync and release bundles: well-formed bodies, so a foreign 404 cannot be explained by validation.
+            case "saveGitConnection" -> Map.of("provider", "github", "repository", "foreign/repo", "credentialRef",
+                    "foreign-git-token", "expectedVersion", 0);
+            case "pushWorkflowToGit" -> Map.of("draftRevision", 1);
+            case "importWorkflowFromGit" -> Map.of("branch", "orqix/foreign", "commit", "a".repeat(40),
+                    "expectedDraftRevision", 1);
+            case "publishFromGit" -> Map.of("draftRevision", 1, "commit", "a".repeat(40), "pullRequest", "1");
+            case "publishReleaseBundle" -> Map.of("draftRevision", 1);
+            case "checkBundlePromotion", "promoteReleaseBundle" -> Map.of("targetWorkspaceId", SANDBOX.toString());
             default -> null;
         };
     }
@@ -723,6 +739,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "bulk_operation", "bulk_operation_item", "run_search_value", "external_worker_seen", "alert_destination", "alert_rule", "alert_rule_destination", "alert_incident", "alert_delivery", "retention_policy", "legal_hold", "retention_sweep", "run_archive", "analytics_kpi_target", "analytics_kpi_state", "ai_ocr_setting", "ai_document_verification",
+                "git_connection", "git_sync_event", "release_bundle", "release_bundle_promotion",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

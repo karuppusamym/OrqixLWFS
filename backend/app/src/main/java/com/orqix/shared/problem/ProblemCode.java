@@ -84,6 +84,12 @@ public enum ProblemCode {
     BULK_OPERATION_STATE_CONFLICT(409, "The bulk operation is not in a state that allows this"),
     /** S142: the filter matches more requests than one bulk operation may change. */
     BULK_LIMIT_EXCEEDED(422, "The filter matches more requests than one bulk operation may change"),
+    /** S147: the files at the Git commit do not have the content hash of the draft being published. */
+    GIT_CONTENT_MISMATCH(409, "The Git commit does not match the draft"),
+    /** S147: the commit is not the approved head or merge commit of its pull request. */
+    GIT_REVIEW_REQUIRED(422, "The Git commit has not been reviewed and approved"),
+    /** S147: the review branch moved while Orqix was writing to it. */
+    GIT_BRANCH_MOVED(409, "The Git branch changed while Orqix was writing to it"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

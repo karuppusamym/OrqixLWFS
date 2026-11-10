@@ -85,7 +85,8 @@ public class TestSuiteService {
         var visible=workflows.visible(caller,ws,wf,action);
         policy.require(visible.access(),Permission.WORKFLOW_EDIT,action,!"getWorkflowTestSuite".equals(action));
     }
-    private Suite latest(UUID ws, UUID wf) {
+    /** The newest suite (version 0 and no cases when none was saved); no permission check. */
+    Suite latest(UUID ws, UUID wf) {
         return jdbc.sql("SELECT version,cases::text FROM workflow_test_suite WHERE workspace_id=:ws AND workflow_id=:wf ORDER BY version DESC LIMIT 1")
             .param("ws",ws).param("wf",wf).query((rs,n)-> {
                 var cases=new ArrayList<Case>();

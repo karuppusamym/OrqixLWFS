@@ -9,6 +9,7 @@ import { AgentWriteRetentionPanel } from './AgentWriteRetentionPanel'
 import { DocumentTemplatesPanel } from './DocumentTemplatesPanel'
 import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
+import { GitConnectionPanel } from './GitConnectionPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
@@ -149,6 +150,7 @@ export function SettingsPage() {
         {showConnections ? (
           <TabsContent value="connections">
             <ConnectionsPanel />
+            <GitConnectionPanel />
           </TabsContent>
         ) : null}
         {showOperations ? <TabsContent value="operations"><JobDashboardPanel /></TabsContent> : null}

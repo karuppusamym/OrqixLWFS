@@ -281,7 +281,7 @@ function releaseSummary(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
   }
 }
 
-function releaseFull(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
+export function releaseFull(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
   return {
     ...releaseSummary(wf, r),
     sourceHash: r.sourceHash,

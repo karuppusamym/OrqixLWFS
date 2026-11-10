@@ -439,3 +439,13 @@ stops all of this until released. Configure the archive store with `orqix.retent
 `orqix.retention.filesystem.root` on a persistent volume, or `s3` with `orqix.retention.s3.*` from the secret mount;
 enable object lock on the bucket if your records policy requires it). The engine-history runbook is in
 [S144](build/S144-alerts-retention-archiving.md#runbook-engine-history-growth).
+
+## The orqix command line tool and test runs in CI - 9 November 2026
+
+People sign in to the `orqix` tool (`tools/orqix-cli`) with a device code; their access token must carry the audience
+`orqix-cli` and the groups claim, like the browser sign-in. The development realm has the public client `orqix-cli`
+(device grant only). For another identity provider, add such a client with an audience mapper, or set
+`ORQIX_CLI_AUDIENCES`; `ORQIX_CLI_ISSUER` and `ORQIX_CLI_JWK_SET_URI` default to the REST API's resource server
+settings, and `ORQIX_CLI_ENABLED=false` refuses all CLI tokens. A CLI token reaches only the routes the tool uses, with
+the person's own permissions. CI jobs pass a token file (`orqix login --token-file`). Test files, coverage minimums and
+package contract tests: [S148](build/S148-test-as-code-coverage-cli.md).

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orqix-cli"
+version = "0.1.0"
+description = "The Orqix command line tool: sign in, export, import, validate and publish workflows, start requests, run tests in CI (docs/build/S148)."
+requires-python = ">=3.9"
+# Standard library only.
+dependencies = []
+
+[project.scripts]
+orqix = "orqix_cli.commands:cli"
+
+[tool.setuptools]
+packages = ["orqix_cli"]

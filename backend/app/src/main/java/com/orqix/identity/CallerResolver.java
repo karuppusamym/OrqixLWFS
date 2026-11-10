@@ -55,7 +55,10 @@ public class CallerResolver {
             throw new ApiException(ProblemCode.UNAUTHENTICATED);
         }
         Caller caller;
-        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+        if (authentication instanceof com.orqix.identity.cli.CliAuthentication cli) {
+            // S148: a person signed in through the command line tool, resolved from their verified token.
+            caller = cli.caller();
+        } else if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
             caller = fromJwt(jwtAuthentication.getToken());
         } else if (authentication.getPrincipal() instanceof OAuth2User user) {
             caller = fromSession(user);

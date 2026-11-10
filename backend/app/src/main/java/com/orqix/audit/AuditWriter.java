@@ -297,6 +297,8 @@ public class AuditWriter {
             Map.entry("connector.package-decided", Set.of("packageId", "version", "sha256", "decision")),
             Map.entry("connector.package-installed", Set.of("packageId", "version", "previousVersion", "connections")),
             Map.entry("connector.package-retired", Set.of("packageId", "version", "workspacesAffected")),
+            // S148 (CG-Q04): a contract test of a package archive (counts and hashes only)
+            Map.entry("connector.package-tested", Set.of("packageId", "version", "sha256", "fixtures", "passed")),
             Map.entry("connector.trigger-configured", Set.of("packageId", "triggerKey", "kind", "action", "enabled", "version")),
             Map.entry("connector.trigger-record-dead", Set.of("triggerId", "error")),
             Map.entry("kafka.trigger-created", Set.of("key", "action", "cluster")),

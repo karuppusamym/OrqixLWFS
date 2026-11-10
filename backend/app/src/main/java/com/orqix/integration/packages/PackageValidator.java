@@ -56,6 +56,18 @@ public class PackageValidator {
             Map<String, JsonNode> stepTemplates, Map<String, JsonNode> workflows, ObjectNode review) {
     }
 
+    /**
+     * CG-Q04 (S148): one fixture of a contract test. {@code outcome} and {@code code} are what the replay gave (null
+     * when the fixture could not be replayed); {@code message} says why it failed.
+     */
+    public record FixtureResult(String path, String connection, String operation, boolean passed, String outcome,
+            String code, String message) {
+    }
+
+    /** CG-Q04: the fixtures replayed and every other problem of the package (fixture problems are in the results). */
+    public record ContractTest(JsonNode manifest, List<FixtureResult> fixtures, List<Problem> problems) {
+    }
+
     /** Validation failed; {@code problems} is never empty. */
     public static final class Failed extends RuntimeException {
         private final List<Problem> problems;
@@ -100,6 +112,29 @@ public class PackageValidator {
     }
 
     public Validated validate(PackageArchive.Archive archive) {
+        return validate(archive, null);
+    }
+
+    /**
+     * CG-Q04 (S148): every check of {@link #validate}, reported instead of thrown, with the result of each fixture
+     * replayed through the runtime's response handling. Nothing is stored or called.
+     */
+    public ContractTest contractTest(PackageArchive.Archive archive) {
+        List<FixtureResult> fixtures = new ArrayList<>();
+        List<Problem> problems = new ArrayList<>();
+        JsonNode manifest = null;
+        try {
+            manifest = validate(archive, fixtures).manifest();
+        } catch (Failed e) {
+            Set<String> fixturePaths = new LinkedHashSet<>();
+            fixtures.forEach(f -> fixturePaths.add(f.path()));
+            e.problems().stream().filter(p -> !fixturePaths.contains(p.file())).forEach(problems::add);
+            manifest = parse(archive, PackageArchive.MANIFEST, new ArrayList<>());
+        }
+        return new ContractTest(manifest, List.copyOf(fixtures), List.copyOf(problems));
+    }
+
+    private Validated validate(PackageArchive.Archive archive, List<FixtureResult> results) {
         List<Problem> problems = new ArrayList<>();
         JsonNode manifest = parse(archive, PackageArchive.MANIFEST, problems);
         if (manifest == null) {
@@ -241,12 +276,19 @@ public class PackageValidator {
         int fixturesPassed = 0;
         String replayBase = replayBase(manifest);
         for (String path : roles.get("fixtures")) {
+            int before = problems.size();
             JsonNode fixture = parse(archive, path, problems);
-            if (fixture == null || !schema(fixtureSchema, fixture, path, problems)) {
-                continue;
-            }
-            if (replay(fixture, connections, replayBase, path, problems)) {
+            String[] replayed = new String[2];
+            boolean passed = fixture != null && schema(fixtureSchema, fixture, path, problems)
+                    && replay(fixture, connections, replayBase, path, problems, replayed);
+            if (passed) {
                 fixturesPassed++;
+            }
+            if (results != null) {
+                String message = problems.size() > before ? problems.get(before).message() : null;
+                results.add(new FixtureResult(path, fixture == null ? null : fixture.path("connection").asString(null),
+                        fixture == null ? null : fixture.path("operation").asString(null), passed, replayed[0],
+                        replayed[1], message));
             }
         }
         for (String path : roles.get("docs")) {
@@ -500,7 +542,7 @@ public class PackageValidator {
     }
 
     private boolean replay(JsonNode fixture, Map<String, JsonNode> connections, String base, String path,
-            List<Problem> problems) {
+            List<Problem> problems, String[] replayed) {
         JsonNode document = connections.get(fixture.path("connection").asString());
         if (document == null) {
             problems.add(new Problem(path, "/connection", "PKG_REFERENCE", "The fixture names a connection that is not"
@@ -538,6 +580,8 @@ public class PackageValidator {
             case RETRYABLE -> "retryable";
             case UNKNOWN -> "unknown";
         };
+        replayed[0] = outcome;
+        replayed[1] = result.errorCode();
         if (!outcome.equals(expect.path("outcome").asString())) {
             problems.add(new Problem(path, "/expect/outcome", "PKG_FIXTURE", "Replayed, the answer is " + outcome
                     + (result.errorCode() == null ? "" : " (" + result.errorCode() + ")") + ", not "

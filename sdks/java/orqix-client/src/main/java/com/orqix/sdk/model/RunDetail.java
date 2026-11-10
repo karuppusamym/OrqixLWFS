@@ -29,8 +29,9 @@ import java.util.Map;
  * @param version required
  * @param stage The current stage (docs/build/S17); null when the workflow has no stages or none was entered yet. (may be null)
  * @param parentRun The run that started this one through a "Start another workflow" step (S12); null for ordinary runs. (may be null)
- * @param input Null unless the caller is the initiator, a task participant, or holds run.read-data (may be null)
+ * @param input Null unless the caller is the initiator, a task participant, or holds run.read-data. Answers of questions classified personal or sensitive are masked (six bullet characters); use revealRunData (CG-I05, docs/build/S151). (may be null)
  * @param inputLabels optional
+ * @param protectedFields CG-I05 (docs/build/S151): request fields whose answers are masked in input; empty when input is null.
  * @param output optional (may be null)
  * @param children Runs started by steps of this run, oldest first. A child that needs attention is visible here.
  * @param stages The stages of the workflow with this request's progress; empty when the workflow has no stages.
@@ -64,6 +65,7 @@ public record RunDetail(
         @JsonProperty("parentRun") ParentRun parentRun,
         @JsonProperty("input") Map<String, Object> input,
         @JsonProperty("inputLabels") Map<String, String> inputLabels,
+        @JsonProperty("protectedFields") List<String> protectedFields,
         @JsonProperty("output") Map<String, Object> output,
         @JsonProperty("children") List<ChildRun> children,
         @JsonProperty("stages") List<StageView> stages,

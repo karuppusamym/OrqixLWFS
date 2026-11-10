@@ -607,13 +607,17 @@ public sealed record RunDetail
     [JsonPropertyName("parentRun")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ParentRun? ParentRun { get; init; }
-    /// <summary>Null unless the caller is the initiator, a task participant, or holds run.read-data</summary>
+    /// <summary>Null unless the caller is the initiator, a task participant, or holds run.read-data. Answers of questions classified personal or sensitive are masked (six bullet characters); use revealRunData (CG-I05, docs/build/S151).</summary>
     [JsonPropertyName("input")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, object?>? Input { get; init; }
     [JsonPropertyName("inputLabels")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? InputLabels { get; init; }
+    /// <summary>CG-I05 (docs/build/S151): request fields whose answers are masked in input; empty when input is null.</summary>
+    [JsonPropertyName("protectedFields")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ProtectedFields { get; init; }
     [JsonPropertyName("output")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, object?>? Output { get; init; }

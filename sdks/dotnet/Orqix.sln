@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5D3D1C71-2909-4F05-A621-167DDDD2FF7F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orqix.Client", "src\Orqix.Client\Orqix.Client.csproj", "{BE23CC6B-399C-4491-A379-A129DD35D01F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{40B74FD9-F0D2-48FA-93B0-7AF1DC091CF2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orqix.Client.Tests", "tests\Orqix.Client.Tests\Orqix.Client.Tests.csproj", "{813F7488-CD5F-4BBA-88B4-1764079949DE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BE23CC6B-399C-4491-A379-A129DD35D01F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE23CC6B-399C-4491-A379-A129DD35D01F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE23CC6B-399C-4491-A379-A129DD35D01F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE23CC6B-399C-4491-A379-A129DD35D01F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{813F7488-CD5F-4BBA-88B4-1764079949DE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{813F7488-CD5F-4BBA-88B4-1764079949DE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{813F7488-CD5F-4BBA-88B4-1764079949DE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{813F7488-CD5F-4BBA-88B4-1764079949DE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BE23CC6B-399C-4491-A379-A129DD35D01F} = {5D3D1C71-2909-4F05-A621-167DDDD2FF7F}
+		{813F7488-CD5F-4BBA-88B4-1764079949DE} = {40B74FD9-F0D2-48FA-93B0-7AF1DC091CF2}
+	EndGlobalSection
+EndGlobal

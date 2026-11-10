@@ -1,7 +1,7 @@
 -- CG-I06 (docs/build/S151): tamper-evident audit. Every audit_event row joins a hash chain per workspace (chain key =
 -- workspace ID, or 'platform' for platform-level events): chain_seq counts 1, 2, 3, ... and
 --   hash = sha256(prev_hash | chain_seq | every stored column), prev_hash = hash of the previous event in the chain
--- (64 zeros for the first). The chain is written by a SECURITY DEFINER trigger, so every insert path is chained, and
+-- (64 zeros for the first). The chain is written at commit by a SECURITY DEFINER trigger, so every insert path is chained, and
 -- the head table that serialises inserts per chain cannot be changed by the application role. Who can read audit data
 -- does not change. Verification recomputes the hashes and reports the first broken link (governance AuditChains).
 ALTER TABLE audit_event ADD COLUMN chain_seq bigint;
@@ -68,29 +68,36 @@ BEGIN
 END;
 $$;
 
+-- The chain is written when the inserting transaction commits (a deferred constraint trigger), so the head row of a
+-- chain is locked only during commit: a transaction that writes audit events and then waits for another audit write
+-- in its own transaction (denials, separately written events) never waits for itself. Uncommitted rows have no
+-- position yet and are invisible to everyone else.
 CREATE FUNCTION audit_event_chain() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER SET search_path = orqix, pg_temp AS $$
 DECLARE
     k text := COALESCE(NEW.workspace_id::text, 'platform');
     head record;
+    n bigint;
+    h text;
 BEGIN
     INSERT INTO audit_chain_head (chain_key, seq, hash) VALUES (k, 0, repeat('0', 64))
         ON CONFLICT (chain_key) DO NOTHING;
     SELECT seq, hash INTO head FROM audit_chain_head WHERE chain_key = k FOR UPDATE;
-    NEW.chain_seq := head.seq + 1;
-    NEW.prev_hash := head.hash;
-    NEW.hash := orqix_audit_hash(NEW.prev_hash, NEW.chain_seq, NEW.id, NEW.workspace_id, NEW.actor_type,
-                                 NEW.actor_subject_id, NEW.action, NEW.resource_type, NEW.resource_id, NEW.outcome,
-                                 NEW.correlation_id, NEW.occurred_at, NEW.metadata);
-    UPDATE audit_chain_head SET seq = NEW.chain_seq, hash = NEW.hash, updated_at = now() WHERE chain_key = k;
-    RETURN NEW;
+    n := head.seq + 1;
+    h := orqix_audit_hash(head.hash, n, NEW.id, NEW.workspace_id, NEW.actor_type, NEW.actor_subject_id, NEW.action,
+                          NEW.resource_type, NEW.resource_id, NEW.outcome, NEW.correlation_id, NEW.occurred_at,
+                          NEW.metadata);
+    UPDATE audit_event SET chain_seq = n, prev_hash = head.hash, hash = h WHERE id = NEW.id;
+    UPDATE audit_chain_head SET seq = n, hash = h, updated_at = now() WHERE chain_key = k;
+    RETURN NULL;
 END;
 $$;
-CREATE TRIGGER audit_event_chain BEFORE INSERT ON audit_event FOR EACH ROW EXECUTE FUNCTION audit_event_chain();
+CREATE CONSTRAINT TRIGGER audit_event_chain AFTER INSERT ON audit_event
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION audit_event_chain();
 
-ALTER TABLE audit_event ALTER COLUMN chain_seq SET NOT NULL;
-ALTER TABLE audit_event ALTER COLUMN prev_hash SET NOT NULL;
-ALTER TABLE audit_event ALTER COLUMN hash SET NOT NULL;
+-- The three columns are set together (at commit, by the trigger, which overwrites anything an insert put there).
+ALTER TABLE audit_event ADD CONSTRAINT audit_event_chain_set_by_trigger
+    CHECK ((chain_seq IS NULL) = (prev_hash IS NULL) AND (chain_seq IS NULL) = (hash IS NULL));
 CREATE UNIQUE INDEX audit_event_chain_position ON audit_event ((COALESCE(workspace_id::text, 'platform')), chain_seq);
 
 -- Results of the verification job and endpoint (one row per check and chain).

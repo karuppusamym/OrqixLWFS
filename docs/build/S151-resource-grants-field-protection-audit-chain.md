@@ -105,7 +105,8 @@ Decisions:
 - Hash chain (V453): `audit_event` gains `chain_seq`, `prev_hash`, `hash` (NOT NULL, unique position per chain). Chain
   key = workspace ID, or `platform`. `hash = sha256` over length-prefixed fields (prev hash, position, every stored
   column, time in UTC with microseconds, metadata as stored jsonb text) — `orqix_audit_hash`. A `SECURITY DEFINER`
-  BEFORE INSERT trigger writes the chain for every insert path; the head table `audit_chain_head` (one row per chain,
+  deferred constraint trigger writes the chain when the inserting transaction commits, for every insert path (the
+  columns are null only inside the uncommitted transaction); the head table `audit_chain_head` (one row per chain,
   locked per insert) is readable but not writable by the application role. Existing rows are chained by the migration
   in `occurred_at, id` order.
 - Verification: `AuditChains.verify` recomputes every hash in the database and walks the chain up to the head read at
@@ -125,8 +126,10 @@ Decisions:
 Decisions:
 
 - D11 One chain per workspace (and one for the platform), so a workspace's evidence never depends on another tenant.
-- D12 Chaining in the database trigger, not in `AuditWriter`, so no insert path can skip it and concurrent writers are
-  serialised by the head row lock.
+- D12 Chaining in a database trigger, not in `AuditWriter`, so no insert path can skip it; concurrent writers are
+  serialised by the head row lock, taken only at commit. A first version chained in a BEFORE INSERT trigger and
+  deadlocked a request that wrote an audit event and then an audited denial in its own transaction (lock timeout,
+  503): the head stayed locked by the suspended outer transaction.
 - D13 Verification and export read with audit.read (who can read audit data is unchanged); the platform chain is
   verified only by the job.
 
@@ -155,7 +158,7 @@ Decisions:
   `Permission` enum and both grant enums, `AccessApiTest`, frontend `GRANT_KEYS` and `AccessPanel` labels.
 - No new `run_id` table (nothing for `orqix_purge_run`). New tables: `resource_grant`, `audit_chain_head`,
   `audit_chain_check` (SecurityMatrixTest snapshot gains `resource_grant`, `audit_chain_check`).
-- `audit_event` has three new NOT NULL columns filled by a trigger: code that inserts audit rows needs no change; a
+- `audit_event` has three new columns filled at commit by a trigger: code that inserts audit rows needs no change; a
   test or tool that deletes or updates audit rows as the owner breaks that workspace's chain (only AuditChainTest does,
   in its own workspace).
 - `WorkspaceAccess` gains an 8th component `resources` (7-argument constructor kept). `RuntimeDtos.RunDetail` gains

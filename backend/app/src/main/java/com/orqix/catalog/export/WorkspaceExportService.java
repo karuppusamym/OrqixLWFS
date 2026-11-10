@@ -576,7 +576,9 @@ public class WorkspaceExportService {
     }
 
     private static String runsSql(Plan plan) {
-        String data = plan.includeRunData() ? ", r.input::text AS \"input\", r.output::text AS \"output\"" : "";
+        // CG-I05 (S151): personal and sensitive answers are masked in exports (V452 orqix_mask_input).
+        String data = plan.includeRunData()
+                ? ", orqix_mask_input(r.input, rel.definition)::text AS \"input\", r.output::text AS \"output\"" : "";
         return """
                 SELECT r.id AS "runId", r.reference AS "reference", r.workflow_id AS "workflowId",
                        w.key AS "workflowKey", rel.release_number AS "releaseNumber", r.business_key AS "businessKey",

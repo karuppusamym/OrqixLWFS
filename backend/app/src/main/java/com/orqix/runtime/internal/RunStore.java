@@ -181,6 +181,27 @@ public class RunStore {
     private final org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates;
     private final org.springframework.beans.factory.ObjectProvider<RunSearchIndex> searchIndex;
 
+    private FieldProtection protection;
+
+    /** CG-I05 (S151): sensitive answers are encrypted on write and decrypted on read (setter keeps the constructor). */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setFieldProtection(FieldProtection protection) {
+        this.protection = protection;
+    }
+
+    private JsonNode sealed(UUID workspaceId, UUID releaseId, JsonNode input) {
+        return protection == null ? input : protection.seal(workspaceId, releaseId, input);
+    }
+
+    private JsonNode sealedForRun(UUID workspaceId, UUID runId, JsonNode input) {
+        if (protection == null) {
+            return input;
+        }
+        UUID releaseId = jdbc.sql("SELECT release_id FROM workflow_run WHERE workspace_id = :ws AND id = :id")
+                .param("ws", workspaceId).param("id", runId).query(UUID.class).optional().orElse(null);
+        return releaseId == null ? input : protection.seal(workspaceId, releaseId, input);
+    }
+
     public RunStore(JdbcClient jdbc, Json json, Clock clock,
             org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references,
             org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates,
@@ -209,7 +230,7 @@ public class RunStore {
                 """)
                 .param("id", id).param("ws", workspaceId).param("reference", REFERENCE_PREFIX + sequence)
                 .param("wf", workflowId).param("rel", releaseId)
-                .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(input))
+                .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(sealed(workspaceId, releaseId, input)))
                 .param("now", Sql.ts(now))
                 .update();
         reindex(workspaceId, id);
@@ -310,7 +331,7 @@ public class RunStore {
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInput(UUID workspaceId,UUID runId,int version,JsonNode input) {
         int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle='needsAttention' RETURNING version")
-                .param("input",json.write(input)).param("now",Sql.ts(clock.instant())).param("ws",workspaceId).param("run",runId).param("version",version)
+                .param("input",json.write(sealedForRun(workspaceId,runId,input))).param("now",Sql.ts(clock.instant())).param("ws",workspaceId).param("run",runId).param("version",version)
                 .query(Integer.class).optional().orElseThrow(()->new IllegalStateException("Locked correction version changed"));
         reindex(workspaceId, runId);
         return next;
@@ -328,7 +349,7 @@ public class RunStore {
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInputWhileActive(UUID workspaceId, UUID runId, int version, JsonNode input) {
         int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
-                .param("input", json.write(input)).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
+                .param("input", json.write(sealedForRun(workspaceId, runId, input))).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
                 .query(Integer.class).optional().orElseThrow(() -> new IllegalStateException("Locked correction version changed"));
         reindex(workspaceId, runId);
         return next;
@@ -390,10 +411,21 @@ public class RunStore {
                 rs.getString("business_key"),
                 Sql.uuid(rs, "initiator_subject_id"), rs.getString("lifecycle"), rs.getString("outcome"),
                 rs.getString("outcome_kind"), (ArrayNode) stepsNode, attention == null ? null : json.parse(attention),
-                json.parse(rs.getString("input")), output == null ? null : json.parse(output), rs.getLong("event_seq"),
+                input(Sql.uuid(rs, "workspace_id"), rs.getString("input")), output == null ? null : json.parse(output),
+                rs.getLong("event_seq"),
                 rs.getInt("version"), Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"),
                 Sql.instant(rs, "ended_at"), Sql.uuid(rs, "parent_run_id"), rs.getString("parent_node_id"),
                 (Integer) rs.getObject("parent_occurrence"), rs.getInt("call_depth"));
+    }
+
+    /** CG-I05 (S151): the engine's request variable, with sensitive answers of the release encrypted. */
+    public String engineInput(UUID workspaceId, UUID releaseId, JsonNode input) {
+        return json.write(sealed(workspaceId, releaseId, input));
+    }
+
+    private JsonNode input(UUID workspaceId, String text) {
+        JsonNode stored = json.parse(text);
+        return protection != null && FieldProtection.mayHoldSealed(text) ? protection.open(workspaceId, stored) : stored;
     }
 
     public static String columns() {

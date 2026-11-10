@@ -65,6 +65,7 @@ tags:
   - name: MigrationAndMove
     description: Moving requests between releases with a step mapping (single and batch) and guarded moves between steps (docs/build/S143).
   - name: AlertsAndRetention
+  - name: SecurityAndAudit
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -9206,7 +9207,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate, alert.manage] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate, alert.manage, data.reveal] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -11640,6 +11641,187 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
   # ---------------------------------------------------------------- end AlertsAndRetention
+  # ---------------------------------------------------------------- SecurityAndAudit (CG-I01, CG-I05, CG-I06; docs/build/S151)
+  /workspaces/{workspaceId}/access/resource-grants:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [SecurityAndAudit]
+      operationId: listResourceGrants
+      summary: Grants on single folders, workflows, decision tables and connections (CG-I01)
+      x-orqix-permission: workspace.manage-access
+      parameters:
+        - { name: resourceType, in: query, schema: { type: string, enum: [folder, workflow, decision, connection] } }
+        - { name: resourceId, in: query, schema: { type: string, minLength: 1, maxLength: 64 } }
+      responses:
+        '200':
+          description: The grants, oldest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceGrantList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [SecurityAndAudit]
+      operationId: createResourceGrant
+      summary: Grant one permission on one resource
+      description: >-
+        A resource grant only adds the permission on that resource (for a folder, on the workflows filed in it at the
+        time of each check); it never changes workspace-wide access and never applies to another resource. folder and
+        workflow allow workflow.read, workflow.edit, workflow.publish, workflow.start, run.read and run.operate;
+        decision (a shared decision table key) allows workflow.read and workflow.edit; connection (a connection key)
+        allows connection.read and connection.manage.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: access.resource-grant.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resourceType, resourceId, permission, principal]
+              properties:
+                resourceType: { type: string, enum: [folder, workflow, decision, connection] }
+                resourceId: { type: string, minLength: 1, maxLength: 64, description: 'Folder or workflow ID, or the decision table or connection key' }
+                permission: { $ref: '#/components/schemas/ResourcePermission' }
+                principal: { $ref: '#/components/schemas/PrincipalRef' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceGrant' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/access/resource-grants/{grantId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: grantId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    delete:
+      tags: [SecurityAndAudit]
+      operationId: deleteResourceGrant
+      summary: Remove a resource grant
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: access.resource-grant.deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/runs/{runId}/reveal:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [SecurityAndAudit]
+      operationId: revealRunData
+      summary: Reveal masked personal and sensitive answers of one request (CG-I05)
+      description: >-
+        The only operation that returns personal or sensitive answers in plain text. Needs data.reveal and the right to
+        see the request's data (initiator, task participant or run.read-data). Every reveal is audited with the request
+        and field names, never the values. Omit fields (or send an empty list) to reveal every masked field.
+      x-orqix-permission: data.reveal & initiator | data.reveal & taskParticipant | data.reveal & run.read-data
+      x-orqix-audit: data.revealed
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                fields: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 64 } }
+      responses:
+        '200':
+          description: The revealed answers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RevealedRunData' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/audit/chain-verifications:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [SecurityAndAudit]
+      operationId: listAuditChainChecks
+      summary: Latest checks of the workspace audit hash chain, newest first (CG-I06)
+      x-orqix-permission: audit.read
+      responses:
+        '200':
+          description: Up to 20 checks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditChainCheckList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [SecurityAndAudit]
+      operationId: verifyAuditChain
+      summary: Verify the workspace audit hash chain now and report the first broken link
+      x-orqix-permission: audit.read
+      x-orqix-audit: audit.chain-verified
+      responses:
+        '200':
+          description: The result (also recorded)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditChainCheck' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/audit/export:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [SecurityAndAudit]
+      operationId: exportAuditLog
+      summary: Signed export of one contiguous segment of the workspace audit chain (JWS, ES256)
+      description: >-
+        Events after afterSeq in chain order, at most limit (default and maximum 5000). The JWS payload holds every
+        stored column with the chain positions and hashes; check the signature with listAuditSigningKeys, recompute the
+        hashes and link segments through firstPrevHash. nextAfterSeq is set when more events follow.
+      x-orqix-permission: audit.read
+      x-orqix-audit: audit.exported
+      parameters:
+        - { name: afterSeq, in: query, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 5000 } }
+      responses:
+        '200':
+          description: The signed segment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditExport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /workspaces/{workspaceId}/audit/signing-keys:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [SecurityAndAudit]
+      operationId: listAuditSigningKeys
+      summary: Public keys that verify signed audit exports (JWK set; empty when signing is not configured)
+      x-orqix-permission: audit.read
+      responses:
+        '200':
+          description: The JWK set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditSigningKeys' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  # ---------------------------------------------------------------- end SecurityAndAudit
 
 components:
   securitySchemes:
@@ -14408,6 +14590,78 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/RunArchive' } }
     # ---------------------------------------------------------------- end AlertsAndRetention schemas
+    # ---------------------------------------------------------------- SecurityAndAudit (docs/build/S151)
+    ResourcePermission:
+      type: string
+      enum: [workflow.read, workflow.edit, workflow.publish, workflow.start, run.read, run.operate, connection.read, connection.manage]
+    ResourceGrant:
+      type: object
+      additionalProperties: false
+      required: [id, resourceType, resourceId, resourceName, permission, principal, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        resourceType: { type: string, enum: [folder, workflow, decision, connection] }
+        resourceId: { type: string }
+        resourceName: { type: [string, 'null'], description: 'Folder, workflow or decision table name; the key for connections; null when the resource is gone' }
+        permission: { $ref: '#/components/schemas/ResourcePermission' }
+        principal: { $ref: '#/components/schemas/Principal' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    ResourceGrantList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ResourceGrant' } }
+    RevealedRunData:
+      type: object
+      additionalProperties: false
+      required: [runId, values, revealedAt]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        values: { type: object, description: Plain answers by field name }
+        revealedAt: { $ref: '#/components/schemas/Timestamp' }
+    AuditChainCheck:
+      type: object
+      additionalProperties: false
+      required: [chainKey, checkedAt, checked, intact, brokenSeq, brokenEventId, reason, headSeq, headHash]
+      properties:
+        chainKey: { type: string, description: 'The workspace ID, or platform' }
+        checkedAt: { $ref: '#/components/schemas/Timestamp' }
+        checked: { type: integer, format: int64, minimum: 0, description: Events verified }
+        intact: { type: boolean }
+        brokenSeq: { type: [integer, 'null'], format: int64, description: First broken position }
+        brokenEventId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        reason: { type: [string, 'null'], enum: [hashMismatch, previousHashMismatch, missingEvent, headMismatch, null] }
+        headSeq: { type: integer, format: int64, minimum: 0 }
+        headHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+    AuditChainCheckList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditChainCheck' } }
+    AuditExport:
+      type: object
+      additionalProperties: false
+      required: [format, workspaceId, firstSeq, lastSeq, eventCount, firstPrevHash, lastHash, nextAfterSeq, keyId, algorithm, jws]
+      properties:
+        format: { type: string, enum: [orqix.audit-export.v1] }
+        workspaceId: { $ref: '#/components/schemas/Uuid' }
+        firstSeq: { type: integer, format: int64, description: 0 when the segment is empty }
+        lastSeq: { type: integer, format: int64 }
+        eventCount: { type: integer, minimum: 0 }
+        firstPrevHash: { type: [string, 'null'] }
+        lastHash: { type: [string, 'null'] }
+        nextAfterSeq: { type: [integer, 'null'], format: int64 }
+        keyId: { type: string }
+        algorithm: { type: string, enum: [ES256] }
+        jws: { type: string, description: Compact JWS whose payload is the export document }
+    AuditSigningKeys:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys: { type: array, items: { type: object, description: Public EC P-256 JWK } }
     InboundAccepted:
       type: object
       additionalProperties: false
@@ -14700,6 +14954,7 @@ components:
         - ai.evaluate
         - run.bulk-operate
         - alert.manage
+        - data.reveal
     AgentWriteSubject:
       type: object
       required: [id, displayName]
@@ -17016,8 +17271,12 @@ components:
         - type: object
           required: [tasks, allowedActions]
           properties:
-            input: { type: [object, 'null'], description: 'Null unless the caller is the initiator, a task participant, or holds run.read-data' }
+            input: { type: [object, 'null'], description: 'Null unless the caller is the initiator, a task participant, or holds run.read-data. Answers of questions classified personal or sensitive are masked (six bullet characters); use revealRunData (CG-I05, docs/build/S151).' }
             inputLabels: { type: object, additionalProperties: { type: string } }
+            protectedFields:
+              description: 'CG-I05 (docs/build/S151): request fields whose answers are masked in input; empty when input is null.'
+              type: array
+              items: { type: string }
             output: { type: [object, 'null'] }
             children:
               description: Runs started by steps of this run, oldest first. A child that needs attention is visible here.
@@ -18977,7 +19236,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate, alert.manage] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate, alert.manage, data.reveal] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

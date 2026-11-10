@@ -39,7 +39,12 @@ public enum Permission {
      */
     RUN_BULK_OPERATE("run.bulk-operate"),
     /** Grant-only, workspace-wide (CG-O06, S144): manage alert rules and destinations, read incidents. */
-    ALERT_MANAGE("alert.manage");
+    ALERT_MANAGE("alert.manage"),
+    /**
+     * CG-I05 (S151): grant-only, workspace-wide; reveals masked personal and sensitive request values through the
+     * audited reveal operation. No role carries it; without it nobody sees those values in plain text.
+     */
+    DATA_REVEAL("data.reveal");
 
     private final String value;
 

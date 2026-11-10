@@ -648,7 +648,8 @@ public class TaskService {
         RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
         JsonNode node = release.node(task.nodeId());
         StepForm stepForm = StepForm.of(node);
-        JsonNode input = participant ? run.input() : json.object();
+        // CG-I05 (S151): personal and sensitive answers are masked; only the audited reveal returns them.
+        JsonNode input = participant ? com.orqix.compiler.FieldClassification.mask(run.input(), release.inputSchema()) : json.object();
         if (participant && stepForm.access().containsValue("hidden") && input instanceof ObjectNode full) {
             // S123: a field hidden on this step is left out of the task view.
             ObjectNode shown = full.deepCopy();
@@ -774,14 +775,21 @@ public class TaskService {
         tools.jackson.databind.node.ObjectNode after = json.object();
         for (var change : changes.entrySet()) {
             JsonNode value = change.getValue();
+            boolean hidden = com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), change.getKey());
+            if (hidden && com.orqix.compiler.FieldClassification.isMask(value)) {
+                // CG-I05 (S151): the masked text sent back unchanged keeps the stored answer.
+                continue;
+            }
             if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,
                         "Only the fields this step lets you correct can change, and only to a single value.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/changes/" + change.getKey(), "enum",
                                 "Not a field this step lets you correct")));
             }
-            before.set(change.getKey(), corrected.path(change.getKey()));
-            after.set(change.getKey(), value);
+            // The request timeline never holds a protected answer (CG-I05, S151).
+            before.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK)
+                    : corrected.path(change.getKey()));
+            after.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK) : value);
             corrected.set(change.getKey(), value);
         }
         if (corrected.equals(run.input())) {
@@ -795,7 +803,8 @@ public class TaskService {
                             .map(e -> new ApiException.FieldError("/changes" + e.pointer(), e.code(), e.message())).toList());
         }
         try {
-            engine.correctInput(run.engineProcessInstanceId(), json.write(corrected), caller.subjectId());
+            engine.correctInput(run.engineProcessInstanceId(), runs.engineInput(workspaceId, run.releaseId(), corrected),
+                    caller.subjectId());
         } catch (EngineCommands.EngineConflictException e) {
             throw new ApiException(ProblemCode.RUN_BUSY, "The request is busy; try again shortly.");
         }

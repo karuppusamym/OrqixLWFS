@@ -83,7 +83,9 @@ public class RunArchiver {
         files.put("evidence-pack.pdf", pack.get("pdf"));
 
         Map<String, Object> p = Map.of("ws", ws, "run", run.id());
-        String data = policy.includeRunData() ? ", r.input AS \"input\", r.output AS \"output\"" : "";
+        // CG-I05 (S151): archives mask personal and sensitive answers like every export (V452 orqix_mask_input).
+        String data = policy.includeRunData()
+                ? ", orqix_mask_input(r.input, rel.definition) AS \"input\", r.output AS \"output\"" : "";
         lines(files, counts, "history/runs.jsonl", """
                 SELECT r.id AS "runId", r.reference AS "reference", r.workflow_id AS "workflowId",
                        w.key AS "workflowKey", rel.release_number AS "releaseNumber", r.business_key AS "businessKey",

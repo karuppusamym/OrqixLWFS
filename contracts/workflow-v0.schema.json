@@ -3015,6 +3015,15 @@
     "scalarFormField": {
       "type": "object",
       "properties": {
+        "classification": {
+          "description": "CG-I05 (docs/build/S151): how protected the answer is. public and internal are shown as before. personal and sensitive answers are masked in every screen, API response, export and evidence pack; people with data.reveal can reveal them one request at a time, and every reveal is audited. sensitive answers are also encrypted at rest. Request questions only; personal and sensitive questions cannot be searchable or files.",
+          "enum": [
+            "public",
+            "internal",
+            "personal",
+            "sensitive"
+          ]
+        },
         "incidentEditable": {
           "const": true,
           "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only."

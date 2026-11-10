@@ -202,6 +202,21 @@ orqix:
     allowed-hosts: []
     allowed-private-hosts: []
     plain-http-hosts: []
+  # CG-I05 / CG-I06 (docs/build/S151). Field keys: AES-256 keys (32 random bytes, base64) behind secretRefs; `current`
+  # encrypts new sensitive values, every key ID still listed in refs can read old ones (rotation: add a key, switch
+  # current, keep the old ref until no stored value uses it). Without a key, requests holding sensitive answers are
+  # refused (fail closed). Audit signing: a private EC P-256 JWK (with kid) behind a secretRef; without it signed
+  # audit exports are unavailable.
+  protection:
+    field-keys:
+      current: ${ORQIX_FIELD_KEY_ID:}
+      refs: {}
+    audit-signing:
+      key-ref: ${ORQIX_AUDIT_SIGNING_KEY_REF:}
+      dev-ephemeral: false
+    audit-chain:
+      scheduled: ${ORQIX_AUDIT_CHAIN_CHECK:true}
+      interval: ${ORQIX_AUDIT_CHAIN_INTERVAL:6h}
   secrets:
     # Plain secretRef names are files here (mounted Kubernetes/OpenShift Secrets), read on every use.
     dir: /var/run/secrets/orqix

@@ -69,6 +69,14 @@ orqix:
   identity:
     bootstrap-platform-admin-groups: orqix-platform-admins
     end-session-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/logout
+  protection:
+    field-keys:
+      # Tests only: a fixed key so sensitive answers can be stored without a mounted secret.
+      dev-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    audit-signing:
+      dev-ephemeral: true
+    audit-chain:
+      scheduled: false
   secrets:
     dir: ${java.io.tmpdir}/orqix-test-secrets
   ai:

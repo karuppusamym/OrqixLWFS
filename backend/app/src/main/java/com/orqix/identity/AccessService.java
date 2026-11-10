@@ -37,6 +37,20 @@ public class AccessService {
             Instant createdAt) {
     }
 
+    /** CG-I01 (S151): a grant on one folder, workflow, decision table or connection. */
+    public record ResourceGrantRow(UUID id, String resourceType, String resourceId, String resourceName,
+            String permission, String principalType, String principalValue, Instant createdAt) {
+    }
+
+    /** Permissions each resource type allows (V450 check). */
+    public static final Map<String, List<String>> RESOURCE_PERMISSIONS = Map.of(
+            "folder", List.of("workflow.read", "workflow.edit", "workflow.publish", "workflow.start", "run.read",
+                    "run.operate"),
+            "workflow", List.of("workflow.read", "workflow.edit", "workflow.publish", "workflow.start", "run.read",
+                    "run.operate"),
+            "decision", List.of("workflow.read", "workflow.edit"),
+            "connection", List.of("connection.read", "connection.manage"));
+
     private final JdbcClient jdbc;
     private final PolicyService policy;
     private final GroupDirectory groups;
@@ -126,20 +140,21 @@ public class AccessService {
             PrincipalRef principal) {
         requireManager(caller, workspaceId, "createPermissionGrant", true);
         validatePrincipal(principal);
-        if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission)
+        if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission) && !"data.reveal".equals(permission)
                 && !"message.send".equals(permission) && !"document.browse".equals(permission) && !"job.work".equals(permission) && !"audit.read".equals(permission)
                 && !"workflow.approve-promotion".equals(permission) && !"agent.approve-write-tool".equals(permission)
                 && !"connector.manage".equals(permission) && !"connector.approve".equals(permission)
                 && !"ai.approve-skill".equals(permission) && !"ai.evaluate".equals(permission)
                 && !"run.bulk-operate".equals(permission) && !"alert.manage".equals(permission)) {
-            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate and alert.manage can be granted.");
+            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool, connector.manage, connector.approve, ai.approve-skill, ai.evaluate, run.bulk-operate, alert.manage and data.reveal can be granted.");
         }
         if (("connection.manage".equals(permission) || "message.send".equals(permission) || "document.browse".equals(permission)
                 || "job.work".equals(permission) || "audit.read".equals(permission)
                 || "workflow.approve-promotion".equals(permission) || "agent.approve-write-tool".equals(permission)
                 || "connector.manage".equals(permission) || "connector.approve".equals(permission)
                 || "ai.approve-skill".equals(permission) || "ai.evaluate".equals(permission)
-                || "run.bulk-operate".equals(permission) || "alert.manage".equals(permission))
+                || "run.bulk-operate".equals(permission) || "alert.manage".equals(permission)
+                || "data.reveal".equals(permission))
                 && workflowId != null) {
             throw invalid("/workflowId", "type", permission + " is workspace-wide.");
         }
@@ -186,6 +201,102 @@ public class AccessService {
         metadata.put("principalValue", grant.principalValue());
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
                 "access.grant.deleted", "grant", grantId.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+    }
+
+    // ---------------------------------------------------------------- CG-I01 resource grants (S151)
+
+    @Transactional(readOnly = true)
+    public List<ResourceGrantRow> resourceGrants(UUID workspaceId, String resourceType, String resourceId) {
+        return jdbc.sql("""
+                SELECT g.id, g.resource_type, g.resource_id, g.permission, g.principal_type, g.principal_value,
+                       g.created_at,
+                       CASE g.resource_type
+                         WHEN 'folder' THEN (SELECT f.name FROM workflow_folder f
+                                             WHERE f.workspace_id = g.workspace_id AND f.id::text = g.resource_id)
+                         WHEN 'workflow' THEN (SELECT w.name FROM workflow w
+                                               WHERE w.workspace_id = g.workspace_id AND w.id::text = g.resource_id)
+                         WHEN 'decision' THEN (SELECT d.name FROM decision_asset d
+                                               WHERE d.workspace_id = g.workspace_id AND d.key = g.resource_id)
+                         ELSE g.resource_id END AS resource_name
+                FROM resource_grant g
+                WHERE g.workspace_id = :ws
+                  AND (CAST(:type AS text) IS NULL OR g.resource_type = :type)
+                  AND (CAST(:rid AS text) IS NULL OR g.resource_id = :rid)
+                ORDER BY g.created_at, g.id
+                """)
+                .param("ws", workspaceId).param("type", resourceType).param("rid", resourceId)
+                .query((rs, n) -> new ResourceGrantRow(Sql.uuid(rs, "id"), rs.getString("resource_type"),
+                        rs.getString("resource_id"), rs.getString("resource_name"), rs.getString("permission"),
+                        rs.getString("principal_type"), rs.getString("principal_value"),
+                        Sql.instant(rs, "created_at")))
+                .list();
+    }
+
+    /**
+     * Grants one permission on one resource. Only adds access to that resource: it never changes workspace-wide
+     * permissions (S151 security rule).
+     */
+    @Transactional
+    public ResourceGrantRow createResourceGrant(Caller caller, UUID workspaceId, String resourceType,
+            String resourceId, String permission, PrincipalRef principal) {
+        requireManager(caller, workspaceId, "createResourceGrant", true);
+        validatePrincipal(principal);
+        List<String> allowed = resourceType == null ? null : RESOURCE_PERMISSIONS.get(resourceType);
+        if (allowed == null) {
+            throw invalid("/resourceType", "enum", "Use folder, workflow, decision or connection.");
+        }
+        if (permission == null || !allowed.contains(permission)) {
+            throw invalid("/permission", "enum", "A " + resourceType + " grant can give " + String.join(", ", allowed)
+                    + ".");
+        }
+        if (resourceId == null || !resourceExists(workspaceId, resourceType, resourceId)) {
+            throw invalid("/resourceId", "enum", "Unknown " + resourceType + ".");
+        }
+        UUID id = Ids.newId();
+        int inserted = jdbc.sql("""
+                INSERT INTO resource_grant (id, workspace_id, resource_type, resource_id, permission, principal_type,
+                                            principal_value, created_by, created_at)
+                VALUES (:id, :ws, :type, :rid, :permission, :ptype, :pvalue, :by, :at)
+                ON CONFLICT DO NOTHING
+                """)
+                .param("id", id).param("ws", workspaceId).param("type", resourceType).param("rid", resourceId)
+                .param("permission", permission).param("ptype", principal.type()).param("pvalue", principal.value())
+                .param("by", caller.subjectId()).param("at", Sql.ts(clock.instant())).update();
+        if (inserted != 1) {
+            throw new ApiException(ProblemCode.DUPLICATE_KEY, "This grant already exists.");
+        }
+        policy.evictAll();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "access.resource-grant.created", "resourceGrant", id.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("resourceType", resourceType, "resourceId", resourceId, "permission", permission,
+                        "principalType", principal.type(), "principalValue", principal.value())));
+        return resourceGrants(workspaceId, null, null).stream().filter(g -> g.id().equals(id)).findFirst()
+                .orElseThrow();
+    }
+
+    @Transactional
+    public void deleteResourceGrant(Caller caller, UUID workspaceId, UUID grantId) {
+        requireManager(caller, workspaceId, "deleteResourceGrant", true);
+        ResourceGrantRow grant = resourceGrants(workspaceId, null, null).stream().filter(g -> g.id().equals(grantId))
+                .findFirst().orElseThrow(ApiException::notFound);
+        jdbc.sql("DELETE FROM resource_grant WHERE id = :id AND workspace_id = :ws")
+                .param("id", grantId).param("ws", workspaceId).update();
+        policy.evictAll();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "access.resource-grant.deleted", "resourceGrant", grantId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("resourceType", grant.resourceType(), "resourceId", grant.resourceId(),
+                        "permission", grant.permission(), "principalType", grant.principalType(),
+                        "principalValue", grant.principalValue())));
+    }
+
+    private boolean resourceExists(UUID workspaceId, String type, String id) {
+        String sql = switch (type) {
+            case "folder" -> "SELECT count(*) FROM workflow_folder WHERE workspace_id = :ws AND id::text = :id";
+            case "workflow" -> "SELECT count(*) FROM workflow WHERE workspace_id = :ws AND id::text = :id";
+            case "decision" -> "SELECT count(*) FROM decision_asset WHERE workspace_id = :ws AND key = :id";
+            default -> "SELECT count(*) FROM connection_definition WHERE workspace_id = :ws AND key = :id";
+        };
+        return jdbc.sql(sql).param("ws", workspaceId).param("id", id).query(Integer.class).single() > 0;
     }
 
     /** Creates or replaces a group and its members; {@code expectedRevision} is required when the group exists. */

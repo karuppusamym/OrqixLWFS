@@ -104,9 +104,19 @@ class AdmissionControlTest extends RuntimeTestBase {
 
         // Audit rows of earlier tests (other classes share the database) are not this test's.
         java.sql.Timestamp auditFrom = java.sql.Timestamp.from(clock.instant().minusMillis(1));
-        Response refused = api("rhea.requester").post(Map.of("workflowId", workflow, "input", input(BigDecimal.TEN)),
-                UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING);
-        assertThat(refused.status()).as(refused.toString()).isEqualTo(429);
+        // The window slides: requests of earlier tests can leave it while this test runs, which frees room for a few
+        // more starts. Every admitted start fills the window again, so a refusal must come within a few attempts.
+        Response refused = null;
+        for (int attempt = 0; attempt < 20 && refused == null; attempt++) {
+            Response next = api("rhea.requester").post(Map.of("workflowId", workflow, "input", input(BigDecimal.TEN)),
+                    UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING);
+            if (next.status() == 429) {
+                refused = next;
+            } else {
+                assertThat(next.status()).as(next.toString()).isEqualTo(201);
+            }
+        }
+        assertThat(refused).as("a start above the limit is refused").isNotNull();
         assertThat(refused.code()).isEqualTo("RATE_LIMITED");
         assertThat(Integer.parseInt(refused.header("Retry-After"))).isBetween(1, 60);
 
@@ -145,9 +155,18 @@ class AdmissionControlTest extends RuntimeTestBase {
         Response accepted = api("olga.operator").post(Map.of("name", "payment-received", "correlationKey",
                 "ADM-" + UUID.randomUUID()), UUID.randomUUID().toString(), "/workspaces/{ws}/messages", PURCHASING);
         assertThat(accepted.status()).as(accepted.toString()).isEqualTo(202);
-        Response refused = api("olga.operator").post(Map.of("name", "payment-received", "correlationKey",
-                "ADM-" + UUID.randomUUID()), UUID.randomUUID().toString(), "/workspaces/{ws}/messages", PURCHASING);
-        assertThat(refused.status()).as(refused.toString()).isEqualTo(429);
+        // As for starts: messages of earlier tests can leave the sliding window, so allow a few more to fit.
+        Response refused = null;
+        for (int attempt = 0; attempt < 20 && refused == null; attempt++) {
+            Response next = api("olga.operator").post(Map.of("name", "payment-received", "correlationKey",
+                    "ADM-" + UUID.randomUUID()), UUID.randomUUID().toString(), "/workspaces/{ws}/messages", PURCHASING);
+            if (next.status() == 429) {
+                refused = next;
+            } else {
+                assertThat(next.status()).as(next.toString()).isEqualTo(202);
+            }
+        }
+        assertThat(refused).as("a message above the limit is refused").isNotNull();
         assertThat(refused.code()).isEqualTo("RATE_LIMITED");
         assertThat(refused.header("Retry-After")).isNotBlank();
     }

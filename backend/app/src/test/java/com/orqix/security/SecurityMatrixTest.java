@@ -598,6 +598,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "archiveWorkflow", "restoreWorkflow" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);
+            case "runWorkflowTests" -> Map.of("revision", 1, "suite", Map.of("schemaVersion", "orqix.workflow-tests/v1",
+                    "cases", List.of(Map.of("id", "c1", "name", "Foreign", "input", Map.of("amount", 1), "expect", "Fulfilled"))));
             case "correctRunInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("title", "Corrected"));
             case "publishDraft" -> Map.of("draftRevision", 1);
             case "setActiveRelease" -> Map.of("releaseId", ids.get("releaseId"), "expectedVersion", 1);
@@ -687,6 +689,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     Map.of("bindings", List.of(), "actions", List.of()), "height", 120);
             case "decideUiExtensionVersion" -> Map.of("decision", "approve", "note", "Foreign attempt", "expectedStatus", "pending");
             case "importConnectorPackage" -> Map.of("archive", "UEsDBBQAAAAIAA==");
+            case "testConnectorPackageContract" -> Map.of("archive", "UEsDBBQAAAAIAA==");
             case "decideConnectorPackage" -> Map.of("decision", "approve", "sha256", "0".repeat(64), "note", "Foreign",
                     "expectedRevision", 1);
             case "retireConnectorPackage" -> Map.of("reason", "Foreign attempt", "expectedRevision", 1);

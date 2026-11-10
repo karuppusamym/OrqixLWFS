@@ -32,18 +32,45 @@ public class TestSuiteService {
             this(id, name, input, scenario, expect, null);
         }
     }
-    public record Save(@Min(0) int expectedVersion, @NotNull @Size(max=20) List<@Valid Case> cases) {}
+    /** {@code coverageMinimum} (CG-Q03, S148): least percent per kind the shared cases must cover for publication. */
+    public record Save(@Min(0) int expectedVersion, @NotNull @Size(max=20) List<@Valid Case> cases,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverageMinimum) {
+        public Save(int expectedVersion, List<Case> cases) { this(expectedVersion,cases,null); }
+    }
     public record Run(@Min(1) int revision, @Min(1) int suiteVersion) {}
-    public record Suite(int version, List<Case> cases) {}
+    public record Suite(int version, List<Case> cases, @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverageMinimum) {
+        public Suite(int version, List<Case> cases) { this(version,cases,null); }
+    }
     /** Returned to the designer who ran the suite; {@code failures} are the failed assertions (expected and actual). */
     public record CaseResult(String id, boolean passed, String status,
             @JsonInclude(JsonInclude.Include.NON_EMPTY) List<JsonNode> failures) {}
     /** What is kept of a run: pass or fail per case, never values. */
     record StoredResult(String id, boolean passed, String status) {}
-    public record Report(int suiteVersion, int revision, boolean passed, List<CaseResult> results) {}
+    /**
+     * {@code passed}: every case passed and the coverage reaches the suite's minimum (CG-Q03). {@code coverage} is what
+     * the cases cover together (null when no case ran); {@code coverageShortfalls} the kinds below the minimum.
+     */
+    public record Report(int suiteVersion, int revision, boolean passed, List<CaseResult> results,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean casesPassed,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverage,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverageMinimum,
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<java.util.Map<String,Object>> coverageShortfalls) {
+        public Report(int suiteVersion, int revision, boolean passed, List<CaseResult> results) {
+            this(suiteVersion,revision,passed,results,null,null,null,null);
+        }
+    }
     /** "N of M shared tests pass" for everyone who can read the workflow (counts only, no samples). */
-    public record Summary(int suiteVersion, int cases, @JsonInclude(JsonInclude.Include.ALWAYS) LastRun lastRun) {}
-    public record LastRun(int revision, boolean passed, int passedCases, int totalCases, java.time.Instant testedAt) {}
+    public record Summary(int suiteVersion, int cases, @JsonInclude(JsonInclude.Include.ALWAYS) LastRun lastRun,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverageMinimum) {
+        public Summary(int suiteVersion, int cases, LastRun lastRun) { this(suiteVersion,cases,lastRun,null); }
+    }
+    /** {@code coverage}: counts per kind ({covered, total}) of the run, when it recorded them (S148). */
+    public record LastRun(int revision, boolean passed, int passedCases, int totalCases, java.time.Instant testedAt,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode coverage) {
+        public LastRun(int revision, boolean passed, int passedCases, int totalCases, java.time.Instant testedAt) {
+            this(revision,passed,passedCases,totalCases,testedAt,null);
+        }
+    }
     private final JdbcClient jdbc;
     private final Json json;
     private final WorkflowService workflows;
@@ -72,25 +99,25 @@ public class TestSuiteService {
         policy.require(visible.access(),Permission.WORKFLOW_READ,"getWorkflowTestSummary",false);
         Suite suite=latest(ws,wf);
         LastRun last=suite.version()==0?null:jdbc.sql("""
-                SELECT draft_revision, passed, tested_at, jsonb_array_length(results) AS total,
+                SELECT draft_revision, passed, tested_at, coverage::text AS coverage, jsonb_array_length(results) AS total,
                        (SELECT count(*) FROM jsonb_array_elements(results) e WHERE (e->>'passed')::boolean) AS ok
                 FROM workflow_test_result WHERE workspace_id=:ws AND workflow_id=:wf AND suite_version=:v
                 ORDER BY tested_at DESC LIMIT 1""")
             .param("ws",ws).param("wf",wf).param("v",suite.version())
             .query((rs,n)->new LastRun(rs.getInt("draft_revision"),rs.getBoolean("passed"),rs.getInt("ok"),rs.getInt("total"),
-                    rs.getTimestamp("tested_at").toInstant())).optional().orElse(null);
-        return new Summary(suite.version(),suite.cases().size(),last);
+                    rs.getTimestamp("tested_at").toInstant(),rs.getString("coverage")==null?null:json.parse(rs.getString("coverage")))).optional().orElse(null);
+        return new Summary(suite.version(),suite.cases().size(),last,suite.coverageMinimum());
     }
     private void requireDesigner(Caller caller, UUID ws, UUID wf, String action) {
         var visible=workflows.visible(caller,ws,wf,action);
         policy.require(visible.access(),Permission.WORKFLOW_EDIT,action,!"getWorkflowTestSuite".equals(action));
     }
     private Suite latest(UUID ws, UUID wf) {
-        return jdbc.sql("SELECT version,cases::text FROM workflow_test_suite WHERE workspace_id=:ws AND workflow_id=:wf ORDER BY version DESC LIMIT 1")
+        return jdbc.sql("SELECT version,cases::text,coverage_minimum::text FROM workflow_test_suite WHERE workspace_id=:ws AND workflow_id=:wf ORDER BY version DESC LIMIT 1")
             .param("ws",ws).param("wf",wf).query((rs,n)-> {
                 var cases=new ArrayList<Case>();
                 for (JsonNode c:json.parse(rs.getString(2))) cases.add(new Case(c.path("id").asString(),c.path("name").asString(),c.path("input"),c.hasNonNull("scenario")?c.path("scenario"):null,c.path("expect").asString(),c.hasNonNull("assertions")?c.path("assertions"):null));
-                return new Suite(rs.getInt(1),List.copyOf(cases));
+                return new Suite(rs.getInt(1),List.copyOf(cases),rs.getString(3)==null?null:json.parse(rs.getString(3)));
             }).optional().orElse(new Suite(0,List.of()));
     }
     @Transactional(readOnly=true)
@@ -120,11 +147,13 @@ public class TestSuiteService {
                 }
             }
         }
-        jdbc.sql("INSERT INTO workflow_test_suite(workspace_id,workflow_id,version,cases,created_by) VALUES(:ws,:wf,:v,CAST(:cases AS jsonb),:by)")
-            .param("ws",ws).param("wf",wf).param("v",old.version()+1).param("cases",text).param("by",caller.subjectId()).update();
+        JsonNode minimum=checkMinimum(request.coverageMinimum(),"/coverageMinimum");
+        jdbc.sql("INSERT INTO workflow_test_suite(workspace_id,workflow_id,version,cases,created_by,coverage_minimum) VALUES(:ws,:wf,:v,CAST(:cases AS jsonb),:by,CAST(:minimum AS jsonb))")
+            .param("ws",ws).param("wf",wf).param("v",old.version()+1).param("cases",text).param("by",caller.subjectId())
+            .param("minimum",minimum==null?null:json.write(minimum)).update();
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"workflow.tests.saved",
             "workflow",wf.toString(),AuditWriter.Outcome.SUCCESS,java.util.Map.of("suiteVersion",old.version()+1,"cases",request.cases().size())));
-        return new Suite(old.version()+1,List.copyOf(request.cases()));
+        return new Suite(old.version()+1,List.copyOf(request.cases()),minimum);
     }
     @Transactional
     public Report run(Caller caller, UUID ws, UUID wf, Run request) {
@@ -145,6 +174,8 @@ public class TestSuiteService {
         // One dry run for the rate limit (STU03); each case is the same pure evaluation as simulateWorkflow.
         limiter.check(caller.subjectId());
         SimulationService.Source source=null;
+        List<SimulationService.CaseOutcome> ran=new ArrayList<>();
+        List<JsonNode> inputs=new ArrayList<>();
         for(Case c:suite.cases()) {
             try {
                 if(source==null) source=simulations.source(visible,ws,wf,request.revision(),false);
@@ -153,6 +184,7 @@ public class TestSuiteService {
                 var assertions=c.assertions()==null?json.object():(tools.jackson.databind.node.ObjectNode)c.assertions().deepCopy();
                 assertions.put("outcome",c.expect());
                 SimulationService.CaseOutcome outcome=simulations.outcome(c.id(),source,c.input(),c.scenario(),assertions);
+                ran.add(outcome); inputs.add(c.input());
                 List<JsonNode> failures=new ArrayList<>();
                 if(outcome.assertions()!=null) outcome.assertions().path("results").forEach(r -> { if(!r.path("passed").asBoolean()) failures.add(r); });
                 results.add(new CaseResult(c.id(),outcome.passed(),outcome.status(),List.copyOf(failures)));
@@ -161,13 +193,29 @@ public class TestSuiteService {
                 results.add(new CaseResult(c.id(),false,"invalid",List.of()));
             }
         }
-        boolean passed=!results.isEmpty() && results.stream().allMatch(CaseResult::passed);
+        boolean casesPassed=!results.isEmpty() && results.stream().allMatch(CaseResult::passed);
+        // CG-Q03 (S148): coverage of the cases that ran; a suite with a minimum passes only when it is reached.
+        JsonNode coverage=source==null?null:simulations.coverage(source,inputs,ran);
+        var shortfalls=SuiteCoverage.shortfalls(coverage,suite.coverageMinimum());
+        boolean passed=casesPassed && shortfalls.isEmpty();
         List<StoredResult> stored=results.stream().map(r -> new StoredResult(r.id(),r.passed(),r.status())).toList();
-        jdbc.sql("INSERT INTO workflow_test_result(workspace_id,workflow_id,suite_version,draft_revision,binding_hash,passed,results,tested_by) VALUES(:ws,:wf,:v,:rev,:hash,:passed,CAST(:results AS jsonb),:by)")
-            .param("ws",ws).param("wf",wf).param("v",suite.version()).param("rev",request.revision()).param("hash",bindingHash).param("passed",passed).param("results",json.write(stored)).param("by",caller.subjectId()).update();
+        jdbc.sql("INSERT INTO workflow_test_result(workspace_id,workflow_id,suite_version,draft_revision,binding_hash,passed,results,tested_by,coverage) VALUES(:ws,:wf,:v,:rev,:hash,:passed,CAST(:results AS jsonb),:by,CAST(:coverage AS jsonb))")
+            .param("ws",ws).param("wf",wf).param("v",suite.version()).param("rev",request.revision()).param("hash",bindingHash).param("passed",passed).param("results",json.write(stored)).param("by",caller.subjectId())
+            .param("coverage",coverage==null?null:json.write(SuiteCoverage.counts(coverage))).update();
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"workflow.tests.run",
             "workflow",wf.toString(),AuditWriter.Outcome.SUCCESS,java.util.Map.of("suiteVersion",suite.version(),"revision",request.revision(),"cases",results.size(),"passed",passed)));
-        return new Report(suite.version(),request.revision(),passed,List.copyOf(results));
+        return new Report(suite.version(),request.revision(),passed,List.copyOf(results),casesPassed,coverage,
+            suite.coverageMinimum(),suite.coverageMinimum()==null?null:List.copyOf(shortfalls));
+    }
+    /** CG-Q03: a coverage minimum is an object of 1 to 4 kinds, each a whole percent from 0 to 100; null when absent. */
+    static JsonNode checkMinimum(JsonNode minimum, String at) {
+        if(minimum==null || minimum.isNull()) return null;
+        boolean ok=minimum.isObject() && !minimum.isEmpty();
+        if(ok) for(var e:minimum.properties())
+            ok&=SuiteCoverage.KINDS.contains(e.getKey()) && e.getValue().isIntegralNumber() && e.getValue().asInt()>=0 && e.getValue().asInt()<=100;
+        if(!ok) throw new ApiException(ProblemCode.VALIDATION_FAILED,"The coverage minimum is not valid.")
+            .withFieldErrors(List.of(new ApiException.FieldError(at,"type","Give whole percentages from 0 to 100 for steps, routes, rules or formRules.")));
+        return minimum;
     }
     /** Caller has already passed publication authorization; no sample or trace is returned to a publisher. */
     void requirePublish(UUID ws, UUID wf, int revision, CompiledWorkflow compiled) {
@@ -175,11 +223,25 @@ public class TestSuiteService {
         if(suite.cases().isEmpty()) return;
         boolean passed=jdbc.sql("SELECT passed AND binding_hash=:hash FROM workflow_test_result WHERE workspace_id=:ws AND workflow_id=:wf AND suite_version=:v AND draft_revision=:rev ORDER BY tested_at DESC LIMIT 1")
             .param("ws",ws).param("wf",wf).param("v",suite.version()).param("rev",revision).param("hash",bindingHash(compiled,suite)).query(Boolean.class).optional().orElse(false);
-        if(!passed) throw new ApiException(ProblemCode.WORKFLOW_INVALID,"Run and pass the current shared tests against this exact draft before publishing.").with("testSuiteVersion",suite.version()).with("draftRevision",revision);
+        if(!passed) {
+            // S148: name the coverage shortfall when that is what blocks.
+            String counts=jdbc.sql("SELECT coverage::text FROM workflow_test_result WHERE workspace_id=:ws AND workflow_id=:wf AND suite_version=:v AND draft_revision=:rev AND binding_hash=:hash ORDER BY tested_at DESC LIMIT 1")
+                .param("ws",ws).param("wf",wf).param("v",suite.version()).param("rev",revision).param("hash",bindingHash(compiled,suite)).query(String.class).optional().orElse(null);
+            var shortfalls=counts==null?List.<java.util.Map<String,Object>>of():SuiteCoverage.shortfalls(json.parse(counts),suite.coverageMinimum());
+            if(!shortfalls.isEmpty()) throw new ApiException(ProblemCode.WORKFLOW_INVALID,"The shared tests do not cover enough of this workflow to publish it: "
+                    +shortfalls.stream().map(f->f.get("kind")+" "+f.get("percent")+"% (at least "+f.get("minimum")+"%)").collect(java.util.stream.Collectors.joining(", "))+".")
+                .with("testSuiteVersion",suite.version()).with("draftRevision",revision).with("coverageShortfalls",shortfalls);
+            throw new ApiException(ProblemCode.WORKFLOW_INVALID,"Run and pass the current shared tests against this exact draft before publishing.").with("testSuiteVersion",suite.version()).with("draftRevision",revision);
+        }
     }
     private String bindingHash(CompiledWorkflow compiled, Suite suite) {
         return Json.canonicalSha256(json.write(java.util.Map.of("compilerVersion",compiled.compilerVersion(),
             "semanticHash",compiled.semanticHash(),"connections",compiled.connections(),"children",compiled.children(),
-            "suiteHash",Json.canonicalSha256(json.write(suite.cases())))));
+            "suiteHash",suiteHash(suite))));
+    }
+    /** Unchanged for suites without a coverage minimum, so earlier recorded runs stay valid. */
+    private String suiteHash(Suite suite) {
+        if(suite.coverageMinimum()==null) return Json.canonicalSha256(json.write(suite.cases()));
+        return Json.canonicalSha256(json.write(java.util.Map.of("cases",suite.cases(),"coverageMinimum",suite.coverageMinimum())));
     }
 }

@@ -67,6 +67,8 @@ tags:
   - name: AlertsAndRetention
   - name: Platform
     description: "Platform administration of the deployment (docs/build/S150): admission limits per workspace, for platform administrators only."
+  - name: TestsAndCli
+    description: "Test as code, test coverage, connector package contract tests and the orqix command line tool (CG-Q01, CG-Q03, CG-Q04, CG-K01; docs/build/S148)."
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -3521,6 +3523,75 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ---- TestsAndCli (CG-Q01, CG-Q03, CG-Q04, docs/build/S148): test runs with JUnit XML, package contract tests ----
+  /workspaces/{workspaceId}/workflows/{workflowId}/test-runs:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [TestsAndCli]
+      operationId: runWorkflowTests
+      summary: Run a test suite (an orqix.workflow-tests/v1 file or the shared suite) against a draft or the active release
+      description: >
+        Every case is a dry run as in simulateWorkflowCases; the result lists each case, the coverage of the cases together
+        (steps, routes, decision rules and form rules) and the same result as JUnit XML for CI. With a suite (the file
+        format of contracts/workflow-test-suite-v1.schema.json) it needs workflow.read and stores nothing. Without one it
+        runs the shared suite and needs workflow.edit; against a draft that run is recorded like runWorkflowTestSuite, so
+        it satisfies the publication gate (recorded true). passed is false when a case fails or the coverage is below the
+        suite's coverageMinimum.
+      x-orqix-permission: workflow.read | workflow.edit
+      x-orqix-audit: workflow.simulated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunWorkflowTests' }
+      responses:
+        '200':
+          description: Results, coverage and JUnit XML
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowTestRun' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/connector-packages/contract-tests:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [TestsAndCli]
+      operationId: testConnectorPackageContract
+      summary: Check a package archive as on import and replay its fixtures without importing it
+      description: >
+        For CI (orqix package test): the archive is read and checked like importConnectorPackage, and every fixture is
+        replayed through the runtime's response handling. Nothing is imported, stored or called, and the archive does not
+        need a trusted signature (signatureStatus reports it). Problems other than fixtures are listed under problems
+        (at most 50). The live smoke run against a sandbox binding is testConnection, which runs read-only operations only.
+      x-orqix-permission: connector.manage
+      x-orqix-audit: connector.package-tested
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PackageContractTestRequest' }
+      responses:
+        '200':
+          description: Fixture results, problems and JUnit XML
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackageContractTestReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/simulate:
     parameters:
@@ -16495,6 +16566,8 @@ components:
             passedCases: { type: integer, minimum: 0 }
             totalCases: { type: integer, minimum: 0 }
             testedAt: { type: string, format: date-time }
+            coverage: { $ref: '#/components/schemas/TestCoverageCounts' }
+        coverageMinimum: { $ref: '#/components/schemas/TestCoverageMinimum' }
     SimulationAssertions:
       type: object
       additionalProperties: false
@@ -16622,6 +16695,7 @@ components:
                     pointer: { type: string }
                     code: { type: string }
                     message: { type: string }
+        coverage: { $ref: '#/components/schemas/TestCoverage' }
     WorkflowTestSuite:
       type: object
       additionalProperties: false
@@ -16629,6 +16703,7 @@ components:
       properties:
         version: { type: integer, minimum: 0 }
         cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/WorkflowTestCase' } }
+        coverageMinimum: { $ref: '#/components/schemas/TestCoverageMinimum' }
     SaveWorkflowTestSuite:
       type: object
       additionalProperties: false
@@ -16636,6 +16711,7 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 0 }
         cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/WorkflowTestCase' } }
+        coverageMinimum: { $ref: '#/components/schemas/TestCoverageMinimum' }
     RunWorkflowTestSuite:
       type: object
       additionalProperties: false
@@ -16666,6 +16742,10 @@ components:
                 type: array
                 description: Failed assertions with expected and actual (returned to the designer, never stored)
                 items: { $ref: '#/components/schemas/SimulationAssertionResult' }
+        casesPassed: { type: boolean, description: 'Every case passed (passed also needs the coverage minimum)' }
+        coverage: { $ref: '#/components/schemas/TestCoverage' }
+        coverageMinimum: { $ref: '#/components/schemas/TestCoverageMinimum' }
+        coverageShortfalls: { type: array, items: { $ref: '#/components/schemas/TestCoverageShortfall' } }
     SimulateRequest:
       type: object
       additionalProperties: false
@@ -19065,6 +19145,199 @@ components:
         status: { type: string, enum: [started, resumed, buffered, duplicate] }
         runId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
     # ---- end ConnectorPackages schemas ----
+    # ---- TestsAndCli (CG-Q01, CG-Q03, CG-Q04, docs/build/S148) ----
+    TestCoverageKind:
+      type: object
+      additionalProperties: false
+      required: [covered, total, percent, notCovered]
+      properties:
+        covered: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+        percent: { type: integer, minimum: 0, maximum: 100, description: 'Rounded down; 100 when there is nothing to cover' }
+        notCovered:
+          type: array
+          maxItems: 100
+          description: "What no case covered: steps {id, label}; routes {transitionId, from, to, description}; decision rules {decision, row, condition}; form rules {rule, field or section, label, missing (holds or fails)}."
+          items: { type: object, additionalProperties: true }
+    TestCoverage:
+      type: [object, 'null']
+      additionalProperties: false
+      description: "CG-Q03: what the cases that ran cover together. A step, route or decision rule is covered when at least one case reached it; a form rule (visibleWhen or requiredWhen) when the cases hold both sides. Null when no case ran."
+      required: [cases, steps, routes, rules, formRules, summary]
+      properties:
+        cases: { type: integer, minimum: 1 }
+        steps: { $ref: '#/components/schemas/TestCoverageKind' }
+        routes: { $ref: '#/components/schemas/TestCoverageKind' }
+        rules: { $ref: '#/components/schemas/TestCoverageKind' }
+        formRules: { $ref: '#/components/schemas/TestCoverageKind' }
+        summary: { type: string }
+    TestCoverageCount:
+      type: object
+      additionalProperties: false
+      required: [covered, total]
+      properties:
+        covered: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+    TestCoverageCounts:
+      type: object
+      additionalProperties: false
+      description: Counts kept with a recorded run (never sample values).
+      required: [steps, routes, rules, formRules]
+      properties:
+        steps: { $ref: '#/components/schemas/TestCoverageCount' }
+        routes: { $ref: '#/components/schemas/TestCoverageCount' }
+        rules: { $ref: '#/components/schemas/TestCoverageCount' }
+        formRules: { $ref: '#/components/schemas/TestCoverageCount' }
+    TestCoverageMinimum:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Least whole percent per kind the cases must cover together; publication of a workflow whose shared suite has one needs a recorded run that reaches it.
+      properties:
+        steps: { type: integer, minimum: 0, maximum: 100 }
+        routes: { type: integer, minimum: 0, maximum: 100 }
+        rules: { type: integer, minimum: 0, maximum: 100 }
+        formRules: { type: integer, minimum: 0, maximum: 100 }
+    TestCoverageShortfall:
+      type: object
+      additionalProperties: false
+      required: [kind, percent, minimum]
+      properties:
+        kind: { type: string, enum: [steps, routes, rules, formRules] }
+        percent: { type: integer, minimum: 0, maximum: 100 }
+        minimum: { type: integer, minimum: 0, maximum: 100 }
+    WorkflowTestFileCase:
+      type: object
+      additionalProperties: false
+      required: [id, name, input, expect]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        input: { type: object, additionalProperties: true }
+        scenario: { $ref: '#/components/schemas/SimulationScenario' }
+        expect: { type: string, minLength: 1, maxLength: 200, description: 'Expected business outcome, or __needsAttention__' }
+        assertions: { $ref: '#/components/schemas/SimulationAssertions' }
+        studio: { type: object, additionalProperties: true, description: "The Test tab's editing state; ignored by the server" }
+    WorkflowTestFile:
+      type: object
+      additionalProperties: false
+      description: "CG-Q01: the test file format (contracts/workflow-test-suite-v1.schema.json is the normative schema) shared by the Test tab, the shared suite and CI."
+      required: [schemaVersion, cases]
+      properties:
+        schemaVersion: { type: string, enum: ['orqix.workflow-tests/v1'] }
+        workflowKey: { $ref: '#/components/schemas/Key' }
+        description: { type: string, maxLength: 1000 }
+        coverageMinimum: { $ref: '#/components/schemas/TestCoverageMinimum' }
+        cases: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/WorkflowTestFileCase' } }
+    RunWorkflowTests:
+      type: object
+      additionalProperties: false
+      properties:
+        suite: { $ref: '#/components/schemas/WorkflowTestFile' }
+        revision: { type: integer, minimum: 1, description: 'Draft revision; the current draft when omitted' }
+        useActiveRelease: { type: boolean, description: 'Test the active release instead of a draft (never recorded)' }
+    WorkflowTestRun:
+      type: object
+      additionalProperties: false
+      required: [workflowId, workflowKey, source, suite, suiteVersion, recorded, passed, casesPassed, total, passedCount,
+        failedCount, invalidCount, results, coverage, coverageMinimum, coverageShortfalls, junitXml]
+      properties:
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        workflowKey: { type: string }
+        source:
+          type: object
+          additionalProperties: false
+          required: [revision, releaseNumber]
+          properties:
+            revision: { type: [integer, 'null'] }
+            releaseNumber: { type: [integer, 'null'] }
+        suite: { type: string, enum: [file, shared] }
+        suiteVersion: { type: [integer, 'null'] }
+        recorded: { type: boolean, description: 'The run was kept for the publication gate (shared suite on a draft)' }
+        passed: { type: boolean }
+        casesPassed: { type: boolean }
+        total: { type: integer, minimum: 0 }
+        passedCount: { type: integer, minimum: 0 }
+        failedCount: { type: integer, minimum: 0 }
+        invalidCount: { type: integer, minimum: 0 }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, status, passed, failures]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              status: { type: string, enum: [finished, needsAttention, invalid] }
+              passed: { type: boolean }
+              outcome:
+                type: object
+                properties:
+                  status: { type: string }
+                  businessOutcome: { type: [string, 'null'] }
+                  outcomeKind: { type: [string, 'null'] }
+                  summary: { type: string }
+              failures: { type: array, items: { $ref: '#/components/schemas/SimulationAssertionResult' } }
+              problem: { type: string }
+              fieldErrors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    pointer: { type: string }
+                    code: { type: string }
+                    message: { type: string }
+        coverage: { $ref: '#/components/schemas/TestCoverage' }
+        coverageMinimum:
+          oneOf: [{ $ref: '#/components/schemas/TestCoverageMinimum' }, { type: 'null' }]
+        coverageShortfalls: { type: array, items: { $ref: '#/components/schemas/TestCoverageShortfall' } }
+        junitXml: { type: string, description: 'The same result in the JUnit XML format (one testsuite; a case per test case, plus Coverage minimum when the suite has one)' }
+    PackageContractTestRequest:
+      type: object
+      additionalProperties: false
+      required: [archive]
+      properties:
+        archive: { type: string, maxLength: 7000000, description: 'The .orqpkg file in base64 (at most 5 MiB packed)' }
+    PackageContractTestReport:
+      type: object
+      additionalProperties: false
+      required: [packageId, version, sha256, signatureStatus, passed, fixtures, fixturesPassed, results, problems, junitXml]
+      properties:
+        packageId: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        sha256: { type: string }
+        signatureStatus: { type: string, enum: [verified, unsigned, untrusted_key, invalid] }
+        passed: { type: boolean, description: 'No problem and every fixture passed' }
+        fixtures: { type: integer, minimum: 0 }
+        fixturesPassed: { type: integer, minimum: 0 }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, connection, operation, passed, outcome, code, message]
+            properties:
+              path: { type: string }
+              connection: { type: [string, 'null'] }
+              operation: { type: [string, 'null'] }
+              passed: { type: boolean }
+              outcome: { type: [string, 'null'], enum: [succeeded, rejected, retryable, unknown, null] }
+              code: { type: [string, 'null'] }
+              message: { type: [string, 'null'] }
+        problems:
+          type: array
+          maxItems: 51
+          items:
+            type: object
+            additionalProperties: false
+            required: [file, pointer, code, message]
+            properties:
+              file: { type: string }
+              pointer: { type: string }
+              code: { type: string }
+              message: { type: string }
+        junitXml: { type: string }
     RoleBinding:
       type: object
       required: [id, role, principal, source, createdAt]

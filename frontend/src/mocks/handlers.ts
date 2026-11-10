@@ -25,6 +25,7 @@ import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
 import { dmnRefusals, exportDmn, readDmn } from './decisionDmn'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
+import { shortfalls as coverageShortfalls, suiteCoverage, type CoverageMinimum, type CoverageRun } from './suiteCoverage'
 import {
   GROUPS,
   TEMPLATES,
@@ -824,12 +825,14 @@ export function createHandlers(): HttpHandler[] {
     http.put(`${B}/workspaces/:ws/workflows/:id/test-suite`, async ({ params, request }) => {
       const g = guard(params.ws, 'workflow.edit'); if (!g.ok) return g.res
       const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
-      const input = await body<{ expectedVersion: number; cases: SharedCase[] }>(request)
+      const input = await body<{ expectedVersion: number; cases: SharedCase[]; coverageMinimum?: CoverageMinimum }>(request)
       const current = wf.testSuite ?? { version: 0, cases: [] }
       if (input.expectedVersion !== current.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before saving.')
       if (!Array.isArray(input.cases) || input.cases.length > 20 || input.cases.some(c => !c.expect || c.scenario?.simulateChildren)) return problem(422, 'VALIDATION_FAILED', 'Use at most 20 tests with explicit expectations and child outcomes.')
       if (new TextEncoder().encode(JSON.stringify(input.cases)).length > 65536) return problem(413, 'PAYLOAD_TOO_LARGE', 'Shared tests exceed 64 KiB.')
-      const suite = { version: current.version + 1, cases: structuredClone(input.cases) }
+      const minimum = input.coverageMinimum
+      if (minimum !== undefined && (typeof minimum !== 'object' || minimum === null || Object.keys(minimum).length === 0 || Object.entries(minimum).some(([k, v]) => !['steps', 'routes', 'rules', 'formRules'].includes(k) || !Number.isInteger(v) || (v as number) < 0 || (v as number) > 100))) return problem(422, 'VALIDATION_FAILED', 'The coverage minimum is not valid.', { fieldErrors: [{ pointer: '/coverageMinimum', code: 'type', message: 'Give whole percentages from 0 to 100 for steps, routes, rules or formRules.' }] })
+      const suite = { version: current.version + 1, cases: structuredClone(input.cases), ...(minimum ? { coverageMinimum: structuredClone(minimum) } : {}) }
       wf.testSuite = suite
       return HttpResponse.json(suite)
     }),
@@ -841,17 +844,25 @@ export function createHandlers(): HttpHandler[] {
       if (!suite || suite.version !== input.suiteVersion) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before testing.')
       if (!wf.drafts.some(d => d.revision === input.revision)) return notFound()
       const results = []
+      const runs: CoverageRun[] = []
       for (const c of suite.cases) {
         const assertions = { ...(c.assertions ?? {}), outcome: c.expect }
         const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, input: c.input, scenario: c.scenario, assertions }) })
-        const output = await response.json() as { outcome?: { status: string }; assertions?: { passed: boolean; results: Array<{ passed: boolean }> } }
+        const output = await response.json() as { outcome?: { status: string }; coverage?: Record<string, unknown>; assertions?: { passed: boolean; results: Array<{ passed: boolean }> } }
+        if (response.ok && output.coverage) runs.push({ input: c.input as Record<string, unknown>, coverage: output.coverage })
         const status = response.ok ? (output.outcome?.status ?? 'invalid') : 'invalid'
         const failures = (output.assertions?.results ?? []).filter((r) => !r.passed)
         results.push({ id: c.id, passed: response.ok && output.assertions?.passed === true, status, ...(failures.length > 0 ? { failures } : {}) })
       }
-      const passed = results.length > 0 && results.every(r => r.passed)
-      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id), passedCases: results.filter((r) => r.passed).length, totalCases: results.length, testedAt: clock.now().toISOString() }
-      return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results })
+      const casesPassed = results.length > 0 && results.every(r => r.passed)
+      // CG-Q03 (S148): coverage of the cases together; a suite with a minimum passes only when it is reached.
+      const definition = wf.drafts.find((d) => d.revision === input.revision)?.definition as unknown as Record<string, unknown>
+      const coverage = suiteCoverage(definition, runs)
+      const short = coverageShortfalls(coverage, suite.coverageMinimum)
+      const passed = casesPassed && short.length === 0
+      const counts = coverage ? Object.fromEntries((['steps', 'routes', 'rules', 'formRules'] as const).map((k) => [k, { covered: coverage[k].covered, total: coverage[k].total }])) : undefined
+      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id), passedCases: results.filter((r) => r.passed).length, totalCases: results.length, testedAt: clock.now().toISOString(), ...(counts ? { coverage: counts } : {}) }
+      return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results, casesPassed, ...(coverage ? { coverage } : {}), ...(suite.coverageMinimum ? { coverageMinimum: suite.coverageMinimum, coverageShortfalls: short } : {}) } as JsonBodyType)
     }),
     http.get(`${B}/workspaces/:ws/workflows/:id/test-suite/summary`, ({ params }) => {
       const g = guard(params.ws, 'workflow.read'); if (!g.ok) return g.res
@@ -861,8 +872,9 @@ export function createHandlers(): HttpHandler[] {
       return HttpResponse.json({
         suiteVersion: suite.version,
         cases: suite.cases.length,
-        lastRun: last ? { revision: last.revision, passed: last.passed, passedCases: last.passedCases ?? (last.passed ? suite.cases.length : 0), totalCases: last.totalCases ?? suite.cases.length, testedAt: last.testedAt ?? clock.now().toISOString() } : null,
-      })
+        lastRun: last ? { revision: last.revision, passed: last.passed, passedCases: last.passedCases ?? (last.passed ? suite.cases.length : 0), totalCases: last.totalCases ?? suite.cases.length, testedAt: last.testedAt ?? clock.now().toISOString(), ...(last.coverage ? { coverage: last.coverage } : {}) } : null,
+        ...(suite.coverageMinimum ? { coverageMinimum: suite.coverageMinimum } : {}),
+      } as JsonBodyType)
     }),
     // STU03 "Run all": every case through the simulate handler, one result list.
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate-cases`, async ({ params, request }) => {
@@ -873,20 +885,24 @@ export function createHandlers(): HttpHandler[] {
       if (!Array.isArray(cases) || cases.length === 0 || cases.length > 20) return problem(422, 'VALIDATION_FAILED', 'Give 1 to 20 cases.')
       if (new Set(cases.map((c) => c.id)).size !== cases.length) return problem(422, 'VALIDATION_FAILED', 'Every case needs its own ID.', { fieldErrors: [{ pointer: '/cases', code: 'unique', message: 'This ID is used by another case.' }] })
       const results = []
+      const runs: CoverageRun[] = []
       let source: unknown = null
       for (const c of cases) {
         const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, useActiveRelease: input.useActiveRelease, input: c.input, scenario: c.scenario, assertions: c.assertions }) })
-        const output = await response.json() as { code?: string; detail?: string; title?: string; fieldErrors?: unknown[]; source?: unknown; outcome?: { status: string; businessOutcome?: string | null; outcomeKind?: string | null; summary: string }; assertions?: { passed: boolean } }
+        const output = await response.json() as { code?: string; detail?: string; title?: string; fieldErrors?: unknown[]; source?: unknown; coverage?: Record<string, unknown>; outcome?: { status: string; businessOutcome?: string | null; outcomeKind?: string | null; summary: string }; assertions?: { passed: boolean } }
         if (!response.ok && output.code !== 'VALIDATION_FAILED') return HttpResponse.json(output as JsonBodyType, { status: response.status })
         if (!response.ok) {
           results.push({ id: c.id, status: 'invalid', passed: false, problem: output.detail ?? output.title ?? 'Not valid', fieldErrors: output.fieldErrors ?? [] })
           continue
         }
         source = output.source
+        if (output.coverage) runs.push({ input: c.input, coverage: output.coverage })
         const o = output.outcome as NonNullable<typeof output.outcome>
         results.push({ id: c.id, status: o.status, passed: output.assertions ? output.assertions.passed : true, outcome: { status: o.status, businessOutcome: o.businessOutcome ?? null, outcomeKind: o.outcomeKind ?? null, summary: o.summary }, ...(output.assertions ? { assertions: output.assertions } : {}) })
       }
-      return HttpResponse.json({ source: source ?? { revision: input.revision ?? null, releaseNumber: null }, passed: results.filter((r) => r.passed).length, total: results.length, results } as JsonBodyType)
+      const tested = input.useActiveRelease ? wf.releases.find((r) => r.id === wf.activeReleaseId)?.definition : (wf.drafts.find((d) => d.revision === (input.revision ?? wf.drafts[wf.drafts.length - 1]?.revision)) ?? wf.drafts[wf.drafts.length - 1])?.definition
+      const coverage = suiteCoverage((tested ?? {}) as unknown as Record<string, unknown>, runs)
+      return HttpResponse.json({ source: source ?? { revision: input.revision ?? null, releaseNumber: null }, passed: results.filter((r) => r.passed).length, total: results.length, results, ...(coverage ? { coverage } : {}) } as JsonBodyType)
     }),
     // "Test this workflow": a dry run with the mock-side port of the simulator (mocks/simulator.ts).
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate`, async ({ params, request }) => {

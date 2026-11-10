@@ -2659,6 +2659,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/test-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a test suite (an orqix.workflow-tests/v1 file or the shared suite) against a draft or the active release
+         * @description Every case is a dry run as in simulateWorkflowCases; the result lists each case, the coverage of the cases together (steps, routes, decision rules and form rules) and the same result as JUnit XML for CI. With a suite (the file format of contracts/workflow-test-suite-v1.schema.json) it needs workflow.read and stores nothing. Without one it runs the shared suite and needs workflow.edit; against a draft that run is recorded like runWorkflowTestSuite, so it satisfies the publication gate (recorded true). passed is false when a case fails or the coverage is below the suite's coverageMinimum.
+         */
+        post: operations["runWorkflowTests"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connector-packages/contract-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a package archive as on import and replay its fixtures without importing it
+         * @description For CI (orqix package test): the archive is read and checked like importConnectorPackage, and every fixture is replayed through the runtime's response handling. Nothing is imported, stored or called, and the archive does not need a trusted signature (signatureStatus reports it). Problems other than fixtures are listed under problems (at most 50). The live smoke run against a sandbox binding is testConnection, which runs read-only operations only.
+         */
+        post: operations["testConnectorPackageContract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/simulate": {
         parameters: {
             query?: never;
@@ -12430,7 +12475,9 @@ export interface components {
                 totalCases: number;
                 /** Format: date-time */
                 testedAt: string;
+                coverage?: components["schemas"]["TestCoverageCounts"];
             } | null;
+            coverageMinimum?: components["schemas"]["TestCoverageMinimum"];
         };
         /** @description What a test case checks after its dry run (STU03). Every item must hold for the case to pass. */
         SimulationAssertions: {
@@ -12519,14 +12566,17 @@ export interface components {
                     message?: string;
                 }[];
             }[];
+            coverage?: components["schemas"]["TestCoverage"];
         };
         WorkflowTestSuite: {
             version: number;
             cases: components["schemas"]["WorkflowTestCase"][];
+            coverageMinimum?: components["schemas"]["TestCoverageMinimum"];
         };
         SaveWorkflowTestSuite: {
             expectedVersion: number;
             cases: components["schemas"]["WorkflowTestCase"][];
+            coverageMinimum?: components["schemas"]["TestCoverageMinimum"];
         };
         RunWorkflowTestSuite: {
             revision: number;
@@ -12544,6 +12594,11 @@ export interface components {
                 /** @description Failed assertions with expected and actual (returned to the designer, never stored) */
                 failures?: components["schemas"]["SimulationAssertionResult"][];
             }[];
+            /** @description Every case passed (passed also needs the coverage minimum) */
+            casesPassed?: boolean;
+            coverage?: components["schemas"]["TestCoverage"];
+            coverageMinimum?: components["schemas"]["TestCoverageMinimum"];
+            coverageShortfalls?: components["schemas"]["TestCoverageShortfall"][];
         };
         SimulateRequest: {
             /** @description Draft revision to test; the current draft when omitted */
@@ -14505,6 +14560,156 @@ export interface components {
             /** @enum {string} */
             status: "started" | "resumed" | "buffered" | "duplicate";
             runId: null | components["schemas"]["Uuid"];
+        };
+        TestCoverageKind: {
+            covered: number;
+            total: number;
+            /** @description Rounded down; 100 when there is nothing to cover */
+            percent: number;
+            /** @description What no case covered: steps {id, label}; routes {transitionId, from, to, description}; decision rules {decision, row, condition}; form rules {rule, field or section, label, missing (holds or fails)}. */
+            notCovered: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** @description CG-Q03: what the cases that ran cover together. A step, route or decision rule is covered when at least one case reached it; a form rule (visibleWhen or requiredWhen) when the cases hold both sides. Null when no case ran. */
+        TestCoverage: {
+            cases: number;
+            steps: components["schemas"]["TestCoverageKind"];
+            routes: components["schemas"]["TestCoverageKind"];
+            rules: components["schemas"]["TestCoverageKind"];
+            formRules: components["schemas"]["TestCoverageKind"];
+            summary: string;
+        } | null;
+        TestCoverageCount: {
+            covered: number;
+            total: number;
+        };
+        /** @description Counts kept with a recorded run (never sample values). */
+        TestCoverageCounts: {
+            steps: components["schemas"]["TestCoverageCount"];
+            routes: components["schemas"]["TestCoverageCount"];
+            rules: components["schemas"]["TestCoverageCount"];
+            formRules: components["schemas"]["TestCoverageCount"];
+        };
+        /** @description Least whole percent per kind the cases must cover together; publication of a workflow whose shared suite has one needs a recorded run that reaches it. */
+        TestCoverageMinimum: {
+            steps?: number;
+            routes?: number;
+            rules?: number;
+            formRules?: number;
+        };
+        TestCoverageShortfall: {
+            /** @enum {string} */
+            kind: "steps" | "routes" | "rules" | "formRules";
+            percent: number;
+            minimum: number;
+        };
+        WorkflowTestFileCase: {
+            id: string;
+            name: string;
+            input: {
+                [key: string]: unknown;
+            };
+            scenario?: components["schemas"]["SimulationScenario"];
+            /** @description Expected business outcome, or __needsAttention__ */
+            expect: string;
+            assertions?: components["schemas"]["SimulationAssertions"];
+            /** @description The Test tab's editing state; ignored by the server */
+            studio?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description CG-Q01: the test file format (contracts/workflow-test-suite-v1.schema.json is the normative schema) shared by the Test tab, the shared suite and CI. */
+        WorkflowTestFile: {
+            /** @enum {string} */
+            schemaVersion: "orqix.workflow-tests/v1";
+            workflowKey?: components["schemas"]["Key"];
+            description?: string;
+            coverageMinimum?: components["schemas"]["TestCoverageMinimum"];
+            cases: components["schemas"]["WorkflowTestFileCase"][];
+        };
+        RunWorkflowTests: {
+            suite?: components["schemas"]["WorkflowTestFile"];
+            /** @description Draft revision; the current draft when omitted */
+            revision?: number;
+            /** @description Test the active release instead of a draft (never recorded) */
+            useActiveRelease?: boolean;
+        };
+        WorkflowTestRun: {
+            workflowId: components["schemas"]["Uuid"];
+            workflowKey: string;
+            source: {
+                revision: number | null;
+                releaseNumber: number | null;
+            };
+            /** @enum {string} */
+            suite: "file" | "shared";
+            suiteVersion: number | null;
+            /** @description The run was kept for the publication gate (shared suite on a draft) */
+            recorded: boolean;
+            passed: boolean;
+            casesPassed: boolean;
+            total: number;
+            passedCount: number;
+            failedCount: number;
+            invalidCount: number;
+            results: {
+                id: string;
+                name: string;
+                /** @enum {string} */
+                status: "finished" | "needsAttention" | "invalid";
+                passed: boolean;
+                outcome?: {
+                    status?: string;
+                    businessOutcome?: string | null;
+                    outcomeKind?: string | null;
+                    summary?: string;
+                };
+                failures: components["schemas"]["SimulationAssertionResult"][];
+                problem?: string;
+                fieldErrors?: {
+                    pointer?: string;
+                    code?: string;
+                    message?: string;
+                }[];
+            }[];
+            coverage: components["schemas"]["TestCoverage"];
+            coverageMinimum: components["schemas"]["TestCoverageMinimum"] | null;
+            coverageShortfalls: components["schemas"]["TestCoverageShortfall"][];
+            /** @description The same result in the JUnit XML format (one testsuite; a case per test case, plus Coverage minimum when the suite has one) */
+            junitXml: string;
+        };
+        PackageContractTestRequest: {
+            /** @description The .orqpkg file in base64 (at most 5 MiB packed) */
+            archive: string;
+        };
+        PackageContractTestReport: {
+            packageId: string | null;
+            version: string | null;
+            sha256: string;
+            /** @enum {string} */
+            signatureStatus: "verified" | "unsigned" | "untrusted_key" | "invalid";
+            /** @description No problem and every fixture passed */
+            passed: boolean;
+            fixtures: number;
+            fixturesPassed: number;
+            results: {
+                path: string;
+                connection: string | null;
+                operation: string | null;
+                passed: boolean;
+                /** @enum {string|null} */
+                outcome: "succeeded" | "rejected" | "retryable" | "unknown" | null;
+                code: string | null;
+                message: string | null;
+            }[];
+            problems: {
+                file: string;
+                pointer: string;
+                code: string;
+                message: string;
+            }[];
+            junitXml: string;
         };
         RoleBinding: {
             id: components["schemas"]["Uuid"];
@@ -23481,6 +23686,73 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    runWorkflowTests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunWorkflowTests"];
+            };
+        };
+        responses: {
+            /** @description Results, coverage and JUnit XML */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTestRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    testConnectorPackageContract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageContractTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Fixture results, problems and JUnit XML */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageContractTestReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     simulateWorkflow: {

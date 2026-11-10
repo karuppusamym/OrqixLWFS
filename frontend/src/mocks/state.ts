@@ -219,7 +219,7 @@ export interface MockWorkflow {
   /** PL01: the folder this workflow is filed in; a label only, never an access rule. */
   folderId?: string
   testSuite?: components['schemas']['WorkflowTestSuite']
-  testPass?: { version: number; revision: number; passed: boolean; dependencies: string; passedCases?: number; totalCases?: number; testedAt?: string }
+  testPass?: { version: number; revision: number; passed: boolean; dependencies: string; passedCases?: number; totalCases?: number; testedAt?: string; coverage?: Record<string, { covered: number; total: number }> }
 }
 
 /** A discussion comment on a step or connection (UI03, docs/build/S53). */

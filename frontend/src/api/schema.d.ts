@@ -1268,6 +1268,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admission control defaults and the workspaces with their own limits
+         * @description CG-P05 (docs/build/S150). The deployment defaults (orqix.admission.*) and every workspace override, newest change first (at most 500).
+         */
+        get: operations["listAdmissionLimits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/workspaces/{workspaceId}/admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Effective admission limits of one workspace */
+        get: operations["getWorkspaceAdmission"];
+        /**
+         * Set or clear the admission limits of one workspace
+         * @description CG-P05 (docs/build/S150). A null field keeps the deployment default for that kind, 0 removes the limit for this workspace, and both null clears the override. Above its limit, a start or inbound message of the workspace answers 429 RATE_LIMITED with Retry-After, whatever the channel (REST, Kafka, package trigger, MCP).
+         */
+        put: operations["setWorkspaceAdmission"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}": {
         parameters: {
             query?: never;
@@ -11863,6 +11906,39 @@ export interface components {
             allowSelfApprovalWorkflows: boolean;
             initialAdmins: components["schemas"]["PrincipalRef"][];
         };
+        /** @description Requests and inbound messages per sliding minute; 0 means no limit. */
+        AdmissionLimits: {
+            startsPerMinute: number;
+            messagesPerMinute: number;
+        };
+        AdmissionOverride: {
+            /** @description null keeps the deployment default */
+            startsPerMinute: number | null;
+            /** @description null keeps the deployment default */
+            messagesPerMinute: number | null;
+            revision: number;
+            /** Format: uuid */
+            updatedBy: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WorkspaceAdmission: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** @description false when the deployment switched admission control off (orqix.admission.enabled) */
+            enabled: boolean;
+            effective: components["schemas"]["AdmissionLimits"];
+            override: components["schemas"]["AdmissionOverride"] | null;
+        };
+        AdmissionOverview: {
+            enabled: boolean;
+            defaults: components["schemas"]["AdmissionLimits"];
+            overrides: components["schemas"]["WorkspaceAdmission"][];
+        };
+        SetAdmissionRequest: {
+            startsPerMinute?: number | null;
+            messagesPerMinute?: number | null;
+        };
         WorkspaceAdminView: {
             id: components["schemas"]["Uuid"];
             organizationId: components["schemas"]["Uuid"];
@@ -21181,6 +21257,83 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listAdmissionLimits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Defaults and overrides */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdmissionOverview"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getWorkspaceAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Effective limits and the stored override (null when the workspace uses the defaults) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAdmission"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setWorkspaceAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAdmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored; effective limits apply on every pod within orqix.admission.limit-cache-ttl */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAdmission"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getWorkspace: {
         parameters: {
             query?: never;
@@ -29354,6 +29507,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];
         };
     };

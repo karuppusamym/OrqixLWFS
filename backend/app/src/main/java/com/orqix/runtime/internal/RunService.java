@@ -66,13 +66,15 @@ public class RunService {
     private final RunQuota quota;
     private final FormLookups lookups;
     private final RunSearchIndex searchIndex;
+    private final AdmissionControl admission;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
             RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota,
-            FormLookups lookups, RunSearchIndex searchIndex) {
+            FormLookups lookups, RunSearchIndex searchIndex, AdmissionControl admission) {
+        this.admission = admission;
         this.searchIndex = searchIndex;
         this.lookups = lookups;
         this.quota = quota;
@@ -135,6 +137,8 @@ public class RunService {
             RunStore.RunRow run = runs.find(workspaceId, UUID.fromString(claim.replay().resourceId())).orElseThrow();
             return new Started(summary(run, access), true);
         }
+        // CG-P05 (S150): the workspace's start limit, before any lock; a replay above is always answered.
+        admission.admitStart(workspaceId, caller.subjectId());
 
         workflow = releases.lockWorkflow(workspaceId, workflow.id()).orElseThrow(ApiException::notFound);
         if (workflow.activeReleaseId() == null) {

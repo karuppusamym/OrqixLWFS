@@ -57,7 +57,8 @@ public class FlowableEngineConfiguration {
             OrqixForEach orqixForEach,
             RuntimeProjectionListener projectionListener,
             OrqixFailedJobCommandFactory failedJobCommandFactory,
-            DefaultAsyncTaskExecutor orqixJobTaskExecutor) {
+            DefaultAsyncTaskExecutor orqixJobTaskExecutor,
+            JobTracing jobTracing) {
         return configuration -> {
             Map<Object, Object> beans = new LinkedHashMap<>();
             beans.put("orqixRoute", orqixRoute);
@@ -90,6 +91,10 @@ public class FlowableEngineConfiguration {
 
             configuration.setFailedJobCommandFactory(failedJobCommandFactory);
             configuration.setAsyncTaskExecutor(orqixJobTaskExecutor);
+            // CG-P06 (S150): one span per engine job, continuing the trace of the run's start.
+            if (configuration.getAsyncExecutor() instanceof org.flowable.job.service.impl.asyncexecutor.AbstractAsyncExecutor executor) {
+                executor.setJobExecutionObservationProvider(jobTracing);
+            }
             // Generated BPMN is validated against the BPMN XSD at deployment (S4 section 10 step 5).
             configuration.setEnableSafeBpmnXml(true);
             // The UI draws its own run diagram; Flowable's generated process image is never read. Skipping it avoids a font

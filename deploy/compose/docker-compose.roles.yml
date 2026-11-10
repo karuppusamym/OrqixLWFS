@@ -1,0 +1,41 @@
+# Runtime roles overlay (ADR 0004, CG-P01 in docs/build/S150): one API pod (profile api: serves users, runs no engine
+# jobs, schedulers or Kafka consumers) and two worker pods (profile worker: engine jobs, poll checks, AI tasks,
+# analytics projector, schedules). DEVELOPMENT/QUALIFICATION ONLY. Use a private project name so no other stack is
+# touched:
+#
+#   docker compose -p orqix-roles -f docker-compose.yml -f docker-compose.roles.yml --profile app up -d
+#   python tools/perf/multipod.py --smoke            # or the full run, see tools/perf/README.md
+#
+# Host ports (overridable): API 8080 / management 8081 (ORQIX_HOST_PORT, ORQIX_MANAGEMENT_HOST_PORT); the workers expose
+# only their management ports, 8083 and 8085, for the harness and Prometheus. Each container's hostname is its
+# Flowable lock owner, so the two workers share the job tables without taking each other's locks.
+name: orqix
+
+x-api-only: &api-only
+  stop_grace_period: 60s
+
+services:
+  orqix:
+    <<: *api-only
+    environment:
+      SPRING_PROFILES_ACTIVE: ${ORQIX_PROFILES:-dev},api
+
+  orqix-worker-1:
+    extends:
+      file: docker-compose.yml
+      service: orqix
+    stop_grace_period: 60s
+    ports: !override
+      - "${ORQIX_WORKER_1_MANAGEMENT_HOST_PORT:-8083}:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${ORQIX_PROFILES:-dev},worker
+
+  orqix-worker-2:
+    extends:
+      file: docker-compose.yml
+      service: orqix
+    stop_grace_period: 60s
+    ports: !override
+      - "${ORQIX_WORKER_2_MANAGEMENT_HOST_PORT:-8085}:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${ORQIX_PROFILES:-dev},worker

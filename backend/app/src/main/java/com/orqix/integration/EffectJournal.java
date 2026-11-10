@@ -159,9 +159,11 @@ public class EffectJournal {
             Instant now) {
         jdbc.sql("""
                 UPDATE effect_journal SET state = 'inFlight', lease_owner = :owner, lease_until = :until,
-                       attempts = attempts + 1, updated_at = :now
+                       attempts = attempts + 1, updated_at = :now, trace_id = COALESCE(:trace, trace_id)
                 WHERE workspace_id = :ws AND id = :id
                 """)
+                // CG-P06 (S150): the trace of this attempt (the engine job or poll check that sends the call).
+                .param("trace", com.orqix.shared.tracing.TraceIds.current())
                 .param("owner", leaseOwner).param("until", Sql.ts(now.plus(leaseDuration))).param("now", Sql.ts(now))
                 .param("ws", workspaceId).param("id", effect.id())
                 .update();

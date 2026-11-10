@@ -42,8 +42,42 @@ public class ProviderHttp {
         return json;
     }
 
-    /** POSTs {@code body} and returns the parsed JSON answer. */
+    private io.micrometer.observation.ObservationRegistry observations = io.micrometer.observation.ObservationRegistry.NOOP;
+
+    /** CG-P06: optional, so the tests that build this by hand need no registry. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setObservationRegistry(io.micrometer.observation.ObservationRegistry registry) {
+        this.observations = registry == null ? io.micrometer.observation.ObservationRegistry.NOOP : registry;
+    }
+
+    /**
+     * POSTs {@code body} and returns the parsed JSON answer. CG-P06 (S150): one observation {@code orqix.ai.call} per
+     * call (span and timer {@code orqix_ai_call_seconds} by host and outcome); prompts and answers are never recorded.
+     */
     public JsonNode post(URI uri, Map<String, String> headers, byte[] body, Duration timeout, String what) {
+        io.micrometer.observation.Observation observation = io.micrometer.observation.Observation
+                .createNotStarted("orqix.ai.call", observations)
+                .contextualName("ai " + uri.getHost())
+                .lowCardinalityKeyValue("server.address", String.valueOf(uri.getHost()))
+                .start();
+        try (io.micrometer.observation.Observation.Scope ignored = observation.openScope()) {
+            JsonNode answer = send(uri, headers, body, timeout, what);
+            observation.lowCardinalityKeyValue("outcome", "OK");
+            return answer;
+        } catch (ProviderException e) {
+            observation.lowCardinalityKeyValue("outcome", String.valueOf(e.kind()));
+            observation.error(e);
+            throw e;
+        } catch (RuntimeException e) {
+            observation.lowCardinalityKeyValue("outcome", "ERROR");
+            observation.error(e);
+            throw e;
+        } finally {
+            observation.stop();
+        }
+    }
+
+    private JsonNode send(URI uri, Map<String, String> headers, byte[] body, Duration timeout, String what) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout)
                 .header("Content-Type", "application/json").header("Accept", "application/json");
         headers.forEach(builder::header);

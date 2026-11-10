@@ -133,6 +133,14 @@ public class HttpExecutor {
         this.documents = documents;
     }
 
+    private io.micrometer.observation.ObservationRegistry observations = io.micrometer.observation.ObservationRegistry.NOOP;
+
+    /** CG-P06: optional, so the tests that build an executor by hand need no registry. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setObservationRegistry(io.micrometer.observation.ObservationRegistry registry) {
+        this.observations = registry == null ? io.micrometer.observation.ObservationRegistry.NOOP : registry;
+    }
+
     /**
      * Performs the call. {@code secretMissing} outcomes are reported by {@link #resolveSecret}; this method assumes
      * the credential is available.
@@ -146,8 +154,40 @@ public class HttpExecutor {
                 V1Requests.Context.NONE);
     }
 
-    /** As above, with the request files and pagination parameters of a v1 operation. */
+    /**
+     * As above, with the request files and pagination parameters of a v1 operation. CG-P06 (S150): every call is one
+     * observation {@code orqix.connector.call}: a client span under the engine job or poll check that makes it, and the
+     * timer {@code orqix_connector_call_seconds} by effect class and outcome. The trace context is not sent to the
+     * connected system (decision S150: no trace headers leave Orqix for third parties).
+     */
     CallResult call(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
+            Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue,
+            V1Requests.Context context) {
+        io.micrometer.observation.Observation observation = io.micrometer.observation.Observation
+                .createNotStarted("orqix.connector.call", observations)
+                .contextualName("connector " + definition.key() + " " + operation.name())
+                .lowCardinalityKeyValue("effect.class", String.valueOf(operation.effectClass()))
+                .highCardinalityKeyValue("orqix.connection", String.valueOf(definition.key()))
+                .highCardinalityKeyValue("orqix.operation", String.valueOf(operation.name()))
+                .start();
+        try (io.micrometer.observation.Observation.Scope ignored = observation.openScope()) {
+            CallResult result = send(target, definition, operation, body, resultMapping, effectKey, timeoutSeconds,
+                    secretValue, context);
+            observation.lowCardinalityKeyValue("outcome", String.valueOf(result.outcome()));
+            if (result.httpStatus() != null) {
+                observation.highCardinalityKeyValue("http.response.status_code", String.valueOf(result.httpStatus()));
+            }
+            return result;
+        } catch (RuntimeException e) {
+            observation.lowCardinalityKeyValue("outcome", "ERROR");
+            observation.error(e);
+            throw e;
+        } finally {
+            observation.stop();
+        }
+    }
+
+    private CallResult send(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
             Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue,
             V1Requests.Context context) {
         long started = System.nanoTime();

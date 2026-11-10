@@ -494,6 +494,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
             case "assignWorklistView" -> Map.of("expectedRevision",0);
+            // S150: a well-formed admission limit, so the 403 cannot be explained by validation.
+            case "setWorkspaceAdmission" -> Map.of("startsPerMinute", 1);
             // S142: well-formed bulk operation bodies, so a 404 cannot be explained by validation.
             case "previewBulkOperation" -> Map.of("action", "cancel", "filter", Map.of("workflowId", ids.get("workflowId")));
             case "executeBulkOperation" -> Map.of("confirmedCount", 0, "reason", "Foreign");

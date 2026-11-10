@@ -1,0 +1,88 @@
+# Quarterly restore drill (CG-P03, T-RES-06): restores the newest backup set into a new scratch database, verifies every
+# MANIFEST count and the sample request, records the restore time in /backups/drills/drill-<stamp>.json and drops the
+# scratch database. 04:00 UTC on the 5th of January, April, July and October; run one now with
+#   oc create job --from=cronjob/orqix-restore-drill orqix-restore-drill-now
+# The drill role needs CREATEDB on the drill server. Point DRILL secret values at a separate server if the production
+# server must not carry the extra load or database (recommended).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: orqix-restore-drill
+  labels:
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 4 5 1,4,7,10 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 4
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 14400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: orqix
+            app.kubernetes.io/part-of: orqix
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: drill
+              # REPLACE with your mirrored, digest-pinned PostgreSQL 18 client image (same major as the server).
+              image: docker.io/library/postgres:18-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "/scripts/orqix-restore-drill.sh"]
+              env:
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: DRILL_ADMIN_DATABASE
+                  value: postgres
+                - name: PGSSLMODE
+                  value: verify-full
+                - name: HOME
+                  value: /tmp
+              envFrom:
+                # PGHOST, PGPORT, PGUSER, PGPASSWORD of a role with CREATEDB on the drill server.
+                - secretRef:
+                    name: orqix-restore-drill-db
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: orqix-backups
+            - name: scripts
+              configMap:
+                name: orqix-backup-scripts
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi

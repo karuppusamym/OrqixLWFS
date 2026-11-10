@@ -106,6 +106,38 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+  # CG-P06 (docs/build/S150): latency histograms for the SLOs and dashboards (deploy/observability). Buckets only for
+  # these timers; uri, method, status and outcome are the only tags of http.server.requests.
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        orqix.connector.call: true
+        orqix.ai.call: true
+      maximum-expected-value:
+        http.server.requests: 60s
+        orqix.connector.call: 60s
+        orqix.ai.call: 120s
+  # CG-P06 (docs/build/S150): OpenTelemetry traces through Micrometer. Spans, trace ids in logs, the effect journal and
+  # the timeline are on; nothing leaves the pod unless orqix.tracing.otlp.enabled is true.
+  tracing:
+    enabled: ${orqix.tracing.enabled}
+    sampling:
+      probability: ${orqix.tracing.sampling-probability}
+    export:
+      otlp:
+        enabled: ${orqix.tracing.otlp.enabled}
+  opentelemetry:
+    resource-attributes:
+      service.name: orqix
+      service.namespace: ${orqix.tracing.service-namespace}
+      deployment.environment.name: ${orqix.tracing.environment}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${orqix.tracing.otlp.endpoint}
+          # Headers (for example authorization for a hosted collector) come from the environment, mounted from a
+          # secret: MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION="Bearer <token>".
 
 flowable:
   # Pods: schema update off (S1 section 5); the migrate profile turns it on.
@@ -140,6 +172,25 @@ logging:
     org.apache.kafka: warn
 
 orqix:
+  # CG-P06 (docs/build/S150). Traces are made on every pod; the OTLP exporter is off by default.
+  tracing:
+    enabled: ${ORQIX_TRACING_ENABLED:true}
+    # Share of new traces that are recorded (and exported when the exporter is on). A trace id is still written to
+    # logs, the effect journal and the timeline for unrecorded traces. Lower it at high volume (for example 0.1).
+    sampling-probability: ${ORQIX_TRACING_SAMPLING:1.0}
+    service-namespace: ${ORQIX_TRACING_NAMESPACE:orqix}
+    environment: ${ORQIX_ENVIRONMENT:local}
+    otlp:
+      enabled: ${ORQIX_TRACING_OTLP_ENABLED:false}
+      # OTLP over HTTP (protobuf), for example an OpenTelemetry Collector: http://otel-collector:4318/v1/traces
+      endpoint: ${ORQIX_TRACING_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+  # CG-P05 (docs/build/S150): admission control per workspace (sliding minute, 429 RATE_LIMITED with Retry-After).
+  # 0 = no limit; a platform administrator may set limits for one workspace (Platform API).
+  admission:
+    enabled: ${ORQIX_ADMISSION_ENABLED:true}
+    starts-per-minute: ${ORQIX_ADMISSION_STARTS_PER_MINUTE:0}
+    messages-per-minute: ${ORQIX_ADMISSION_MESSAGES_PER_MINUTE:0}
+    limit-cache-ttl: 10s
   identity:
     registration-id: orqix
     groups-claim: groups

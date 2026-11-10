@@ -439,3 +439,34 @@ stops all of this until released. Configure the archive store with `orqix.retent
 `orqix.retention.filesystem.root` on a persistent volume, or `s3` with `orqix.retention.s3.*` from the secret mount;
 enable object lock on the bucket if your records policy requires it). The engine-history runbook is in
 [S144](build/S144-alerts-retention-archiving.md#runbook-engine-history-growth).
+
+## Observability, backups, scale and admission control - 9 November 2026
+
+[S150](build/S150-observability-scale-backups-admission.md).
+
+**Traces.** Every pod makes OpenTelemetry spans: the HTTP request, each engine job (under the request that started the
+run), each connector and model call. The trace id is in the log line, on every timeline event (`run_event.trace_id`)
+and on each effect attempt (`effect_journal.trace_id`). Export is off until you set `ORQIX_TRACING_OTLP_ENABLED=true`
+and `ORQIX_TRACING_OTLP_ENDPOINT` (an OpenTelemetry Collector, Jaeger or Tempo). Lower `ORQIX_TRACING_SAMPLING` (default
+1.0) at high volume. No trace headers are sent to connected systems.
+
+**Dashboards, alerts and SLOs.** `deploy/observability` holds three Grafana dashboards, the Prometheus rules (also as
+`deploy/openshift/optional/prometheusrule.yaml`) and the SLO definitions: API availability 99.5 %, start p95 under 1 s,
+read p95 under 500 ms, engine jobs older than 60 s less than 1 % of the time, analytics lag under 5 minutes. These
+replace the "suggested alerts" of section 8.
+
+**Backups and restore drills.** `deploy/backup` (runbook in its README): daily consistent `pg_dump` with a MANIFEST of
+row counts, WAL archiving and base backups for point-in-time restore on Compose, CronJobs `orqix-backup` and
+`orqix-restore-drill` on OpenShift. Run the drill every quarter and after every PostgreSQL major upgrade; it restores the
+newest set into a scratch database, verifies it and records the restore time. After any real restore, reconcile effects
+in state *unknown* or *in flight* before users resume (section 8, "Restore from backup").
+
+**Admission control.** A platform administrator can limit how many requests a workspace may start and how many
+messages it may receive per minute (`PUT /api/v1/admin/workspaces/{workspaceId}/admission`; defaults
+`ORQIX_ADMISSION_STARTS_PER_MINUTE` and `ORQIX_ADMISSION_MESSAGES_PER_MINUTE`, 0 = no limit). Above the limit every
+channel answers 429 with `Retry-After`: the API, MCP, Kafka triggers (the partition waits, records are never
+dead-lettered for it), package triggers and webhooks, schedules (the fire is recorded as failed). Refusals are counted
+in `orqix_admission_rejected_total` and audited once per minute and workspace (`admission.limit-exceeded`).
+
+**Scale qualification with roles.** `tools/perf/multipod.py` runs against one API pod and two worker pods
+(`deploy/compose/docker-compose.roles.yml`); see S150 section 5 for the numbers measured on one machine.

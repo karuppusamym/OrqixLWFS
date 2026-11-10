@@ -1,0 +1,32 @@
+# Orqix backups on OpenShift (CG-P03, docs/build/S150, runbook README.md in this directory). Not part of the
+# application overlays: apply it to the same namespace once the application prerequisites exist (the base
+# NetworkPolicies already give pods labelled app.kubernetes.io/part-of=orqix DNS and PostgreSQL egress):
+#
+#   oc apply -n orqix-<env> -f deploy/backup/openshift/secrets.example.yaml   # after replacing the values, or your own
+#   oc apply -n orqix-<env> -k deploy/backup
+#   oc create job -n orqix-<env> --from=cronjob/orqix-restore-drill orqix-restore-drill-now   # run a drill now
+#
+# Logical backups only. Point-in-time restore on OpenShift comes from the database platform (WAL archiving and base
+# backups of the managed PostgreSQL or its operator); the runbook lists what to configure and how to rehearse it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/part-of: orqix
+    includeSelectors: false
+
+resources:
+  - openshift/pvc.yaml
+  - openshift/cronjob-backup.yaml
+  - openshift/cronjob-restore-drill.yaml
+
+# The same scripts as the Compose backup service; the generated name carries a hash, so a script change reaches the
+# next job run.
+configMapGenerator:
+  - name: orqix-backup-scripts
+    files:
+      - scripts/orqix-backup.sh
+      - scripts/orqix-restore-drill.sh
+      - scripts/verify-queries.sh

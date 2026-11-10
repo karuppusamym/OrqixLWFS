@@ -69,6 +69,8 @@ tags:
     description: "Platform administration of the deployment (docs/build/S150): admission limits per workspace, for platform administrators only."
   - name: TestsAndCli
     description: "Test as code, test coverage, connector package contract tests and the orqix command line tool (CG-Q01, CG-Q03, CG-Q04, CG-K01; docs/build/S148)."
+  - name: GitAndBundles
+    description: Git sync of workflows with review and hash-checked publish, and release bundles promoted as one unit (docs/build/S147).
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -11769,6 +11771,350 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
   # ---------------------------------------------------------------- end AlertsAndRetention
+  # ---------------------------------------------------------------- GitAndBundles (CG-S01, CG-S02, docs/build/S147)
+  /workspaces/{workspaceId}/git-connection:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [GitAndBundles]
+      operationId: getGitConnection
+      summary: The workspace's Git connection, if any; the credential reference is shown to connection managers only
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitConnectionState' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [GitAndBundles]
+      operationId: saveGitConnection
+      summary: Create or change the Git connection (versioned; 0 creates)
+      description: "The token is never sent here: credentialRef names a secret resolved through the S132 providers at each call. apiUrl must pass the egress policy (422 EGRESS_NOT_ALLOWED). A stale expectedVersion is 409 CONFIGURATION_VERSION_CONFLICT."
+      x-orqix-permission: connection.manage
+      x-orqix-audit: git.connection.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveGitConnection' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitConnectionState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [GitAndBundles]
+      operationId: deleteGitConnection
+      summary: Remove the Git connection; the sync history stays
+      x-orqix-permission: connection.manage
+      x-orqix-audit: git.connection.deleted
+      parameters:
+        - { name: expectedVersion, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Removed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /workspaces/{workspaceId}/git-connection/check:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [GitAndBundles]
+      operationId: checkGitConnection
+      summary: Resolve the credential and read the repository and its base branch; nothing is written
+      x-orqix-permission: connection.manage
+      x-orqix-audit: git.connection.checked
+      responses:
+        '200':
+          description: Result (a failure is reported in the body)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitConnectionCheck' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/git/push:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [GitAndBundles]
+      operationId: pushWorkflowToGit
+      summary: Export a draft revision to a review branch in its deterministic layout and open (or reuse) a pull request
+      description: "Writes <basePath>/workflows/<workflowKey>/workflow.json and tests.json (the hashed source files), generated/ (BPMN, DMN, references, connection definitions, pinned assets and views, for review only) and orqix-sync.json. Never pushes bindings, base URLs or secrets; a credential-like file is refused with 422. The draft must compile (422 WORKFLOW_INVALID). The base branch itself cannot be the target. A branch that moved while writing is 409 GIT_BRANCH_MOVED; a provider failure is 503."
+      x-orqix-permission: workflow.export
+      x-orqix-audit: git.pushed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GitPushRequest' }
+      responses:
+        '200':
+          description: Pushed (or unchanged)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitPushResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/git/import-preview:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [GitAndBundles]
+      operationId: previewGitImport
+      summary: Read a branch (or one commit) and list what importing it would change in the current draft
+      description: "Read-only. Lists steps, routes, rule tables, request fields, settings and test cases that were added, removed or changed, the content hashes of both sides and the compiler findings for the incoming definition in this workspace."
+      x-orqix-permission: workflow.edit
+      parameters:
+        - { name: branch, in: query, required: true, schema: { type: string, maxLength: 100 } }
+        - { name: commit, in: query, required: false, schema: { type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$' } }
+      responses:
+        '200':
+          description: Differences
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitImportPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/git/import:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [GitAndBundles]
+      operationId: importWorkflowFromGit
+      summary: Save the files of one commit as a new draft revision (and test suite version) with the commit in provenance
+      description: "Needs the commit shown by the preview and the current draft revision (stale is 412 STALE_REVISION). Generated files are ignored. Removing tests.json while the workflow has shared tests is refused. Nothing is published."
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: git.pulled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GitImportRequest' }
+      responses:
+        '200':
+          description: Imported (or unchanged)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitImportResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/git/publish:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [GitAndBundles]
+      operationId: publishFromGit
+      summary: Publish a draft revision only from a reviewed commit whose content hash equals the draft's
+      description: "The commit must be the head of an open pull request with an approval on that commit, or the head or merge commit of a merged pull request with an approval (else 422 GIT_REVIEW_REQUIRED). The content hash of its workflow.json and tests.json must equal the draft's (else 409 GIT_CONTENT_MISMATCH). Then every publish gate applies as for publishDraft. The release manifest and its evidence pack record gitSource. asBundle publishes a release bundle in the same transaction."
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: git.published
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GitPublishRequest' }
+      responses:
+        '200':
+          description: Idempotent replay of an earlier publish
+          headers:
+            Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitPublishResult' }
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitPublishResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/git/events:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [GitAndBundles]
+      operationId: listGitSyncEvents
+      summary: Pushes, imports and publishes of this workflow, newest first, at most 50
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GitSyncEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/bundles:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [GitAndBundles]
+      operationId: listReleaseBundles
+      summary: Release bundles of this workflow, newest first, at most 50
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Bundles
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseBundleList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [GitAndBundles]
+      operationId: publishReleaseBundle
+      summary: Publish a draft revision and record every component its release pins as one atomic bundle
+      description: "Same gates as publishDraft; the views the draft pins must be published versions. In the same transaction the bundle lists rule tables, the request form, shared decisions and forms, document templates, working calendars, views, connections, child workflows, AI skills and the test suite with versions and SHA-256. The bundle hash covers type, key and SHA-256 only, so it is equal across stages for the same content."
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: release.bundle.published
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishRequest' }
+      responses:
+        '200':
+          description: Idempotent replay of an earlier publish
+          headers:
+            Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseBundlePublished' }
+        '201':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseBundlePublished' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/bundle:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    get:
+      tags: [GitAndBundles]
+      operationId: getReleaseBundle
+      summary: The bundle published with this release (404 when it was published alone)
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Bundle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseBundle' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/bundles/{bundleId}/promotion-check:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bundleId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [GitAndBundles]
+      operationId: checkBundlePromotion
+      summary: Plan the promotion of a whole bundle to a later-stage workspace; nothing is changed
+      description: "Read-only. Needs workflow.export here and workflow.edit in the target (same organization, later stage, as checkReleasePromotion). Each component is reused, created, given a new version, copied, ready or blocked; creating or versioning views needs workflow.publish in the target."
+      x-orqix-permission: workflow.export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundlePromotionRequest' }
+      responses:
+        '200':
+          description: Plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BundlePromotionPlan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/bundles/{bundleId}/promote:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: bundleId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [GitAndBundles]
+      operationId: promoteReleaseBundle
+      summary: Move a bundle into a later-stage workspace as one unit; the workflow arrives as a draft
+      description: "All or nothing: shared decisions, forms and views are reused or created there, the draft's pins point at the target's versions, the test suite is copied, and the target's compiler and shared-asset check must pass, otherwise 422 and the target is unchanged. Never publishes, never copies bindings, secrets, connections, templates, calendars or groups. A target with a promotion approval gate is 409 PROMOTION_APPROVAL_REQUIRED."
+      x-orqix-permission: workflow.export
+      x-orqix-audit: release.bundle.promoted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundlePromotionRequest' }
+      responses:
+        '201':
+          description: Promoted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BundlePromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  # ---------------------------------------------------------------- end GitAndBundles
 
 components:
   securitySchemes:
@@ -14537,6 +14883,273 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/RunArchive' } }
     # ---------------------------------------------------------------- end AlertsAndRetention schemas
+    # ---------------------------------------------------------------- GitAndBundles (docs/build/S147)
+    GitProvider:
+      type: string
+      enum: [azure-devops, bitbucket, github, gitlab]
+    GitCommitId:
+      type: string
+      pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'
+    GitConnection:
+      type: object
+      required: [provider, apiUrl, repository, baseBranch, basePath, credentialRef, enabled, version, updatedBy, updatedAt]
+      properties:
+        provider: { $ref: '#/components/schemas/GitProvider' }
+        apiUrl: { type: string }
+        repository: { type: string, description: 'owner/repository (GitHub), group/project (GitLab), organization/project/repository (Azure DevOps), workspace/repository (Bitbucket)' }
+        baseBranch: { type: string, description: 'The branch pull requests target' }
+        basePath: { type: string, description: 'Folder Orqix writes under; each workflow lives in <basePath>/workflows/<workflowKey>/' }
+        credentialRef: { type: [string, 'null'], description: 'Secret reference of the access token; shown to connection managers only. Never a token.' }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        updatedBy: { $ref: '#/components/schemas/SubjectRef' }
+        updatedAt: { type: string, format: date-time }
+    GitConnectionState:
+      type: object
+      required: [configured, connection, providers]
+      properties:
+        configured: { type: boolean }
+        connection:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/GitConnection' }
+        providers: { type: array, items: { $ref: '#/components/schemas/GitProvider' } }
+    SaveGitConnection:
+      type: object
+      required: [provider, repository, credentialRef, expectedVersion]
+      properties:
+        provider: { $ref: '#/components/schemas/GitProvider' }
+        apiUrl: { type: [string, 'null'], maxLength: 300, description: 'API root; empty uses the public service of the provider' }
+        repository: { type: string, minLength: 3, maxLength: 200 }
+        baseBranch: { type: [string, 'null'], maxLength: 100, description: 'Default main' }
+        basePath: { type: [string, 'null'], maxLength: 100, description: 'Default orqix' }
+        credentialRef: { type: string, maxLength: 400, description: 'A mounted secret name or vault:, aws-sm:, azure-kv:, gcp-sm: reference' }
+        enabled: { type: [boolean, 'null'] }
+        expectedVersion: { type: integer, minimum: 0, description: '0 creates the connection' }
+    GitConnectionCheck:
+      type: object
+      required: [reachable, defaultBranch, baseBranchExists, message]
+      properties:
+        reachable: { type: boolean }
+        defaultBranch: { type: [string, 'null'] }
+        baseBranchExists: { type: boolean }
+        message: { type: string }
+    GitPushRequest:
+      type: object
+      required: [draftRevision]
+      properties:
+        draftRevision: { type: integer, minimum: 1 }
+        branch: { type: [string, 'null'], maxLength: 100, description: 'Review branch; default orqix/<workflowKey>. Never the base branch.' }
+        title: { type: [string, 'null'], maxLength: 200, description: 'Pull request title when a new one is opened' }
+        description: { type: [string, 'null'], maxLength: 2000 }
+    GitPullRequest:
+      type: object
+      required: [id, url, state, sourceBranch, headCommit, approvedBy]
+      properties:
+        id: { type: string }
+        url: { type: [string, 'null'] }
+        state: { type: string, enum: [open, merged, closed] }
+        sourceBranch: { type: [string, 'null'] }
+        headCommit: { type: [string, 'null'] }
+        approvedBy: { type: array, items: { type: string }, description: 'Reviewers whose approval applies to the head commit' }
+    GitPushResult:
+      type: object
+      required: [branch, commit, unchanged, contentHash, draftRevision, changedFiles, pullRequest]
+      properties:
+        branch: { type: string }
+        commit: { type: string }
+        unchanged: { type: boolean, description: 'True when the branch already held exactly these files (no commit was made)' }
+        contentHash: { type: string, description: 'SHA-256 over the source files (workflow.json and tests.json)' }
+        draftRevision: { type: integer }
+        changedFiles: { type: array, items: { type: string } }
+        pullRequest:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/GitPullRequest' }
+    GitChange:
+      type: object
+      required: [kind, area, title]
+      properties:
+        kind: { type: string, enum: [added, removed, changed] }
+        area: { type: string, enum: [step, route, ruleTable, field, setting, test] }
+        title: { type: string }
+    GitImportPreview:
+      type: object
+      required: [branch, commit, contentHash, currentDraftRevision, draftContentHash, identical, testsIncluded, changes, issues]
+      properties:
+        branch: { type: string }
+        commit: { type: string }
+        contentHash: { type: string }
+        currentDraftRevision: { type: integer }
+        draftContentHash: { type: string }
+        identical: { type: boolean }
+        testsIncluded: { type: boolean }
+        changes: { type: array, items: { $ref: '#/components/schemas/GitChange' } }
+        issues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    GitImportRequest:
+      type: object
+      required: [branch, commit, expectedDraftRevision]
+      properties:
+        branch: { type: string, maxLength: 100 }
+        commit: { $ref: '#/components/schemas/GitCommitId' }
+        expectedDraftRevision: { type: integer, minimum: 1 }
+        pullRequest: { type: [string, 'null'], maxLength: 40, description: 'Recorded as the review reference in provenance' }
+    GitImportResult:
+      type: object
+      required: [draftRevision, unchanged, commit, contentHash, testsChanged, testSuiteVersion, changes]
+      properties:
+        draftRevision: { type: integer }
+        unchanged: { type: boolean }
+        commit: { type: string }
+        contentHash: { type: string }
+        testsChanged: { type: boolean }
+        testSuiteVersion: { type: integer, minimum: 0 }
+        changes: { type: array, items: { $ref: '#/components/schemas/GitChange' } }
+    GitPublishRequest:
+      type: object
+      required: [draftRevision, commit, pullRequest]
+      properties:
+        draftRevision: { type: integer, minimum: 1 }
+        commit: { $ref: '#/components/schemas/GitCommitId' }
+        pullRequest: { type: string, maxLength: 40 }
+        acknowledgeWarnings: { type: [boolean, 'null'] }
+        activate: { type: [boolean, 'null'] }
+        releaseNote: { type: [string, 'null'], maxLength: 1000 }
+        asBundle: { type: [boolean, 'null'], description: 'Also publish a release bundle in the same transaction' }
+    GitSource:
+      type: object
+      required: [provider, repository, branch, commit, contentHash, pullRequest, reviewState, approvedBy, verifiedAt]
+      properties:
+        provider: { $ref: '#/components/schemas/GitProvider' }
+        repository: { type: string }
+        branch: { type: string }
+        commit: { type: string }
+        contentHash: { type: string }
+        pullRequest: { type: string }
+        pullRequestUrl: { type: [string, 'null'] }
+        reviewState: { type: string, enum: [open, merged] }
+        approvedBy: { type: array, items: { type: string } }
+        verifiedAt: { type: string, format: date-time }
+    GitPublishResult:
+      type: object
+      required: [release, gitSource, bundle, replayed]
+      properties:
+        release: { $ref: '#/components/schemas/Release' }
+        gitSource: { $ref: '#/components/schemas/GitSource' }
+        bundle:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/ReleaseBundle' }
+        replayed: { type: boolean }
+    GitSyncEvent:
+      type: object
+      required: [id, direction, branch, commit, contentHash, draftRevision, releaseId, pullRequest, pullRequestUrl, actor, occurredAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        direction: { type: string, enum: [push, pull, publish] }
+        branch: { type: string }
+        commit: { type: string }
+        contentHash: { type: string }
+        draftRevision: { type: [integer, 'null'] }
+        releaseId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+        pullRequest: { type: [string, 'null'] }
+        pullRequestUrl: { type: [string, 'null'] }
+        actor: { $ref: '#/components/schemas/SubjectRef' }
+        occurredAt: { type: string, format: date-time }
+    ReleaseBundleComponent:
+      type: object
+      required: [type, key, name, version, sha256, ref]
+      properties:
+        type: { type: string, enum: [workflow, ruleTable, requestForm, sharedDecision, sharedForm, documentTemplate, calendar, view, connection, childWorkflow, aiSkill, testSuite] }
+        key: { type: string, description: 'Portable key (a view is identified by its name)' }
+        name: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        sha256: { type: [string, 'null'] }
+        ref: { type: [string, 'null'], description: 'Workspace-local id (view id, release id); not covered by the bundle hash' }
+    ReleaseBundleSource:
+      type: object
+      required: [bundleId, bundleHash, workspaceId, workspaceKey, sameContent]
+      properties:
+        bundleId: { $ref: '#/components/schemas/Uuid' }
+        bundleHash: { type: string }
+        workspaceId: { $ref: '#/components/schemas/Uuid' }
+        workspaceKey: { type: [string, 'null'] }
+        sameContent: { type: boolean, description: 'True when this bundle has the hash of the bundle it was promoted from' }
+    ReleaseBundle:
+      type: object
+      required: [id, workflowId, releaseId, releaseNumber, bundleHash, components, source, publishedBy, publishedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        releaseId: { $ref: '#/components/schemas/Uuid' }
+        releaseNumber: { type: integer }
+        bundleHash: { type: string }
+        components: { type: array, items: { $ref: '#/components/schemas/ReleaseBundleComponent' } }
+        source:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/ReleaseBundleSource' }
+        publishedBy: { $ref: '#/components/schemas/SubjectRef' }
+        publishedAt: { type: string, format: date-time }
+    ReleaseBundleList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ReleaseBundle' } }
+    ReleaseBundlePublished:
+      type: object
+      required: [release, bundle, replayed]
+      properties:
+        release: { $ref: '#/components/schemas/Release' }
+        bundle: { $ref: '#/components/schemas/ReleaseBundle' }
+        replayed: { type: boolean }
+    BundlePromotionRequest:
+      type: object
+      required: [targetWorkspaceId]
+      properties:
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        expectedDraftRevision: { type: [integer, 'null'], minimum: 1, description: 'Required when the target already has the workflow' }
+    BundlePlanItem:
+      type: object
+      required: [type, key, name, sourceVersion, action, targetVersion, problem]
+      properties:
+        type: { type: string }
+        key: { type: string }
+        name: { type: [string, 'null'] }
+        sourceVersion: { type: [string, 'null'] }
+        action: { type: string, enum: [reuse, create, newVersion, copy, ready, blocked] }
+        targetVersion: { type: [string, 'null'] }
+        problem: { type: [string, 'null'] }
+    BundlePromotionPlan:
+      type: object
+      required: [promotable, bundleHash, sourceStage, targetStage, approvalRequired, targetWorkflow, items, issues]
+      properties:
+        promotable: { type: boolean }
+        bundleHash: { type: string }
+        sourceStage: { type: string }
+        targetStage: { type: string }
+        approvalRequired: { type: boolean }
+        targetWorkflow:
+          type: object
+          required: [exists, id, draftRevision]
+          properties:
+            exists: { type: boolean }
+            id: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+            draftRevision: { type: [integer, 'null'] }
+        items: { type: array, items: { $ref: '#/components/schemas/BundlePlanItem' } }
+        issues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    BundlePromotion:
+      type: object
+      required: [id, bundleHash, targetWorkspaceId, targetWorkflowId, draftRevision, createdWorkflow, items]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        bundleHash: { type: string }
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        targetWorkflowId: { $ref: '#/components/schemas/Uuid' }
+        draftRevision: { type: integer }
+        createdWorkflow: { type: boolean }
+        items: { type: array, items: { $ref: '#/components/schemas/BundlePlanItem' } }
+    # ---------------------------------------------------------------- end GitAndBundles
     InboundAccepted:
       type: object
       additionalProperties: false
@@ -15232,6 +15845,9 @@ components:
             - BULK_PREVIEW_EXPIRED
             - BULK_OPERATION_STATE_CONFLICT
             - BULK_LIMIT_EXCEEDED
+            - GIT_CONTENT_MISMATCH
+            - GIT_REVIEW_REQUIRED
+            - GIT_BRANCH_MOVED
             - SOURCE_INVALID
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
@@ -17016,6 +17632,7 @@ components:
               definitionVersion: { type: integer }
               definitionHash: { type: string }
         groups: { type: array, items: { $ref: '#/components/schemas/Key' } }
+        gitSource: { $ref: '#/components/schemas/GitSource' }
         assets:
           type: array
           description: Shared asset versions the release's copies were published from (docs/build/S61)

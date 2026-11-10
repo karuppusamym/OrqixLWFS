@@ -937,3 +937,56 @@ export const listRunArchives = (ws: string, reference?: string) =>
 
 /** The archive download is a plain link: the browser streams the ZIP with the session cookie. */
 export const runArchiveUrl = (ws: string, archiveId: string) => `/api/v1/workspaces/${ws}/run-archives/${archiveId}/content`
+
+// Git sync (CG-S01) and release bundles (CG-S02), docs/build/S147
+export const getGitConnection = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws } } }))
+
+export const saveGitConnection = (ws: string, body: S['SaveGitConnection']) =>
+  call(api.PUT('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws } }, body }))
+
+export const deleteGitConnection = (ws: string, expectedVersion: number) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws }, query: { expectedVersion } } }))
+
+export const checkGitConnection = (ws: string) =>
+  call(api.POST('/workspaces/{workspaceId}/git-connection/check', { params: { path: { workspaceId: ws } } }))
+
+export const pushWorkflowToGit = (ws: string, workflowId: string, body: S['GitPushRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/push', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const previewGitImport = (ws: string, workflowId: string, branch: string, commit?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/git/import-preview', {
+    params: { path: { workspaceId: ws, workflowId }, query: commit ? { branch, commit } : { branch } },
+  }))
+
+export const importWorkflowFromGit = (ws: string, workflowId: string, body: S['GitImportRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/import', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const publishFromGit = (ws: string, workflowId: string, body: S['GitPublishRequest'], idempotencyKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/publish', {
+    params: { path: { workspaceId: ws, workflowId }, header: { 'Idempotency-Key': idempotencyKey } },
+    body,
+  }))
+
+export const listGitSyncEvents = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/git/events', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const listReleaseBundles = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/bundles', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const publishReleaseBundle = (ws: string, workflowId: string, body: S['PublishRequest'], idempotencyKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/bundles', {
+    params: { path: { workspaceId: ws, workflowId }, header: { 'Idempotency-Key': idempotencyKey } },
+    body,
+  }))
+
+export const getReleaseBundle = (ws: string, workflowId: string, releaseId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/bundle', {
+    params: { path: { workspaceId: ws, workflowId, releaseId } },
+  }))
+
+export const checkBundlePromotion = (ws: string, bundleId: string, body: S['BundlePromotionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/bundles/{bundleId}/promotion-check', { params: { path: { workspaceId: ws, bundleId } }, body }))
+
+export const promoteReleaseBundle = (ws: string, bundleId: string, body: S['BundlePromotionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/bundles/{bundleId}/promote', { params: { path: { workspaceId: ws, bundleId } }, body }))

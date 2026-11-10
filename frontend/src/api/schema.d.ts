@@ -8730,6 +8730,252 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/git-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The workspace's Git connection, if any; the credential reference is shown to connection managers only */
+        get: operations["getGitConnection"];
+        /**
+         * Create or change the Git connection (versioned; 0 creates)
+         * @description The token is never sent here: credentialRef names a secret resolved through the S132 providers at each call. apiUrl must pass the egress policy (422 EGRESS_NOT_ALLOWED). A stale expectedVersion is 409 CONFIGURATION_VERSION_CONFLICT.
+         */
+        put: operations["saveGitConnection"];
+        post?: never;
+        /** Remove the Git connection; the sync history stays */
+        delete: operations["deleteGitConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/git-connection/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve the credential and read the repository and its base branch; nothing is written */
+        post: operations["checkGitConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/git/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export a draft revision to a review branch in its deterministic layout and open (or reuse) a pull request
+         * @description Writes <basePath>/workflows/<workflowKey>/workflow.json and tests.json (the hashed source files), generated/ (BPMN, DMN, references, connection definitions, pinned assets and views, for review only) and orqix-sync.json. Never pushes bindings, base URLs or secrets; a credential-like file is refused with 422. The draft must compile (422 WORKFLOW_INVALID). The base branch itself cannot be the target. A branch that moved while writing is 409 GIT_BRANCH_MOVED; a provider failure is 503.
+         */
+        post: operations["pushWorkflowToGit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/git/import-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a branch (or one commit) and list what importing it would change in the current draft
+         * @description Read-only. Lists steps, routes, rule tables, request fields, settings and test cases that were added, removed or changed, the content hashes of both sides and the compiler findings for the incoming definition in this workspace.
+         */
+        get: operations["previewGitImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/git/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save the files of one commit as a new draft revision (and test suite version) with the commit in provenance
+         * @description Needs the commit shown by the preview and the current draft revision (stale is 412 STALE_REVISION). Generated files are ignored. Removing tests.json while the workflow has shared tests is refused. Nothing is published.
+         */
+        post: operations["importWorkflowFromGit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/git/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a draft revision only from a reviewed commit whose content hash equals the draft's
+         * @description The commit must be the head of an open pull request with an approval on that commit, or the head or merge commit of a merged pull request with an approval (else 422 GIT_REVIEW_REQUIRED). The content hash of its workflow.json and tests.json must equal the draft's (else 409 GIT_CONTENT_MISMATCH). Then every publish gate applies as for publishDraft. The release manifest and its evidence pack record gitSource. asBundle publishes a release bundle in the same transaction.
+         */
+        post: operations["publishFromGit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/git/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** Pushes, imports and publishes of this workflow, newest first, at most 50 */
+        get: operations["listGitSyncEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** Release bundles of this workflow, newest first, at most 50 */
+        get: operations["listReleaseBundles"];
+        put?: never;
+        /**
+         * Publish a draft revision and record every component its release pins as one atomic bundle
+         * @description Same gates as publishDraft; the views the draft pins must be published versions. In the same transaction the bundle lists rule tables, the request form, shared decisions and forms, document templates, working calendars, views, connections, child workflows, AI skills and the test suite with versions and SHA-256. The bundle hash covers type, key and SHA-256 only, so it is equal across stages for the same content.
+         */
+        post: operations["publishReleaseBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        /** The bundle published with this release (404 when it was published alone) */
+        get: operations["getReleaseBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bundles/{bundleId}/promotion-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bundleId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan the promotion of a whole bundle to a later-stage workspace; nothing is changed
+         * @description Read-only. Needs workflow.export here and workflow.edit in the target (same organization, later stage, as checkReleasePromotion). Each component is reused, created, given a new version, copied, ready or blocked; creating or versioning views needs workflow.publish in the target.
+         */
+        post: operations["checkBundlePromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/bundles/{bundleId}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bundleId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a bundle into a later-stage workspace as one unit; the workflow arrives as a draft
+         * @description All or nothing: shared decisions, forms and views are reused or created there, the draft's pins point at the target's versions, the test suite is copied, and the target's compiler and shared-asset check must pass, otherwise 422 and the target is unchanged. Never publishes, never copies bindings, secrets, connections, templates, calendars or groups. A target with a promotion approval gate is 409 PROMOTION_APPROVAL_REQUIRED.
+         */
+        post: operations["promoteReleaseBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -10950,6 +11196,237 @@ export interface components {
         RunArchiveList: {
             items: components["schemas"]["RunArchive"][];
         };
+        /** @enum {string} */
+        GitProvider: "azure-devops" | "bitbucket" | "github" | "gitlab";
+        GitCommitId: string;
+        GitConnection: {
+            provider: components["schemas"]["GitProvider"];
+            apiUrl: string;
+            /** @description owner/repository (GitHub), group/project (GitLab), organization/project/repository (Azure DevOps), workspace/repository (Bitbucket) */
+            repository: string;
+            /** @description The branch pull requests target */
+            baseBranch: string;
+            /** @description Folder Orqix writes under; each workflow lives in <basePath>/workflows/<workflowKey>/ */
+            basePath: string;
+            /** @description Secret reference of the access token; shown to connection managers only. Never a token. */
+            credentialRef: string | null;
+            enabled: boolean;
+            version: number;
+            updatedBy: components["schemas"]["SubjectRef"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GitConnectionState: {
+            configured: boolean;
+            connection: null | components["schemas"]["GitConnection"];
+            providers: components["schemas"]["GitProvider"][];
+        };
+        SaveGitConnection: {
+            provider: components["schemas"]["GitProvider"];
+            /** @description API root; empty uses the public service of the provider */
+            apiUrl?: string | null;
+            repository: string;
+            /** @description Default main */
+            baseBranch?: string | null;
+            /** @description Default orqix */
+            basePath?: string | null;
+            /** @description A mounted secret name or vault:, aws-sm:, azure-kv:, gcp-sm: reference */
+            credentialRef: string;
+            enabled?: boolean | null;
+            /** @description 0 creates the connection */
+            expectedVersion: number;
+        };
+        GitConnectionCheck: {
+            reachable: boolean;
+            defaultBranch: string | null;
+            baseBranchExists: boolean;
+            message: string;
+        };
+        GitPushRequest: {
+            draftRevision: number;
+            /** @description Review branch; default orqix/<workflowKey>. Never the base branch. */
+            branch?: string | null;
+            /** @description Pull request title when a new one is opened */
+            title?: string | null;
+            description?: string | null;
+        };
+        GitPullRequest: {
+            id: string;
+            url: string | null;
+            /** @enum {string} */
+            state: "open" | "merged" | "closed";
+            sourceBranch: string | null;
+            headCommit: string | null;
+            /** @description Reviewers whose approval applies to the head commit */
+            approvedBy: string[];
+        };
+        GitPushResult: {
+            branch: string;
+            commit: string;
+            /** @description True when the branch already held exactly these files (no commit was made) */
+            unchanged: boolean;
+            /** @description SHA-256 over the source files (workflow.json and tests.json) */
+            contentHash: string;
+            draftRevision: number;
+            changedFiles: string[];
+            pullRequest: null | components["schemas"]["GitPullRequest"];
+        };
+        GitChange: {
+            /** @enum {string} */
+            kind: "added" | "removed" | "changed";
+            /** @enum {string} */
+            area: "step" | "route" | "ruleTable" | "field" | "setting" | "test";
+            title: string;
+        };
+        GitImportPreview: {
+            branch: string;
+            commit: string;
+            contentHash: string;
+            currentDraftRevision: number;
+            draftContentHash: string;
+            identical: boolean;
+            testsIncluded: boolean;
+            changes: components["schemas"]["GitChange"][];
+            issues: components["schemas"]["ValidationIssue"][];
+        };
+        GitImportRequest: {
+            branch: string;
+            commit: components["schemas"]["GitCommitId"];
+            expectedDraftRevision: number;
+            /** @description Recorded as the review reference in provenance */
+            pullRequest?: string | null;
+        };
+        GitImportResult: {
+            draftRevision: number;
+            unchanged: boolean;
+            commit: string;
+            contentHash: string;
+            testsChanged: boolean;
+            testSuiteVersion: number;
+            changes: components["schemas"]["GitChange"][];
+        };
+        GitPublishRequest: {
+            draftRevision: number;
+            commit: components["schemas"]["GitCommitId"];
+            pullRequest: string;
+            acknowledgeWarnings?: boolean | null;
+            activate?: boolean | null;
+            releaseNote?: string | null;
+            /** @description Also publish a release bundle in the same transaction */
+            asBundle?: boolean | null;
+        };
+        GitSource: {
+            provider: components["schemas"]["GitProvider"];
+            repository: string;
+            branch: string;
+            commit: string;
+            contentHash: string;
+            pullRequest: string;
+            pullRequestUrl?: string | null;
+            /** @enum {string} */
+            reviewState: "open" | "merged";
+            approvedBy: string[];
+            /** Format: date-time */
+            verifiedAt: string;
+        };
+        GitPublishResult: {
+            release: components["schemas"]["Release"];
+            gitSource: components["schemas"]["GitSource"];
+            bundle: null | components["schemas"]["ReleaseBundle"];
+            replayed: boolean;
+        };
+        GitSyncEvent: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            direction: "push" | "pull" | "publish";
+            branch: string;
+            commit: string;
+            contentHash: string;
+            draftRevision: number | null;
+            releaseId: null | components["schemas"]["Uuid"];
+            pullRequest: string | null;
+            pullRequestUrl: string | null;
+            actor: components["schemas"]["SubjectRef"];
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        ReleaseBundleComponent: {
+            /** @enum {string} */
+            type: "workflow" | "ruleTable" | "requestForm" | "sharedDecision" | "sharedForm" | "documentTemplate" | "calendar" | "view" | "connection" | "childWorkflow" | "aiSkill" | "testSuite";
+            /** @description Portable key (a view is identified by its name) */
+            key: string;
+            name: string | null;
+            version: string | null;
+            sha256: string | null;
+            /** @description Workspace-local id (view id, release id); not covered by the bundle hash */
+            ref: string | null;
+        };
+        ReleaseBundleSource: {
+            bundleId: components["schemas"]["Uuid"];
+            bundleHash: string;
+            workspaceId: components["schemas"]["Uuid"];
+            workspaceKey: string | null;
+            /** @description True when this bundle has the hash of the bundle it was promoted from */
+            sameContent: boolean;
+        };
+        ReleaseBundle: {
+            id: components["schemas"]["Uuid"];
+            workflowId: components["schemas"]["Uuid"];
+            releaseId: components["schemas"]["Uuid"];
+            releaseNumber: number;
+            bundleHash: string;
+            components: components["schemas"]["ReleaseBundleComponent"][];
+            source: null | components["schemas"]["ReleaseBundleSource"];
+            publishedBy: components["schemas"]["SubjectRef"];
+            /** Format: date-time */
+            publishedAt: string;
+        };
+        ReleaseBundleList: {
+            items: components["schemas"]["ReleaseBundle"][];
+        };
+        ReleaseBundlePublished: {
+            release: components["schemas"]["Release"];
+            bundle: components["schemas"]["ReleaseBundle"];
+            replayed: boolean;
+        };
+        BundlePromotionRequest: {
+            targetWorkspaceId: components["schemas"]["Uuid"];
+            /** @description Required when the target already has the workflow */
+            expectedDraftRevision?: number | null;
+        };
+        BundlePlanItem: {
+            type: string;
+            key: string;
+            name: string | null;
+            sourceVersion: string | null;
+            /** @enum {string} */
+            action: "reuse" | "create" | "newVersion" | "copy" | "ready" | "blocked";
+            targetVersion: string | null;
+            problem: string | null;
+        };
+        BundlePromotionPlan: {
+            promotable: boolean;
+            bundleHash: string;
+            sourceStage: string;
+            targetStage: string;
+            approvalRequired: boolean;
+            targetWorkflow: {
+                exists: boolean;
+                id: null | components["schemas"]["Uuid"];
+                draftRevision: number | null;
+            };
+            items: components["schemas"]["BundlePlanItem"][];
+            issues: components["schemas"]["ValidationIssue"][];
+        };
+        BundlePromotion: {
+            id: components["schemas"]["Uuid"];
+            bundleHash: string;
+            targetWorkspaceId: components["schemas"]["Uuid"];
+            targetWorkflowId: components["schemas"]["Uuid"];
+            draftRevision: number;
+            createdWorkflow: boolean;
+            items: components["schemas"]["BundlePlanItem"][];
+        };
         InboundAccepted: {
             /**
              * Format: uuid
@@ -11410,7 +11887,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "RUN_NOT_MOVABLE" | "MOVE_NOT_PENDING" | "MOVE_SAME_OPERATOR" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "BULK_COUNT_MISMATCH" | "BULK_PREVIEW_EXPIRED" | "BULK_OPERATION_STATE_CONFLICT" | "BULK_LIMIT_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "RUN_NOT_MOVABLE" | "MOVE_NOT_PENDING" | "MOVE_SAME_OPERATOR" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "GUEST_RESPONSE_CLOSED" | "GUEST_RESPONSE_SUBMITTED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "RESOURCE_IN_USE" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "AI_SKILL_STATE_CONFLICT" | "BULK_COUNT_MISMATCH" | "BULK_PREVIEW_EXPIRED" | "BULK_OPERATION_STATE_CONFLICT" | "BULK_LIMIT_EXCEEDED" | "GIT_CONTENT_MISMATCH" | "GIT_REVIEW_REQUIRED" | "GIT_BRANCH_MOVED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "FEATURE_DISABLED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -12854,6 +13331,7 @@ export interface components {
                 definitionHash: string;
             }[];
             groups: components["schemas"]["Key"][];
+            gitSource?: components["schemas"]["GitSource"];
             /** @description Shared asset versions the release's copies were published from (docs/build/S61) */
             assets?: {
                 kind: string;
@@ -33513,6 +33991,457 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    getGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveGitConnection"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteGitConnection: {
+        parameters: {
+            query: {
+                expectedVersion: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    checkGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result (a failure is reported in the body) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionCheck"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    pushWorkflowToGit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitPushRequest"];
+            };
+        };
+        responses: {
+            /** @description Pushed (or unchanged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitPushResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    previewGitImport: {
+        parameters: {
+            query: {
+                branch: string;
+                commit?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Differences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitImportPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    importWorkflowFromGit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Imported (or unchanged) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitImportResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    publishFromGit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Idempotent replay of an earlier publish */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitPublishResult"];
+                };
+            };
+            /** @description Published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitPublishResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listGitSyncEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncEvent"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listReleaseBundles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bundles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseBundleList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    publishReleaseBundle: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Idempotent replay of an earlier publish */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseBundlePublished"];
+                };
+            };
+            /** @description Published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseBundlePublished"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getReleaseBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bundle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseBundle"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    checkBundlePromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bundleId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundlePromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundlePromotionPlan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    promoteReleaseBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                bundleId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundlePromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Promoted */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundlePromotion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
         };
     };
 }

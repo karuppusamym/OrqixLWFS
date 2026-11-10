@@ -80,6 +80,14 @@ public class AuditWriter {
             Map.entry("access.grant.created", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.grant.deleted", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
+            // CG-I01 / CG-I05 / CG-I06 (S151): ids, keys and counts only; never request values.
+            Map.entry("access.resource-grant.created", Set.of("resourceType", "resourceId", "permission",
+                    "principalType", "principalValue")),
+            Map.entry("access.resource-grant.deleted", Set.of("resourceType", "resourceId", "permission",
+                    "principalType", "principalValue")),
+            Map.entry("data.revealed", Set.of("runId", "fields", "classifications")),
+            Map.entry("audit.chain-verified", Set.of("chainKey", "checked", "intact", "brokenSeq")),
+            Map.entry("audit.exported", Set.of("from", "to", "eventCount", "keyId", "headHash")),
             // S127: workspace feature switches.
             Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
             // CG-M04 (S136): MCP server switch and tool calls; tool name, step, outcome and ids only, never arguments.

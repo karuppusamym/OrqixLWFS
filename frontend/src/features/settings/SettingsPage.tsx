@@ -23,6 +23,7 @@ import { TaskActionsPanel } from './TaskActionsPanel'
 import { JobDashboardPanel } from './JobDashboardPanel'
 import { AlertRulesPanel } from './AlertRulesPanel'
 import { RunRetentionPanel } from './RunRetentionPanel'
+import { AuditIntegrityPanel } from './AuditIntegrityPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -125,7 +126,7 @@ export function SettingsPage() {
         {showAccess ? <TabsContent value="agent-write-retention"><AgentWriteRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="exit-export"><ExitExportPanel /></TabsContent> : null}
         {showAlerts ? <TabsContent value="alerts"><AlertRulesPanel /></TabsContent> : null}
-        {showRetention ? <TabsContent value="run-retention"><RunRetentionPanel /></TabsContent> : null}
+        {showRetention ? <TabsContent value="run-retention"><div className="space-y-10"><RunRetentionPanel />{can('audit.read') ? <AuditIntegrityPanel /> : null}</div></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />

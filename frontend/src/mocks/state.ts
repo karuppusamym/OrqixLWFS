@@ -122,6 +122,10 @@ export const promotionApprovers = new Set<string>()
 /** S144: `${wsId}:${userId}` holding the grant-only alert.manage permission in mock mode. */
 export const alertManagers = new Set<string>()
 
+/** S151: `${wsId}:${userId}` holding the grant-only data.reveal (CG-I05) or the audit.read grant (CG-I06) in mock mode. */
+export const dataRevealers = new Set<string>()
+export const auditReaders = new Set<string>()
+
 /** `${workspaceId}:${userId}` pairs that hold the grant-only run.bulk-operate (CG-O01, docs/build/S142). */
 export const bulkOperators = new Set<string>()
 
@@ -136,7 +140,7 @@ const AI_GRANTS: Record<string, Permission[]> = {
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(roles.length > 0 ? AI_GRANTS[user.username] ?? [] : []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(bulkOperators.has(`${wsId}:${user.id}`) ? ['run.bulk-operate' as const] : []), ...(alertManagers.has(`${wsId}:${user.id}`) ? ['alert.manage' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(roles.length > 0 ? AI_GRANTS[user.username] ?? [] : []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(bulkOperators.has(`${wsId}:${user.id}`) ? ['run.bulk-operate' as const] : []), ...(alertManagers.has(`${wsId}:${user.id}`) ? ['alert.manage' as const] : []), ...(dataRevealers.has(`${wsId}:${user.id}`) ? ['data.reveal' as const] : []), ...(auditReaders.has(`${wsId}:${user.id}`) ? ['audit.read' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {

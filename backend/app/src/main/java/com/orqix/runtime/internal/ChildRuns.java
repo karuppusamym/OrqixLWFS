@@ -123,7 +123,8 @@ public class ChildRuns {
                 .param("ws", workspaceId).query(String.class).single();
         String pid = engine.startProcess(child.processDefinitionId(), tenant, id.toString(), Map.of(
                 ProcessData.RUN_ID, id.toString(), ProcessData.WORKSPACE_ID, workspaceId.toString(),
-                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT, json.write(input)), parent.initiator());
+                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT,
+                runs.engineInput(workspaceId, child.id(), input)), parent.initiator());
         runs.setEngineProcessInstance(workspaceId, id, pid);
     }
 
@@ -166,7 +167,8 @@ public class ChildRuns {
                 .param("ws", workspaceId).query(String.class).single();
         String pid = engine.startProcess(child.processDefinitionId(), tenant, id.toString(), Map.of(
                 ProcessData.RUN_ID, id.toString(), ProcessData.WORKSPACE_ID, workspaceId.toString(),
-                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT, json.write(input)), parent.initiator());
+                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT,
+                runs.engineInput(workspaceId, child.id(), input)), parent.initiator());
         runs.setEngineProcessInstance(workspaceId, id, pid);
         return id;
     }

@@ -664,6 +664,25 @@ export const createPermissionGrant = (ws: string, permission: components['schema
   call(api.POST('/workspaces/{workspaceId}/access/grants', { params: { path: { workspaceId: ws } }, body: { permission, principal, ...(workflowId ? { workflowId } : {}) } }))
 export const deletePermissionGrant = (ws: string, grantId: string) =>
   callVoid(api.DELETE('/workspaces/{workspaceId}/access/grants/{grantId}', { params: { path: { workspaceId: ws, grantId } } }))
+// Grants on single resources (CG-I01, docs/build/S151)
+export const listResourceGrants = (ws: string, query: { resourceType?: S['ResourceGrant']['resourceType']; resourceId?: string } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/access/resource-grants', { params: { path: { workspaceId: ws }, query } }))
+export const createResourceGrant = (ws: string, body: { resourceType: S['ResourceGrant']['resourceType']; resourceId: string; permission: S['ResourcePermission']; principal: PrincipalRef }) =>
+  call(api.POST('/workspaces/{workspaceId}/access/resource-grants', { params: { path: { workspaceId: ws } }, body }))
+export const deleteResourceGrant = (ws: string, grantId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/access/resource-grants/{grantId}', { params: { path: { workspaceId: ws, grantId } } }))
+
+// Masked request answers (CG-I05) and the tamper-evident audit log (CG-I06), docs/build/S151
+export const revealRunData = (ws: string, runId: string, fields?: string[]) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/reveal', { params: { path: { workspaceId: ws, runId } }, body: fields ? { fields } : {} }))
+export const listAuditChainChecks = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/chain-verifications', { params: { path: { workspaceId: ws } } }))
+export const verifyAuditChain = (ws: string) =>
+  call(api.POST('/workspaces/{workspaceId}/audit/chain-verifications', { params: { path: { workspaceId: ws } } }))
+export const exportAuditLog = (ws: string, query: { afterSeq?: number; limit?: number } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/export', { params: { path: { workspaceId: ws }, query } }))
+export const listAuditSigningKeys = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/signing-keys', { params: { path: { workspaceId: ws } } }))
 export const putGroup = (ws: string, groupKey: string, body: { name: string; members: PrincipalRef[]; expectedRevision?: number }) =>
   call(api.PUT('/workspaces/{workspaceId}/groups/{groupKey}', { params: { path: { workspaceId: ws, groupKey } }, body }))
 

@@ -168,10 +168,14 @@ export interface DecisionTable {
   default: Record<string, Literal>
 }
 
+export type DataClassification = 'public' | 'internal' | 'personal' | 'sensitive'
+
 export interface FieldSchemaDoc {
   incidentEditable?: true
   /** CG-O04 (S142): operators can filter requests by this request answer. */
   searchable?: true
+  /** CG-I05 (S151): personal and sensitive answers are masked for everyone and revealed only with data.reveal. */
+  classification?: DataClassification
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
   title: string
   description?: string

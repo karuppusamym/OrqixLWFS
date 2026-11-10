@@ -8730,6 +8730,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/access/resource-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Grants on single folders, workflows, decision tables and connections (CG-I01) */
+        get: operations["listResourceGrants"];
+        put?: never;
+        /**
+         * Grant one permission on one resource
+         * @description A resource grant only adds the permission on that resource (for a folder, on the workflows filed in it at the time of each check); it never changes workspace-wide access and never applies to another resource. folder and workflow allow workflow.read, workflow.edit, workflow.publish, workflow.start, run.read and run.operate; decision (a shared decision table key) allows workflow.read and workflow.edit; connection (a connection key) allows connection.read and connection.manage.
+         */
+        post: operations["createResourceGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/access/resource-grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                grantId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a resource grant */
+        delete: operations["deleteResourceGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal masked personal and sensitive answers of one request (CG-I05)
+         * @description The only operation that returns personal or sensitive answers in plain text. Needs data.reveal and the right to see the request's data (initiator, task participant or run.read-data). Every reveal is audited with the request and field names, never the values. Omit fields (or send an empty list) to reveal every masked field.
+         */
+        post: operations["revealRunData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/audit/chain-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Latest checks of the workspace audit hash chain, newest first (CG-I06) */
+        get: operations["listAuditChainChecks"];
+        put?: never;
+        /** Verify the workspace audit hash chain now and report the first broken link */
+        post: operations["verifyAuditChain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/audit/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Signed export of one contiguous segment of the workspace audit chain (JWS, ES256)
+         * @description Events after afterSeq in chain order, at most limit (default and maximum 5000). The JWS payload holds every stored column with the chain positions and hashes; check the signature with listAuditSigningKeys, recompute the hashes and link segments through firstPrevHash. nextAfterSeq is set when more events follow.
+         */
+        get: operations["exportAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/audit/signing-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Public keys that verify signed audit exports (JWK set; empty when signing is not configured) */
+        get: operations["listAuditSigningKeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/git-connection": {
         parameters: {
             query?: never;
@@ -11197,6 +11324,78 @@ export interface components {
             items: components["schemas"]["RunArchive"][];
         };
         /** @enum {string} */
+        ResourcePermission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.start" | "run.read" | "run.operate" | "connection.read" | "connection.manage";
+        ResourceGrant: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            resourceType: "folder" | "workflow" | "decision" | "connection";
+            resourceId: string;
+            /** @description Folder, workflow or decision table name; the key for connections; null when the resource is gone */
+            resourceName: string | null;
+            permission: components["schemas"]["ResourcePermission"];
+            principal: components["schemas"]["Principal"];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        ResourceGrantList: {
+            items: components["schemas"]["ResourceGrant"][];
+        };
+        RevealedRunData: {
+            runId: components["schemas"]["Uuid"];
+            /** @description Plain answers by field name */
+            values: Record<string, never>;
+            revealedAt: components["schemas"]["Timestamp"];
+        };
+        AuditChainCheck: {
+            /** @description The workspace ID, or platform */
+            chainKey: string;
+            checkedAt: components["schemas"]["Timestamp"];
+            /**
+             * Format: int64
+             * @description Events verified
+             */
+            checked: number;
+            intact: boolean;
+            /**
+             * Format: int64
+             * @description First broken position
+             */
+            brokenSeq: number | null;
+            brokenEventId: components["schemas"]["Uuid"] | null;
+            /** @enum {string|null} */
+            reason: "hashMismatch" | "previousHashMismatch" | "missingEvent" | "headMismatch" | null;
+            /** Format: int64 */
+            headSeq: number;
+            headHash: string;
+        };
+        AuditChainCheckList: {
+            items: components["schemas"]["AuditChainCheck"][];
+        };
+        AuditExport: {
+            /** @enum {string} */
+            format: "orqix.audit-export.v1";
+            workspaceId: components["schemas"]["Uuid"];
+            /**
+             * Format: int64
+             * @description 0 when the segment is empty
+             */
+            firstSeq: number;
+            /** Format: int64 */
+            lastSeq: number;
+            eventCount: number;
+            firstPrevHash: string | null;
+            lastHash: string | null;
+            /** Format: int64 */
+            nextAfterSeq: number | null;
+            keyId: string;
+            /** @enum {string} */
+            algorithm: "ES256";
+            /** @description Compact JWS whose payload is the export document */
+            jws: string;
+        };
+        AuditSigningKeys: {
+            keys: Record<string, never>[];
+        };
+        /** @enum {string} */
         GitProvider: "azure-devops" | "bitbucket" | "github" | "gitlab";
         GitCommitId: string;
         GitConnection: {
@@ -11576,7 +11775,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage" | "data.reveal";
         AgentWriteSubject: {
             id: components["schemas"]["Uuid"];
             displayName: string;
@@ -13475,11 +13674,13 @@ export interface components {
             nextCursor: components["schemas"]["NextCursor"];
         };
         RunDetail: components["schemas"]["Run"] & {
-            /** @description Null unless the caller is the initiator, a task participant, or holds run.read-data */
+            /** @description Null unless the caller is the initiator, a task participant, or holds run.read-data. Answers of questions classified personal or sensitive are masked (six bullet characters); use revealRunData (CG-I05, docs/build/S151). */
             input?: Record<string, never> | null;
             inputLabels?: {
                 [key: string]: string;
             };
+            /** @description CG-I05 (docs/build/S151): request fields whose answers are masked in input; empty when input is null. */
+            protectedFields?: string[];
             output?: Record<string, never> | null;
             /** @description Runs started by steps of this run, oldest first. A child that needs attention is visible here. */
             children?: components["schemas"]["ChildRun"][];
@@ -15200,7 +15401,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage" | "data.reveal";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -16655,6 +16856,11 @@ export interface components {
         /** @description A bound of a date, time or date-time field (docs/build/S140); the compiler checks that it is written like the field (WF_FORM_INVALID). */
         formatBound: string;
         scalarFormField: {
+            /**
+             * @description CG-I05 (docs/build/S151): how protected the answer is. public and internal are shown as before. personal and sensitive answers are masked in every screen, API response, export and evidence pack; people with data.reveal can reveal them one request at a time, and every reveal is audited. sensitive answers are also encrypted at rest. Request questions only; personal and sensitive questions cannot be searchable or files.
+             * @enum {unknown}
+             */
+            classification?: "public" | "internal" | "personal" | "sensitive";
             /**
              * @description Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only.
              * @constant
@@ -18459,6 +18665,11 @@ export interface components {
                     };
                 };
                 scalarFormField: {
+                    /**
+                     * @description CG-I05 (docs/build/S151): how protected the answer is. public and internal are shown as before. personal and sensitive answers are masked in every screen, API response, export and evidence pack; people with data.reveal can reveal them one request at a time, and every reveal is audited. sensitive answers are also encrypted at rest. Request questions only; personal and sensitive questions cannot be searchable or files.
+                     * @enum {unknown}
+                     */
+                    classification?: "public" | "internal" | "personal" | "sensitive";
                     /**
                      * @description Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only.
                      * @constant
@@ -31263,7 +31474,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool" | "connector.manage" | "connector.approve" | "ai.approve-skill" | "ai.evaluate" | "run.bulk-operate" | "alert.manage" | "data.reveal";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
@@ -33991,6 +34202,237 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    listResourceGrants: {
+        parameters: {
+            query?: {
+                resourceType?: "folder" | "workflow" | "decision" | "connection";
+                resourceId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grants, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceGrantList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createResourceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    resourceType: "folder" | "workflow" | "decision" | "connection";
+                    /** @description Folder or workflow ID, or the decision table or connection key */
+                    resourceId: string;
+                    permission: components["schemas"]["ResourcePermission"];
+                    principal: components["schemas"]["PrincipalRef"];
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceGrant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteResourceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                grantId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revealRunData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    fields?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The revealed answers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealedRunData"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAuditChainChecks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 20 checks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditChainCheckList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    verifyAuditChain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The result (also recorded) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditChainCheck"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exportAuditLog: {
+        parameters: {
+            query?: {
+                afterSeq?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The signed segment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditExport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAuditSigningKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The JWK set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditSigningKeys"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getGitConnection: {

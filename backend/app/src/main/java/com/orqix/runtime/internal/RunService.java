@@ -110,7 +110,7 @@ public class RunService {
         ReleaseQueries.WorkflowRef workflow = releases.workflow(workspaceId, request.workflowId())
                 .orElseThrow(ApiException::notFound);
         if (!access.canStart(workflow.id())) {
-            if (!access.has(Permission.WORKFLOW_READ)) {
+            if (!access.hasOnWorkflow(Permission.WORKFLOW_READ, workflow.id())) {
                 throw ApiException.notFound();
             }
             throw policy.deny(workspaceId, caller.subjectId(), "workflow.start", "startRun", false,
@@ -202,7 +202,7 @@ public class RunService {
         variables.put(ProcessData.RUN_ID, runId.toString());
         variables.put(ProcessData.WORKSPACE_ID, workspaceId.toString());
         variables.put(ProcessData.INITIATOR, caller.subjectId().toString());
-        variables.put(ProcessData.INPUT, json.write(input));
+        variables.put(ProcessData.INPUT, runs.engineInput(workspaceId, release.id(), input));
         String processInstanceId;
         try {
             processInstanceId = engine.startProcess(release.processDefinitionId(), access.workspace().engineTenantId(),
@@ -234,7 +234,7 @@ public class RunService {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         ReleaseQueries.WorkflowRef workflow = releases.workflow(workspaceId, workflowId).orElseThrow(ApiException::notFound);
         if (!access.canStart(workflow.id())) {
-            if (!access.has(Permission.WORKFLOW_READ)) {
+            if (!access.hasOnWorkflow(Permission.WORKFLOW_READ, workflow.id())) {
                 throw ApiException.notFound();
             }
             throw new ApiException(ProblemCode.FORBIDDEN);
@@ -280,12 +280,16 @@ public class RunService {
     public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter,
             List<String> fieldConditions, String cursor, Integer limit) {
         WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
-        policy.require(access, Permission.RUN_READ, "listRuns", false);
+        // CG-I01 (S151): run.read on some workflows only (folder or workflow grants) lists those workflows' runs.
+        java.util.Set<UUID> scoped = access.workflowsWith(Permission.RUN_READ);
+        if (scoped != null && (scoped.isEmpty() || (filter.workflowId() != null && !scoped.contains(filter.workflowId())))) {
+            policy.require(access, Permission.RUN_READ, "listRuns", false);
+        }
         if (fieldConditions != null && !fieldConditions.isEmpty()) {
             policy.require(access, Permission.RUN_READ_DATA, "listRuns", false);
             filter = withFields(filter, searchIndex.parse(workspaceId, filter.workflowId(), fieldConditions));
         }
-        return page(access, filter, cursor, limit, "listRuns");
+        return page(access, filter, scoped, cursor, limit, "listRuns");
     }
 
     static RunQueries.Filter withFields(RunQueries.Filter f, List<RunSearchIndex.Condition> fields) {
@@ -300,7 +304,7 @@ public class RunService {
         if (releases.workflow(workspaceId, workflowId).isEmpty()) {
             throw ApiException.notFound();
         }
-        policy.require(access, Permission.RUN_READ, "listSearchableFields", false);
+        policy.require(access.onWorkflow(workflowId), Permission.RUN_READ, "listSearchableFields", false);
         return searchIndex.forWorkflow(workspaceId, workflowId);
     }
 
@@ -314,10 +318,15 @@ public class RunService {
 
     private RuntimeDtos.RunPage page(WorkspaceAccess access, RunQueries.Filter filter, String cursor, Integer limit,
             String operation) {
+        return page(access, filter, null, cursor, limit, operation);
+    }
+
+    private RuntimeDtos.RunPage page(WorkspaceAccess access, RunQueries.Filter filter, java.util.Set<UUID> onlyWorkflows,
+            String cursor, Integer limit, String operation) {
         int size = Limits.of(limit);
-        String filterKey = operation + "|" + access.workspaceId() + "|" + filter;
-        List<RunStore.RunRow> rows = runQueries.list(access.workspaceId(), filter, cursors.decode(cursor, filterKey),
-                size + 1);
+        String filterKey = operation + "|" + access.workspaceId() + "|" + filter + (onlyWorkflows == null ? "" : "|scoped");
+        List<RunStore.RunRow> rows = runQueries.list(access.workspaceId(), filter, onlyWorkflows,
+                cursors.decode(cursor, filterKey), size + 1);
         Page.Result<RunStore.RunRow> page = Page.of(rows, size,
                 r -> new CursorCodec.Position(r.createdAt(), r.id().toString()), cursors, filterKey);
         Map<UUID, String> names = views.names(page.items(), List.of(), List.of());
@@ -468,13 +477,15 @@ public class RunService {
                 summary.requestTitle(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
-                summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
+                summary.version(), data ? com.orqix.compiler.FieldClassification.mask(run.input(), release.inputSchema()) : null,
+                RuntimeViews.inputLabels(release),
                 data ? run.output() : null, taskViews, effectViews, reversedViews,
                 allowedActions(run, operate, effects, suspended != null, suspendBlocker), summary.parentRun(),
                 views.children(run), stageProgress == null ? null : stageProgress.current(),
                 stageProgress == null ? List.of() : stageProgress.stages(),
                 suspended == null ? null : new RuntimeDtos.Suspension(suspended.suspendedAt(),
-                        operate ? suspended.reason() : null));
+                        operate ? suspended.reason() : null),
+                data ? List.copyOf(com.orqix.compiler.FieldClassification.protectedFields(release.inputSchema()).keySet()) : List.of());
     }
 
     static RuntimeDtos.AllowedRunActions allowedActions(RunStore.RunRow run, boolean operate,

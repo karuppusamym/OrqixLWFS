@@ -107,9 +107,14 @@ public class ConnectionAdminService {
     @Transactional(readOnly = true)
     public ConnectionDtos.ConnectionList list(Caller caller, UUID workspaceId) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
-        policy.require(access, Permission.CONNECTION_READ, "listConnections", false);
+        // CG-I01 (S151): connection.read on some connections only lists those connections.
+        if (!access.hasAnywhere(Permission.CONNECTION_READ)) {
+            policy.require(access, Permission.CONNECTION_READ, "listConnections", false);
+        }
         Map<String, List<ConnectionService.DefinitionRecord>> byKey = new LinkedHashMap<>();
-        connections.definitions(workspaceId).forEach(d -> byKey.computeIfAbsent(d.key(), k -> new ArrayList<>()).add(d));
+        connections.definitions(workspaceId).stream()
+                .filter(d -> access.hasOnConnection(Permission.CONNECTION_READ, d.key()))
+                .forEach(d -> byKey.computeIfAbsent(d.key(), k -> new ArrayList<>()).add(d));
         List<ConnectionDtos.ConnectionSummary> items = new ArrayList<>();
         byKey.forEach((key, versions) -> {
             ConnectionService.DefinitionRecord latest = versions.get(versions.size() - 1);
@@ -129,7 +134,7 @@ public class ConnectionAdminService {
 
     @Transactional(readOnly = true)
     public ConnectionDtos.ConnectionDetail get(Caller caller, UUID workspaceId, String key) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         List<ConnectionService.DefinitionRecord> versions = connections.definitions(workspaceId, key);
         if (versions.isEmpty()) {
             throw ApiException.notFound();
@@ -146,7 +151,10 @@ public class ConnectionAdminService {
 
     @Transactional
     public ConnectionDtos.DefinitionRecord register(Caller caller, UUID workspaceId, String key, JsonNode definition) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess workspaceAccess = policy.requireVisible(caller, workspaceId);
+        // CG-I01 (S151): a grant on a connection covers new versions of it; a new key needs workspace-wide manage.
+        WorkspaceAccess access = connections.definitions(workspaceId, key).isEmpty() ? workspaceAccess
+                : workspaceAccess.onConnection(key);
         policy.require(access, Permission.CONNECTION_MANAGE, "registerConnectionVersion", true);
         if (definition == null || !definition.isObject()) {
             throw ApiException.malformed("definition must be a JSON object.");
@@ -219,7 +227,7 @@ public class ConnectionAdminService {
     @Transactional
     public ConnectionDtos.Binding putBinding(Caller caller, UUID workspaceId, String key, String ifMatch,
             ConnectionDtos.PutBindingRequest request) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }
@@ -346,7 +354,7 @@ public class ConnectionAdminService {
 
     @Transactional
     public ConnectionDtos.TestResult test(Caller caller, UUID workspaceId, String key, ConnectionDtos.TestRequest request) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }

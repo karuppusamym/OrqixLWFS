@@ -88,7 +88,18 @@ public final class ProcessData {
     }
 
     public static JsonNode input(VariableScope scope, Json json) {
-        return json.parse(required(scope, INPUT));
+        String text = required(scope, INPUT);
+        JsonNode input = json.parse(text);
+        // CG-I05 (S151): sensitive answers are stored encrypted in the variable and decrypted only here.
+        java.util.function.BiFunction<UUID, JsonNode, JsonNode> opener = inputOpener;
+        return opener != null && text.contains("orqix-enc:v1:") ? opener.apply(workspaceId(scope), input) : input;
+    }
+
+    private static volatile java.util.function.BiFunction<UUID, JsonNode, JsonNode> inputOpener;
+
+    /** Installed by {@code FieldProtection} at start-up (CG-I05, S151). */
+    public static void installInputOpener(java.util.function.BiFunction<UUID, JsonNode, JsonNode> opener) {
+        inputOpener = opener;
     }
 
     /** As {@link #resolve(VariableScope, Json, String)}, with an explicit for-each item (a batch of items, S138). */

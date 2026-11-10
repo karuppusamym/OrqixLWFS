@@ -5,7 +5,7 @@ import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, maskedInput, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
@@ -60,7 +60,7 @@ import {
 // Access (Settings → Members and groups): seeded memberships plus the changes an administrator made -------------------
 
 const ROLE_KEYS = ['WORKSPACE_ADMIN', 'WORKFLOW_DESIGNER', 'PUBLISHER', 'OPERATOR', 'VIEWER', 'APPROVER']
-const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate', 'alert.manage']
+const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate', 'alert.manage', 'data.reveal']
 
 function edits(): NonNullable<typeof db.accessEdits> {
   return (db.accessEdits ??= { roleBindings: [], grants: [], removed: [], groups: [] })
@@ -383,7 +383,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
   const claimAllowed = open && !task.assigneeId && eligibleGroup && !own && !separated
   return {
     ...summaryValue,
-    request: { input: Object.fromEntries(Object.entries(run.input).filter(([key]) => stepAccessOf(run, task)[key] !== 'hidden')), inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
+    request: { input: maskedInput(run, Object.fromEntries(Object.entries(run.input).filter(([key]) => stepAccessOf(run, task)[key] !== 'hidden'))), inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
     approvalView: rel.definition.nodes.find(node => node.id === task.nodeId)?.config.viewBinding ? (rel.definition.nodes.find(node => node.id === task.nodeId)!.config.viewBinding as { definition: unknown }).definition : undefined,
     form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [],

@@ -202,6 +202,10 @@ public class RuntimeViews {
                     && schema.path("format").isMissingNode();
             if (plainText && input.path(field).isString()) {
                 String value = input.path(field).asString().strip();
+                if (!value.isEmpty() && com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), field)) {
+                    // CG-I05 (S151): a protected title field shows the mask.
+                    return com.orqix.compiler.FieldClassification.MASK;
+                }
                 if (!value.isEmpty()) {
                     return value.length() > REQUEST_TITLE_MAX ? value.substring(0, REQUEST_TITLE_MAX).stripTrailing()
                             : value;

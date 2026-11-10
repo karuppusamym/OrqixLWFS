@@ -57,17 +57,20 @@ public class IncidentCorrectionService {
         for (var change:request.changes().properties()) {
             JsonNode field=release.inputSchema().path("properties").path(change.getKey());
             JsonNode value=change.getValue();
+            boolean hidden=com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(),change.getKey());
+            if (hidden && com.orqix.compiler.FieldClassification.isMask(value)) continue; // CG-I05 (S151): masked text sent back keeps the answer
             if (!field.path("incidentEditable").asBoolean() || "array".equals(field.path("type").asString())
                     || "attachment".equals(field.path("format").asString()) || !value.isValueNode() || value.isNull())
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,"Only explicitly editable scalar request fields can change.");
-            before.set(change.getKey(),corrected.path(change.getKey())); after.set(change.getKey(),value);
+            var masked=tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK);
+            before.set(change.getKey(),hidden ? masked : corrected.path(change.getKey())); after.set(change.getKey(),hidden ? masked : value);
             corrected.set(change.getKey(),value);
         }
         if (corrected.equals(run.input())) throw new ApiException(ProblemCode.VALIDATION_FAILED,"Change at least one value.");
         var errors=validator.validate(json.write(release.inputSchema()),json.write(corrected),json.write(release.inputUi()));
         if (!errors.isEmpty()) throw new ApiException(ProblemCode.VALIDATION_FAILED,"The corrected request does not match its pinned form.")
                 .withFieldErrors(errors.stream().map(e->new ApiException.FieldError("/changes"+e.pointer(),e.code(),e.message())).toList());
-        try { engine.correctInput(run.engineProcessInstanceId(),json.write(corrected),caller.subjectId()); }
+        try { engine.correctInput(run.engineProcessInstanceId(),runs.engineInput(workspace,run.releaseId(),corrected),caller.subjectId()); }
         catch (EngineCommands.EngineConflictException e) { throw new ApiException(ProblemCode.RUN_BUSY,"The execution changed; reload the request."); }
         int version=runs.correctInput(workspace,runId,run.version(),corrected);
         events.append(workspace,runId,"INPUT_CORRECTED",run.attention().path("nodeId").asString(),caller.subjectId(),

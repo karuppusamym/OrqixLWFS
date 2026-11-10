@@ -1,4 +1,8 @@
-import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock, Eye, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import * as endpoints from '@/api/endpoints'
+import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
+import { Badge } from '@/components/ui/badge'
 import { CallbackWaitsPanel } from './CallbackWaitsPanel'
 import { GuestLinksPanel } from './GuestLinksPanel'
 import { WaitingForPanel } from './WaitingForPanel'
@@ -21,7 +25,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { dueInfo, formatDateTime, formatTime } from '@/lib/dates'
 import { cn } from '@/lib/cn'
 import { attentionNextStep, describeEvent, eventTone, timelineEvents, type EventContext, type EventTone } from '@/lib/events'
-import { displayJsonValue } from '@/lib/form/display'
+import { displayJsonValue, MASKED_VALUE } from '@/lib/form/display'
 import { orderedRequestRows } from '@/lib/form/rows'
 import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
 import { ownReference, requestId, runTitle, stepOwnerText } from '@/lib/runText'
@@ -69,7 +73,7 @@ export function RunDetailPage() {
 
   if (run.isPending) return <LoadingBlock rows={5} label="Loading the request" />
   if (run.isError) return <QueryError error={run.error} onRetry={() => void run.refetch()} what="this request" backTo={can('run.read') ? { to: `/w/${ws}/runs`, label: 'Back to Runs' } : { to: `/w/${ws}/requests`, label: 'Back to My requests' }} />
-  return <RunView run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
+  return <RunView key={run.data.id} run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
 }
 
 function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown } | undefined }) {
@@ -110,8 +114,18 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
     return { initiatorName: run.initiator.displayName, labels, groupNames }
   }, [run, events])
 
-  const input = run.input ? asRecord(run.input) : null
-  const rawRequestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>) : []
+  // CG-I05: personal and sensitive answers arrive masked. Revealed answers live only in this component's state (never cached
+  // or stored), so they disappear when the person leaves the page.
+  const protectedFields = run.protectedFields ?? []
+  const [revealed, setRevealed] = useState<Record<string, unknown>>({})
+  const stillMasked = protectedFields.filter((f) => !(f in revealed))
+  const reveal = useMutation({
+    mutationFn: () => endpoints.revealRunData(ws, run.id, stillMasked),
+    onSuccess: (data) => setRevealed((prev) => ({ ...prev, ...(data.values as Record<string, unknown>) })),
+  })
+  const input = run.input ? { ...asRecord(run.input), ...revealed } : null
+  const rawRequestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>).map((row) =>
+    stillMasked.includes(row.key) ? { ...row, value: MASKED_VALUE } : row) : []
   // A file question stores the id of the attached file; show the file's name instead (ids that are not known files stay as they are).
   const fileNames = new Map((requestFiles.data?.items ?? []).map((f) => [f.id, f.name] as [string, string]))
   const requestRows = fileNames.size === 0 ? rawRequestRows : rawRequestRows.map((row) =>
@@ -311,14 +325,35 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
               {input === null ? (
                 <p className="text-sm text-muted-foreground">You can see where this request stands, but not what was requested.</p>
               ) : (
-                <dl className="divide-y divide-border rounded-card border border-border" data-testid="request-values">
-                  {requestRows.map((row) => (
-                    <div key={row.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[12rem_1fr]">
-                      <dt className="text-sm font-semibold text-muted-foreground">{row.label}</dt>
-                      <dd className="wrap-anywhere whitespace-pre-wrap">{row.value}</dd>
+                <>
+                  {protectedFields.length > 0 ? (
+                    <div className="mb-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-muted-foreground">
+                          {stillMasked.length === 0 ? 'Masked answers are shown until you leave this page. Your reveal was recorded.'
+                            : can('data.reveal') ? 'Some answers are personal or sensitive and are masked. Revealing them is recorded.'
+                              : 'Some answers are personal or sensitive and are masked. Only people allowed to reveal them can see them.'}
+                        </p>
+                        {stillMasked.length > 0 && can('data.reveal') ? (
+                          <Button size="sm" variant="secondary" loading={reveal.isPending} onClick={() => reveal.mutate()}><Eye aria-hidden="true" /> Reveal</Button>
+                        ) : null}
+                      </div>
+                      {reveal.isError ? <ProblemAlert error={toProblem(reveal.error)} context={{ action: 'reveal the masked answers' }} /> : null}
                     </div>
-                  ))}
-                </dl>
+                  ) : null}
+                  <dl className="divide-y divide-border rounded-card border border-border" data-testid="request-values">
+                    {requestRows.map((row) => (
+                      <div key={row.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[12rem_1fr]">
+                        <dt className="text-sm font-semibold text-muted-foreground">{row.label}</dt>
+                        <dd className="wrap-anywhere whitespace-pre-wrap">
+                          {row.value}
+                          {stillMasked.includes(row.key) ? <Badge className="ml-2 align-middle">Masked</Badge> : null}
+                          {protectedFields.includes(row.key) && !stillMasked.includes(row.key) ? <span className="ml-2 text-xs text-muted-foreground">Revealed</span> : null}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
               )}
               {run.output && Object.keys(asRecord(run.output)).length > 0 ? (
                 <div className="mt-4">

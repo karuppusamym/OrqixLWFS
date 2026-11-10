@@ -12,6 +12,7 @@ import { resetBulkMock } from '@/mocks/bulk'
 import { bulkOperators } from '@/mocks/state'
 import { resetAlertsRetentionMock } from '@/mocks/alertsRetention'
 import { resetGitBundlesMock } from '@/mocks/gitBundles'
+import { resetSecurityMock } from '@/mocks/security'
 import { server } from './server'
 
 // Lazy routes (studio, React Flow) are slow to load the first time in a cold test worker.
@@ -85,6 +86,7 @@ afterEach(async () => {
   bulkOperators.clear()
   resetAlertsRetentionMock()
   resetGitBundlesMock()
+  resetSecurityMock()
   window.localStorage.clear()
 })
 

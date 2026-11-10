@@ -4,7 +4,7 @@ import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
 import { renameCopiedQuestion } from './sharedForms'
-import type { AssetRef, Condition, Definition, DecisionTable, FieldSchemaDoc, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
+import type { AssetRef, Condition, DataClassification, Definition, DecisionTable, FieldSchemaDoc, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
  * Pure document operations used by the studio store, the Steps tab and the tests.
@@ -570,9 +570,17 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
 /** Kinds operators can search by (CG-O04, S142): not files, lists, times of day or date-times. */
 export const SEARCHABLE_KINDS: ReadonlySet<FieldKind> = new Set(['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'lookup'])
 
+/** Request questions that can carry a data classification (CG-I05, S151): single answers, not files or lists. */
+export const CLASSIFIABLE_KINDS: ReadonlySet<FieldKind> = new Set(['text', 'longText', 'number', 'money', 'integer', 'date', 'time', 'dateTime', 'yesNo', 'choice', 'lookup'])
+
+/** Personal and sensitive answers are masked; they cannot be searchable. */
+export const isProtectedClassification = (c: DataClassification | undefined) => c === 'personal' || c === 'sensitive'
+
 export interface FormFieldModel {
   incidentEditable?: boolean | undefined
   searchable?: boolean | undefined
+  /** CG-I05 (S151): how protected the answer is; undefined = not classified. */
+  classification?: DataClassification | undefined
   key: string
   label: string
   kind: FieldKind
@@ -628,6 +636,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       help: f.description ?? '',
       incidentEditable: f.incidentEditable === true,
       searchable: f.searchable === true,
+      classification: f.classification,
       choices: f.enum ?? (kind === 'checklist' ? f.items?.enum ?? [] : []),
       minimum: f.minimum,
       maximum: f.maximum,
@@ -651,7 +660,8 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
     const schema: Definition['inputSchema']['properties'][string] = { type: 'string', title: f.label || f.key }
     if (f.help.trim()) schema.description = f.help.trim()
     if (f.incidentEditable && f.kind !== 'file' && f.kind !== 'collection') schema.incidentEditable = true
-    if (f.searchable && SEARCHABLE_KINDS.has(f.kind)) schema.searchable = true
+    if (f.searchable && SEARCHABLE_KINDS.has(f.kind) && !isProtectedClassification(f.classification)) schema.searchable = true
+    if (f.classification && CLASSIFIABLE_KINDS.has(f.kind)) schema.classification = f.classification
     switch (f.kind) {
       case 'collection':
         schema.type = 'array'

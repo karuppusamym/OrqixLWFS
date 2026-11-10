@@ -784,9 +784,27 @@ export function requestTitleOf(run: MockRun): string | null {
   const order = [...preferred, ...Object.keys(properties).filter((k) => !preferred.includes(k))]
   for (const field of order) {
     const value = run.input[field]
-    if (properties[field]?.type === 'string' && !properties[field]?.enum && !properties[field]?.format && typeof value === 'string' && value.trim() !== '') return value.trim().slice(0, 120).trimEnd()
+    if (properties[field]?.type === 'string' && !properties[field]?.enum && !properties[field]?.format && typeof value === 'string' && value.trim() !== '') {
+      return isProtected(properties[field]?.classification) ? MASKED_VALUE : value.trim().slice(0, 120).trimEnd()
+    }
   }
   return null
+}
+
+/** CG-I05 (S151): how the server masks personal and sensitive answers (six bullet characters). */
+export const MASKED_VALUE = '•'.repeat(6)
+const isProtected = (classification: string | undefined) => classification === 'personal' || classification === 'sensitive'
+
+/** Request fields of the run's release whose answers are masked (classified personal or sensitive). */
+export function protectedFieldsOf(run: MockRun): string[] {
+  const properties = currentRelease(run).definition.inputSchema.properties
+  return Object.keys(properties).filter((k) => isProtected(properties[k]?.classification))
+}
+
+/** The request answers with personal and sensitive ones replaced by the mask, like every server response. */
+export function maskedInput(run: MockRun, input: Record<string, unknown> = run.input): Record<string, unknown> {
+  const masked = new Set(protectedFieldsOf(run))
+  return Object.fromEntries(Object.entries(input).map(([k, v]) => [k, masked.has(k) && v !== null && v !== undefined ? MASKED_VALUE : v]))
 }
 
 /** The rule for request data (docs/build/S3-api.md section 3 rule 4): the initiator, a task participant, or run.read-data. */
@@ -915,7 +933,8 @@ export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
   const attention = run.lifecycle === 'needsAttention'
   return {
     ...base,
-    input: (canSeeData ? run.input : null) as never,
+    input: (canSeeData ? maskedInput(run) : null) as never,
+    protectedFields: canSeeData ? protectedFieldsOf(run).filter((k) => run.input[k] !== null && run.input[k] !== undefined) : [],
     inputLabels: labels,
     output: (canSeeData ? run.output : null) as never,
     stages: stageProgress(run).stages,

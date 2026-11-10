@@ -58,8 +58,18 @@ public class RunQueries {
 
     @Transactional(readOnly = true)
     public List<RunStore.RunRow> list(UUID workspaceId, Filter f, CursorCodec.Position after, int limitPlusOne) {
+        return list(workspaceId, f, null, after, limitPlusOne);
+    }
+
+    /** As {@link #list(UUID, Filter, CursorCodec.Position, int)}, limited to some workflows unless null (S151). */
+    public List<RunStore.RunRow> list(UUID workspaceId, Filter f, java.util.Set<UUID> onlyWorkflows,
+            CursorCodec.Position after, int limitPlusOne) {
         Map<String, Object> params = new HashMap<>();
         String where = where(workspaceId, f, params);
+        if (onlyWorkflows != null) {
+            where = where + " AND workflow_id IN (:onlyWorkflows)";
+            params.put("onlyWorkflows", onlyWorkflows.isEmpty() ? List.of(new UUID(0, 0)) : List.copyOf(onlyWorkflows));
+        }
         params.put("afterAt", after == null ? null : Sql.ts(after.at()));
         params.put("afterId", after == null ? null : UUID.fromString(after.id()));
         params.put("limit", limitPlusOne);

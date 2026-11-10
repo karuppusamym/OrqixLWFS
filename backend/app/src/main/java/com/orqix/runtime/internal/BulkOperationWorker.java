@@ -64,6 +64,14 @@ public class BulkOperationWorker {
     private final Clock clock;
     private final String pod = "bulk-" + UUID.randomUUID();
 
+    private PlatformMetrics platformMetrics;
+
+    /** CG-P06 (S150): feature counters. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setPlatformMetrics(PlatformMetrics platformMetrics) {
+        this.platformMetrics = platformMetrics;
+    }
+
     public BulkOperationWorker(JdbcClient jdbc, BulkOperations operations, OperatorService operator, RunStore runs,
             PolicyService policy, SubjectService subjects, AuditWriter audit,
             org.springframework.transaction.PlatformTransactionManager transactions, Clock clock) {
@@ -203,6 +211,9 @@ public class BulkOperationWorker {
             }
         }
         record(op, item.runId(), outcome, code, message, false);
+        if (platformMetrics != null) {
+            platformMetrics.bulkItem(op.action(), outcome);
+        }
     }
 
     private boolean transientFailure(BulkOperations.Row op, ApiException e, Pending item) {

@@ -1,0 +1,134 @@
+# Orqix Prometheus alert and recording rules (CG-P06, docs/build/S150 section 5).
+# Plain Prometheus rule file: `rule_files: [orqix-alerts.yaml]`. For OpenShift user-workload monitoring the same groups
+# are wrapped in a PrometheusRule (deploy/openshift/optional/prometheusrule.yaml); check_observability.py keeps them equal.
+# Database-backed gauges are reported by every pod with the same value, so rules take max() over pods.
+groups:
+  - name: orqix-slo-recording
+    interval: 1m
+    rules:
+      - record: orqix:api_requests:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[5m]))
+      - record: orqix:api_errors:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[5m]))
+      - record: orqix:api_error_ratio:rate5m
+        expr: orqix:api_errors:rate5m / clamp_min(orqix:api_requests:rate5m, 1e-9)
+      - record: orqix:api_error_ratio:rate1h
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[1h]))
+          / clamp_min(sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[1h])), 1e-9)
+      - record: orqix:api_error_ratio:rate6h
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{uri=~"/api/.*",status=~"5.."}[6h]))
+          / clamp_min(sum(rate(http_server_requests_seconds_count{uri=~"/api/.*"}[6h])), 1e-9)
+      - record: orqix:start_latency_p95:5m
+        expr: >-
+          histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{method="POST",
+          uri="/api/v1/workspaces/{workspaceId}/runs"}[5m])))
+      - record: orqix:read_latency_p95:5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{method="GET",uri=~"/api/.*"}[5m])))
+
+  - name: orqix-slo-alerts
+    rules:
+      # Availability SLO 99.5 % over 30 days (error budget 0.5 %). Multi-window burn rates (Google SRE workbook):
+      # 14.4x over 1 h and 5 min pages, 6x over 6 h and 30 min tickets.
+      - alert: OrqixApiErrorBudgetFastBurn
+        expr: orqix:api_error_ratio:rate1h > (14.4 * 0.005) and orqix:api_error_ratio:rate5m > (14.4 * 0.005)
+        for: 2m
+        labels: { severity: critical, slo: api-availability }
+        annotations:
+          summary: "Orqix API 5xx ratio burns the 30-day error budget 14x too fast"
+          description: "{{ $value | humanizePercentage }} of API requests failed over the last hour. See docs/admin-guide.md, Monitoring."
+      - alert: OrqixApiErrorBudgetSlowBurn
+        expr: orqix:api_error_ratio:rate6h > (6 * 0.005) and orqix:api_error_ratio:rate5m > (6 * 0.005)
+        for: 15m
+        labels: { severity: warning, slo: api-availability }
+        annotations:
+          summary: "Orqix API 5xx ratio burns the error budget 6x too fast"
+          description: "{{ $value | humanizePercentage }} of API requests failed over the last 6 hours."
+      - alert: OrqixStartLatencyHigh
+        expr: orqix:start_latency_p95:5m > 1
+        for: 15m
+        labels: { severity: warning, slo: start-latency }
+        annotations:
+          summary: "p95 of request starts above 1 s"
+          description: "p95 start latency is {{ $value | humanizeDuration }}. Check database CPU and Hikari pending connections."
+      - alert: OrqixReadLatencyHigh
+        expr: orqix:read_latency_p95:5m > 0.5
+        for: 15m
+        labels: { severity: warning, slo: read-latency }
+        annotations:
+          summary: "p95 of API reads above 500 ms"
+          description: "p95 read latency is {{ $value | humanizeDuration }}."
+      - alert: OrqixEngineJobsStale
+        expr: max(orqix_oldest_executable_job_age_seconds) > 60
+        for: 10m
+        labels: { severity: critical, slo: job-freshness }
+        annotations:
+          summary: "Engine jobs wait more than 60 s"
+          description: "The oldest executable job is {{ $value | humanizeDuration }} old. Are worker pods running (ADR 0004)?"
+      - alert: OrqixAnalyticsLagging
+        expr: max(orqix_analytics_lag_seconds) > 300
+        for: 15m
+        labels: { severity: warning, slo: analytics-freshness }
+        annotations:
+          summary: "Analytics read model more than 5 minutes behind"
+          description: "The oldest unprojected change is {{ $value | humanizeDuration }} old."
+
+  - name: orqix-operations
+    rules:
+      - alert: OrqixTargetDown
+        expr: up{job=~".*orqix.*"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "An Orqix pod is not scraped"
+          description: "{{ $labels.instance }} has not answered /actuator/prometheus for 5 minutes."
+      - alert: OrqixDatabasePoolExhausted
+        expr: max by (instance) (hikaricp_connections_pending) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Requests wait for a database connection"
+          description: "{{ $labels.instance }} has {{ $value }} requests waiting for a connection (pool 15)."
+      - alert: OrqixRunsNeedAttention
+        expr: max(orqix_runs_needs_attention) > 0 and delta(max(orqix_runs_needs_attention)[30m:1m]) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Requests needing attention are increasing"
+          description: "{{ $value }} more requests need operator attention than 30 minutes ago."
+      - alert: OrqixCircuitsOpen
+        expr: max(orqix_connection_circuits{state="open"}) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Connection circuit breakers are open"
+          description: "{{ $value }} connection bindings have paused calls after repeated failures."
+      - alert: OrqixPollChecksLagging
+        expr: max(orqix_poll_check_lag_seconds) > 120
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Keep-checking steps are checked late"
+          description: "The most overdue poll check is {{ $value | humanizeDuration }} late; worker pods may be saturated."
+      - alert: OrqixAnalyticsDeadProjections
+        expr: max(orqix_analytics_outbox_dead) > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Analytics projections gave up"
+          description: "{{ $value }} timeline changes could not be projected after their retries."
+      - alert: OrqixAiQueueBacklog
+        expr: max(orqix_ai_task_queue_age_seconds) > 600
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "AI tasks wait more than 10 minutes"
+          description: "The oldest available AI task has waited {{ $value | humanizeDuration }}."
+      - alert: OrqixAdmissionRefusals
+        expr: sum by (kind) (rate(orqix_admission_rejected_total[10m])) * 60 > 1
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: "Workspace admission limits refuse {{ $labels.kind }}"
+          description: "{{ $value }} {{ $labels.kind }} per minute are refused with 429 (audit action admission.limit-exceeded names the workspace)."

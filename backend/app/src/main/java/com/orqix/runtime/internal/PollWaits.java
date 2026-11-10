@@ -94,6 +94,14 @@ public class PollWaits {
     private final com.orqix.shared.idempotency.IdempotencyService idempotency;
     private final WorkingCalendars calendars;
 
+    private PlatformMetrics platformMetrics;
+
+    /** CG-P06 (S150): feature counters. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setPlatformMetrics(PlatformMetrics platformMetrics) {
+        this.platformMetrics = platformMetrics;
+    }
+
     public PollWaits(JdbcClient jdbc, Json json, Clock clock, RunStore runs, RunEvents events, ReleaseQueries releases,
             EngineCommands engine, EffectDispatcher dispatcher, ConnectionService connections, PolicyService policy,
             RunAccess runAccess, AuditWriter audit, RunSuspensions suspensions, MessageStore messages,
@@ -482,6 +490,9 @@ public class PollWaits {
         Settings s = settings(row.workspaceId(), run.releaseId(), row.nodeId(), row.kind());
         boolean ranCheck = checked.outcome() != Outcome.DEADLINE && checked.outcome() != Outcome.BUSY
                 && checked.outcome() != Outcome.DEFERRED;
+        if (platformMetrics != null) {
+            platformMetrics.pollCheck(checked.outcome().name());
+        }
         int checks = row.checksDone() + (ranCheck ? 1 : 0);
         boolean finalCheck = ranCheck && !now.isBefore(row.deadlineAt());
         String digest = checked.result() == null ? row.lastResultDigest() : json.canonicalSha256(checked.result());

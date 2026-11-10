@@ -71,6 +71,10 @@ public class AuditWriter {
             Map.entry("auth.denied", Set.of("permission", "operationId")),
             Map.entry("admin.organization.created", Set.of("key", "isTest")),
             Map.entry("admin.workspace.created", Set.of("key", "isTest")),
+            // CG-P05 (S150): admission control. Limits and counts only, never request data.
+            Map.entry("admission.limit-exceeded", Set.of("kind", "limitPerMinute")),
+            Map.entry("platform.admission-updated", Set.of("startsPerMinute", "messagesPerMinute",
+                    "previousStartsPerMinute", "previousMessagesPerMinute", "cleared")),
             Map.entry("access.role-binding.created", Set.of("role", "principalType", "principalValue")),
             Map.entry("access.role-binding.deleted", Set.of("role", "principalType", "principalValue")),
             Map.entry("access.grant.created", Set.of("permission", "workflowId", "principalType", "principalValue")),

@@ -1,0 +1,21 @@
+# Prometheus configuration for the Compose observability overlay (deploy/compose/docker-compose.observability.yml).
+# Pods are found by their Compose service names through DNS, so services that are not running produce no target
+# (and no false "down" alert): orqix (one pod or the API pod), orqix-2 (scale overlay), orqix-worker-1/-2 (roles overlay).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/orqix-alerts.yaml
+
+scrape_configs:
+  - job_name: orqix
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: [orqix, orqix-2, orqix-worker-1, orqix-worker-2]
+        type: A
+        port: 8081
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: pod

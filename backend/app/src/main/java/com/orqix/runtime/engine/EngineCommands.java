@@ -57,7 +57,9 @@ public class EngineCommands {
                     .processDefinitionId(processDefinitionId)
                     .tenantId(tenantId)
                     .businessKey(businessKey)
-                    .variables(variables)
+                    // CG-P06 (S150): the start's traceparent, so the run's engine jobs join the trace of its start.
+                    // Set once at the start only: later updates from parallel branches would conflict on the row.
+                    .variables(com.orqix.shared.tracing.TraceIds.withTraceparent(variables))
                     .start();
             return instance.getId();
         });

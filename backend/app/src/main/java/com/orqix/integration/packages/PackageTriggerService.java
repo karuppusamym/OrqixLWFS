@@ -340,6 +340,12 @@ public class PackageTriggerService {
         if ("dead".equals(outcome.status())) {
             throw ConnectorPackageService.invalid("/", "PKG_EVENT", "The event cannot be used (" + outcome.code() + ").");
         }
+        if ("retry".equals(outcome.status()) && "rate_limited".equals(outcome.code())) {
+            // CG-P05 (S150): the workspace's admission limit (or another rate limit); nothing was recorded, so the
+            // sender retries the same event. 60 s is the longest wait of the one-minute window.
+            throw new ApiException(ProblemCode.RATE_LIMITED, "Too many requests in this workspace; try again later.")
+                    .withHeader("Retry-After", "60");
+        }
         if ("retry".equals(outcome.status())) {
             throw new ApiException(ProblemCode.DEPENDENCY_UNAVAILABLE, "Try again later (" + outcome.code() + ").")
                     .withHeader("Retry-After", "30");

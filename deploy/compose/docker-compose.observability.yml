@@ -1,0 +1,57 @@
+# Observability overlay (CG-P06, docs/build/S150): Prometheus with the Orqix alert rules, Grafana with the dashboard
+# pack, and Jaeger as the OTLP trace backend. DEVELOPMENT/QUALIFICATION ONLY (no authentication on the UIs).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile app --profile observability up -d
+#   (add -f docker-compose.roles.yml for the API + two worker pods of the scale harness)
+#
+# UIs: Prometheus http://localhost:9090, Grafana http://localhost:3000 (anonymous viewer; admin/admin to edit),
+# Jaeger http://localhost:16686. The app containers export traces to Jaeger (ORQIX_TRACING_OTLP_ENABLED=true here only;
+# the default everywhere else is off).
+name: orqix
+
+x-tracing-env: &tracing-env
+  ORQIX_TRACING_OTLP_ENABLED: "true"
+  ORQIX_TRACING_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+  ORQIX_ENVIRONMENT: compose
+
+services:
+  orqix:
+    environment: *tracing-env
+
+  prometheus:
+    profiles: ["observability"]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/orqix-alerts.yaml:/etc/prometheus/orqix-alerts.yaml:ro
+      - orqix-prometheus:/prometheus
+
+  grafana:
+    profiles: ["observability"]
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.1.0}
+    depends_on: [prometheus]
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards/orqix:ro
+
+  jaeger:
+    profiles: ["observability"]
+    image: ${JAEGER_IMAGE:-jaegertracing/jaeger:2.9.0}
+    ports:
+      - "${JAEGER_HOST_PORT:-16686}:16686"
+
+volumes:
+  orqix-prometheus:

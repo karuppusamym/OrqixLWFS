@@ -59,6 +59,14 @@ public class AiTaskJobs {
     private final AiTaskPort ai;
     private final AiTaskQueueSettings settings;
 
+    private PlatformMetrics platformMetrics;
+
+    /** CG-P06 (S150): feature counters. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setPlatformMetrics(PlatformMetrics platformMetrics) {
+        this.platformMetrics = platformMetrics;
+    }
+
     public AiTaskJobs(JdbcClient jdbc, Json json, Clock clock, RunStore runs, RunEvents events, ReleaseQueries releases,
             EngineCommands engine, AiTaskPort ai, AiTaskQueueSettings settings) {
         this.jdbc = jdbc;
@@ -299,6 +307,9 @@ public class AiTaskJobs {
                 """).param("status", status).param("error", error).param("now", Sql.ts(now)).param("id", job.id())
                 .update();
         ai.endTurns(job.workspaceId(), job.id());
+        if (platformMetrics != null) {
+            platformMetrics.aiTaskEnded(status);
+        }
     }
 
     /**

@@ -65,6 +65,8 @@ tags:
   - name: MigrationAndMove
     description: Moving requests between releases with a step mapping (single and batch) and guarded moves between steps (docs/build/S143).
   - name: AlertsAndRetention
+  - name: Platform
+    description: "Platform administration of the deployment (docs/build/S150): admission limits per workspace, for platform administrators only."
 
 paths:
   /workspaces/{workspaceId}/worklist-view:
@@ -1574,6 +1576,61 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /admin/admission:
+    get:
+      tags: [Platform]
+      operationId: listAdmissionLimits
+      summary: Admission control defaults and the workspaces with their own limits
+      description: "CG-P05 (docs/build/S150). The deployment defaults (orqix.admission.*) and every workspace override, newest change first (at most 500)."
+      x-orqix-permission: platform.admin
+      responses:
+        '200':
+          description: Defaults and overrides
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdmissionOverview' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/workspaces/{workspaceId}/admission:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Platform]
+      operationId: getWorkspaceAdmission
+      summary: Effective admission limits of one workspace
+      x-orqix-permission: platform.admin
+      responses:
+        '200':
+          description: Effective limits and the stored override (null when the workspace uses the defaults)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceAdmission' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Platform]
+      operationId: setWorkspaceAdmission
+      summary: Set or clear the admission limits of one workspace
+      description: "CG-P05 (docs/build/S150). A null field keeps the deployment default for that kind, 0 removes the limit for this workspace, and both null clears the override. Above its limit, a start or inbound message of the workspace answers 429 RATE_LIMITED with Retry-After, whatever the channel (REST, Kafka, package trigger, MCP)."
+      x-orqix-permission: platform.admin
+      x-orqix-audit: platform.admission-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAdmissionRequest' }
+      responses:
+        '200':
+          description: Stored; effective limits apply on every pod within orqix.admission.limit-cache-ttl
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceAdmission' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces/{workspaceId}:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -8341,6 +8398,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
   # ---- end ConnectorPackages ----
   /workspaces/{workspaceId}/features:
@@ -15759,6 +15817,50 @@ components:
           minItems: 1
           maxItems: 20
           items: { $ref: '#/components/schemas/PrincipalRef' }
+    AdmissionLimits:
+      type: object
+      additionalProperties: false
+      description: Requests and inbound messages per sliding minute; 0 means no limit.
+      required: [startsPerMinute, messagesPerMinute]
+      properties:
+        startsPerMinute: { type: integer, minimum: 0, maximum: 100000 }
+        messagesPerMinute: { type: integer, minimum: 0, maximum: 100000 }
+    AdmissionOverride:
+      type: object
+      additionalProperties: false
+      required: [startsPerMinute, messagesPerMinute, revision, updatedBy, updatedAt]
+      properties:
+        startsPerMinute: { type: [integer, 'null'], minimum: 0, maximum: 100000, description: null keeps the deployment default }
+        messagesPerMinute: { type: [integer, 'null'], minimum: 0, maximum: 100000, description: null keeps the deployment default }
+        revision: { type: integer, minimum: 1 }
+        updatedBy: { type: string, format: uuid }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceAdmission:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, enabled, effective, override]
+      properties:
+        workspaceId: { type: string, format: uuid }
+        enabled: { type: boolean, description: "false when the deployment switched admission control off (orqix.admission.enabled)" }
+        effective: { $ref: '#/components/schemas/AdmissionLimits' }
+        override:
+          oneOf:
+            - { $ref: '#/components/schemas/AdmissionOverride' }
+            - { type: 'null' }
+    AdmissionOverview:
+      type: object
+      additionalProperties: false
+      required: [enabled, defaults, overrides]
+      properties:
+        enabled: { type: boolean }
+        defaults: { $ref: '#/components/schemas/AdmissionLimits' }
+        overrides: { type: array, maxItems: 500, items: { $ref: '#/components/schemas/WorkspaceAdmission' } }
+    SetAdmissionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        startsPerMinute: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
+        messagesPerMinute: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
     WorkspaceAdminView:
       type: object
       required: [id, organizationId, key, name, isTest, createdAt]

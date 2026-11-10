@@ -1,0 +1,60 @@
+# Backup overlay (CG-P03, docs/build/S150, runbook deploy/backup/README.md): scheduled logical backups, continuous WAL
+# archiving for point-in-time restore, and the restore drill. Development and single-host qualification; the same
+# scripts run as OpenShift CronJobs (deploy/backup/kustomization.yaml).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.backup.yml --profile backup up -d postgres backup
+#   docker compose -f docker-compose.yml -f docker-compose.backup.yml run --rm backup /scripts/orqix-backup.sh
+#   docker compose -f docker-compose.yml -f docker-compose.backup.yml run --rm backup /scripts/orqix-restore-drill.sh
+#   ../backup/compose-base-backup.sh            # base backup for point-in-time restore (host script)
+#   ../backup/compose-pitr-restore.sh --target "2026-11-09 14:05:00+00"
+#
+# Turning WAL archiving on restarts PostgreSQL once (archive_mode needs a restart). Backups land in the named volume
+# orqix-backups (sets in /backups, WAL in /backups/wal, base backups in /backups/base); copy them off the host.
+name: orqix
+
+services:
+  postgres:
+    # The archive directories belong to the postgres user (uid 70) before the server starts.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - mkdir -p /backups/wal /backups/base && chown 70:70 /backups /backups/wal /backups/base && exec docker-entrypoint.sh "$$@"
+      - postgres-with-archive
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      # Never overwrite an archived segment; the archive is append-only.
+      - -c
+      - archive_command=test ! -f /backups/wal/%f && cp %p /backups/wal/%f
+      # A segment is archived at least every 5 minutes, so at most 5 minutes of commits are at risk.
+      - -c
+      - archive_timeout=300
+    volumes:
+      - orqix-backups:/backups
+
+  backup:
+    profiles: ["backup"]
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "70:70"
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres-dev-only}
+      PGDATABASE: orqix
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      # Seconds between scheduled logical backups (default daily); the first one runs at start.
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - orqix-backups:/backups
+      - ../backup/scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/schedule-loop.sh"]
+
+volumes:
+  orqix-backups:

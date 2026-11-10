@@ -46,9 +46,11 @@ public class MessageService {
     private final AuditWriter audit;
     private final Json json;
     private final Clock clock;
+    private final AdmissionControl admission;
 
     public MessageService(PolicyService policy, MessageStore store, MessageDelivery delivery, MessageSettings settings,
-            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock) {
+            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, AdmissionControl admission) {
+        this.admission = admission;
         this.policy = policy;
         this.store = store;
         this.delivery = delivery;
@@ -86,6 +88,8 @@ public class MessageService {
         if (claim.isReplay()) {
             return new Sent(view(workspaceId, UUID.fromString(claim.replay().resourceId())), true);
         }
+        // CG-P05 (S150): the workspace's inbound message limit; a replay above is always answered.
+        admission.admitMessage(workspaceId, caller.subjectId());
 
         Instant now = clock.instant();
         UUID messageId = Ids.newId();

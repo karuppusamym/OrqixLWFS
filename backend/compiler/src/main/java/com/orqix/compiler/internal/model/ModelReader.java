@@ -52,7 +52,8 @@ public final class ModelReader {
         }
         JsonNode exec = root.get("execution");
         Execution execution = new Execution(exec.get("maxConcurrentRuns").intValue(),
-                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue());
+                exec.get("maxAttempts").intValue(), exec.get("retryDelaySeconds").intValue(), stepRetry(nodeArray),
+                stepForEach(nodeArray));
         List<Dependency> dependencies = new ArrayList<>();
         JsonNode deps = root.get("dependencies").get("connections");
         for (int i = 0; i < deps.size(); i++) {
@@ -80,7 +81,8 @@ public final class ModelReader {
                 Collections.unmodifiableMap(outputMapping),
                 readLayout(root.get("uiLayout")),
                 readStages(root.get("stages")),
-                readSubprocesses(root.get("subprocesses")));
+                readSubprocesses(root.get("subprocesses")),
+                WaitsReader.read(nodeArray, root.get("dependencies")));
     }
 
     private static List<WorkflowDefinition.Subprocess> readSubprocesses(JsonNode array) {
@@ -100,10 +102,54 @@ public final class ModelReader {
                         trigger == null ? null : text(trigger, "errorCode"),
                         trigger == null ? null : text(trigger, "signal"),
                         trigger == null ? null : text(trigger, "after"),
-                        s.path("interrupting").asBoolean(false)));
+                        s.path("interrupting").asBoolean(false),
+                        trigger == null ? null : text(trigger, "message"),
+                        trigger == null ? null : text(trigger, "correlationField"),
+                        trigger == null ? List.of() : payloadFields(trigger.get("payload"))));
             }
         }
         return List.copyOf(list);
+    }
+
+    /** Step-level retry policies (CG-W04, S131) of http, externalTask and sendAdapter steps, by step id. */
+    /** CG-E06 (S138): {@code config.forEach} of http, externalTask and aiTask steps, by step id. */
+    private static Map<String, StepForEach> stepForEach(JsonNode nodeArray) {
+        Map<String, StepForEach> policies = new TreeMap<>();
+        for (int i = 0; i < nodeArray.size(); i++) {
+            JsonNode node = nodeArray.get(i);
+            JsonNode f = node.path("config").path("forEach");
+            String type = node.path("type").asString("");
+            if (!f.isObject() || !java.util.Set.of("http", "externalTask", "aiTask").contains(type)) {
+                continue; // a child workflow's forEach is its own S14 policy (Node.ForEach)
+            }
+            JsonNode completion = f.path("completion");
+            boolean parallel = "parallel".equals(f.path("mode").asString("sequential"));
+            policies.putIfAbsent(node.get("id").stringValue(), new StepForEach("/nodes/" + i + "/config/forEach",
+                    f.get("itemsRef").stringValue(), f.has("itemInput") ? f.get("itemInput").stringValue() : null,
+                    f.has("itemMapping") ? stringMap(f.get("itemMapping")) : Map.of(), f.get("maxItems").intValue(),
+                    parallel, f.has("batchSize") ? f.get("batchSize").intValue() : StepForEach.MAX_BATCH,
+                    completion.path("when").asString(StepForEach.ALL),
+                    completion.has("count") ? completion.get("count").intValue() : null,
+                    f.has("collect") ? stringMap(f.get("collect")) : Map.of()));
+        }
+        return Collections.unmodifiableMap(policies);
+    }
+
+    private static Map<String, StepRetry> stepRetry(JsonNode nodeArray) {
+        Map<String, StepRetry> policies = new TreeMap<>();
+        for (int i = 0; i < nodeArray.size(); i++) {
+            JsonNode node = nodeArray.get(i);
+            JsonNode retry = node.path("config").path("retry");
+            if (!retry.isObject()) {
+                continue;
+            }
+            policies.put(node.get("id").stringValue(), new StepRetry("/nodes/" + i + "/config/retry",
+                    retry.get("maxAttempts").intValue(), retry.get("delay").stringValue(),
+                    retry.has("multiplier") ? retry.get("multiplier").decimalValue() : BigDecimal.ONE,
+                    retry.has("maxDelay") ? retry.get("maxDelay").stringValue() : null,
+                    retry.path("honorRetryAfter").asBoolean(true)));
+        }
+        return Collections.unmodifiableMap(policies);
     }
 
     private static String text(JsonNode object, String member) {
@@ -151,20 +197,24 @@ public final class ModelReader {
                             c.get("perItem").path("quorum").isIntegralNumber() ? c.get("perItem").get("quorum").intValue() : null,
                             c.get("perItem").has("assigneeFrom") ? c.get("perItem").get("assigneeFrom").stringValue() : null) : null,
                     c.has("fieldAccess") ? stringMap(c.get("fieldAccess")) : Map.of(),
-                    c.has("capture") ? readForm("/nodes/" + index + "/config/capture", c.get("capture")) : null);
+                    c.has("capture") ? readForm("/nodes/" + index + "/config/capture", c.get("capture")) : null,
+                    c.get("escalationPolicy"));
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
-                    c.get("operation").stringValue(), stringMap(c.get("inputMapping")),
+                    c.get("operation").stringValue(), inputsWithItem(c),
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
                     c.has("compensates") ? c.get("compensates").stringValue() : null,
                     "automatic".equals(c.path("compensation").asString("manual")),
-                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
+                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null,
+                    c.has("poll") ? readPoll(c.get("poll")) : null);
             case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),
-                    stringMap(c.get("inputMapping")), payloadFields(c.get("result")),
-                    c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120);
+                    inputsWithItem(c), payloadFields(c.get("result")),
+                    c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120,
+                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
+            case WAIT_FOR_FIRST -> new Node.WaitForFirst(index, id, label, firstBranches(c.get("branches")));
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
             case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue(),
@@ -186,7 +236,9 @@ public final class ModelReader {
             case WAIT_FOR_MESSAGE -> new Node.WaitForMessage(index, id, label, c.get("message").stringValue(),
                     c.get("correlationField").stringValue(),
                     c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")),
-                    c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null);
+                    c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null,
+                    c.has("fallbackCheck") ? readFallback(c.get("fallbackCheck")) : null,
+                    c.has("guestResponse") ? c.get("guestResponse") : null);
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
             case RAISE_ERROR -> new Node.RaiseError(index, id, label, c.get("errorCode").stringValue());
@@ -199,7 +251,67 @@ public final class ModelReader {
                             .map(JsonNode::stringValue).toList() : List.of(),
                     text(c, "subject"), text(c, "body"), text(c, "title"), text(c, "text"), text(c, "topic"),
                     text(c, "key"), stringMap(c.get("inputMapping")));
+            case AI_TASK -> new Node.AiTask(index, id, label, c.get("skillRef").stringValue(),
+                    c.has("skillVersion") ? c.get("skillVersion").intValue() : null, c.get("mode").stringValue(),
+                    inputsWithItem(c), c.path("autonomy").asString(Node.AiTask.SUGGEST),
+                    c.has("minConfidence") ? c.get("minConfidence").decimalValue() : Node.AiTask.DEFAULT_MIN_CONFIDENCE,
+                    c.path("reviewSamplePercent").asInt(Node.AiTask.DEFAULT_REVIEW_PERCENT),
+                    c.has("redaction") ? stringMap(c.get("redaction")) : Map.of());
+            case CALCULATE -> {
+                List<Node.Calculate.Output> outputs = new ArrayList<>();
+                int at = 0;
+                for (JsonNode o : c.path("outputs")) {
+                    outputs.add(new Node.Calculate.Output(at++, o.get("key").stringValue(), o.get("expression").stringValue(),
+                            o.get("type").stringValue(), o.has("scale") ? o.get("scale").intValue() : null,
+                            o.has("rounding") ? o.get("rounding").stringValue() : null,
+                            o.has("description") ? o.get("description").stringValue() : null,
+                            o.path("optional").asBoolean(false)));
+                }
+                yield new Node.Calculate(index, id, label, List.copyOf(outputs), c.get("calendar"));
+            }
         };
+    }
+
+    /** S129: "Keep checking until..." settings with their defaults filled in. */
+    private static Node.Poll readPoll(JsonNode p) {
+        JsonNode backoff = p.get("backoff");
+        JsonNode errors = p.get("onCheckError");
+        List<String> shown = new ArrayList<>();
+        p.path("showWhileWaiting").forEach(v -> shown.add(v.stringValue()));
+        List<String> optional = new ArrayList<>();
+        p.path("optionalResults").forEach(v -> optional.add(v.stringValue()));
+        String every = p.get("every").stringValue();
+        return new Node.Poll(!"afterInterval".equals(p.path("firstCheck").asString("immediate")), every,
+                backoff == null ? BigDecimal.ONE : backoff.get("multiplier").decimalValue(),
+                backoff == null ? every : backoff.get("maxInterval").stringValue(),
+                p.path("jitterPercent").asInt(10), readCondition(p.get("until"), true),
+                p.has("failWhen") ? readCondition(p.get("failWhen"), true) : null,
+                p.get("giveUpAfter").stringValue(), p.has("maxChecks") ? p.get("maxChecks").intValue() : null,
+                errors == null ? 5 : errors.get("maxConsecutive").intValue(),
+                errors != null && "timedOut".equals(errors.path("then").asString("needsAttention")),
+                p.path("finalCheckAtDeadline").asBoolean(true), List.copyOf(shown), List.copyOf(optional), p);
+    }
+
+    /** S129: the safety-net check of a message wait. */
+    private static Node.FallbackCheck readFallback(JsonNode f) {
+        return new Node.FallbackCheck(f.get("connectionRef").stringValue(), f.get("operation").stringValue(),
+                stringMap(f.get("inputMapping")), stringMap(f.get("resultMapping")), f.get("timeoutSeconds").intValue(),
+                f.get("every").stringValue(), f.path("jitterPercent").asInt(10), readCondition(f.get("until"), true),
+                f.has("maxChecks") ? f.get("maxChecks").intValue() : null, f);
+    }
+
+    /** S139: the branches of a "Wait for the first" step, in authored order. */
+    private static List<Node.FirstBranch> firstBranches(JsonNode array) {
+        List<Node.FirstBranch> list = new ArrayList<>();
+        for (int i = 0; i < array.size(); i++) {
+            JsonNode b = array.get(i);
+            list.add(new Node.FirstBranch(i, b.get("id").stringValue(), b.get("label").stringValue(),
+                    b.get("kind").stringValue(), text(b, "message"), text(b, "correlationField"),
+                    payloadFields(b.get("payload")), text(b, "signal"), text(b, "after"), text(b, "untilField"),
+                    text(b, "atTime"), text(b, "workingDuration"), text(b, "calendarRef"), text(b, "tokenValidFor"),
+                    b.has("check") ? readFallback(b.get("check")) : null));
+        }
+        return List.copyOf(list);
     }
 
     private static List<Node.PayloadField> payloadFields(JsonNode payload) {
@@ -222,7 +334,10 @@ public final class ModelReader {
         JsonNode condition = t.get("condition");
         return new Transition(index, t.get("id").stringValue(), t.get("from").stringValue(),
                 t.get("to").stringValue(), on, label == null ? null : label.stringValue(),
-                condition == null ? null : readCondition(condition));
+                condition == null ? null : readCondition(condition),
+                t.has("aiLabel") ? t.get("aiLabel").stringValue() : null,
+                t.has("maxTraversals") ? t.get("maxTraversals").intValue() : null,
+                t.has("branch") ? t.get("branch").stringValue() : null);
     }
 
     /**
@@ -244,8 +359,9 @@ public final class ModelReader {
         for (int r = 0; r < rows.size(); r++) {
             JsonNode row = rows.get(r);
             require(row.isObject(), "decision row must be an object");
-            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when"), true), outputMap(row.get("then")),
-                    readWindow(row.get("effective"))));
+            JsonNode then = row.get("then");
+            rowList.add(new DecisionTable.Row(r, readRowCondition(row.get("when")), outputMap(literalOutputs(then)),
+                    readWindow(row.get("effective")), outputExpressions(then)));
         }
         JsonNode policy = t.get("hitPolicy");
         require(policy == null || (policy.isString() && DecisionTable.HIT_POLICIES.contains(policy.stringValue())),
@@ -289,6 +405,11 @@ public final class ModelReader {
      */
     public static Condition readCondition(JsonNode c, boolean decisionRow) {
         require(c != null && c.isObject(), "condition must be an object");
+        if (c.has("expression")) {
+            require(!decisionRow, "an expression cannot be used as a decision row or check condition");
+            require(c.size() == 1 && c.get("expression").isString(), "an expression condition has only its expression text");
+            return Condition.ofExpression(c.get("expression").stringValue());
+        }
         if (c.has("all") || c.has("any")) {
             String group = c.has("all") ? "all" : "any";
             require(c.size() == 1 && c.path(group).isArray() && c.path(group).size() >= 2 && c.path(group).size() <= 8,
@@ -366,6 +487,62 @@ public final class ModelReader {
         }
     }
 
+    /** The literal results of a row; results written as {@code {"expression": ...}} are read by {@link #outputExpressions}. */
+    private static JsonNode literalOutputs(JsonNode o) {
+        require(o != null && o.isObject(), "decision output must be an object");
+        tools.jackson.databind.node.ObjectNode literals = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        o.properties().forEach(e -> {
+            if (!e.getValue().isObject()) literals.set(e.getKey(), e.getValue());
+        });
+        return literals;
+    }
+
+    /** S146: results of a row written as Orqix expressions, by result key (sorted). */
+    private static Map<String, String> outputExpressions(JsonNode o) {
+        Map<String, String> map = new TreeMap<>();
+        for (Map.Entry<String, JsonNode> e : o.properties()) {
+            JsonNode v = e.getValue();
+            if (v.isObject()) {
+                require(v.size() == 1 && v.path("expression").isString() && !v.get("expression").stringValue().isEmpty(),
+                        "a decision result written as an expression has only its expression text");
+                map.put(e.getKey(), v.get("expression").stringValue());
+            }
+        }
+        return Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * A decision row condition: like {@link #readCondition(JsonNode, boolean)} with {@code in} and {@code between},
+     * and a term may be an input entry written as an Orqix expression, {@code {"fieldRef": ..., "expression": ...}}
+     * (S146), on its own or inside {@code all}/{@code any}.
+     */
+    public static Condition readRowCondition(JsonNode c) {
+        require(c != null && c.isObject(), "condition must be an object");
+        if (c.has("all") || c.has("any")) {
+            String group = c.has("all") ? "all" : "any";
+            require(c.size() == 1 && c.path(group).isArray() && c.path(group).size() >= 2 && c.path(group).size() <= 8,
+                    "logical conditions require 2 to 8 atomic terms");
+            List<Condition> terms = new ArrayList<>();
+            for (JsonNode term : c.path(group)) {
+                require(term.isObject() && !term.has("all") && !term.has("any"), "nested logical conditions are not supported");
+                terms.add(rowTerm(term));
+            }
+            return new Condition(null, null, null, group, List.copyOf(terms));
+        }
+        return rowTerm(c);
+    }
+
+    private static Condition rowTerm(JsonNode c) {
+        if (c.has("expression")) {
+            require(c.size() == 2 && c.path("fieldRef").isString() && c.get("expression").isString()
+                    && !c.get("expression").stringValue().isEmpty(),
+                    "a decision row test written as an expression has its column fieldRef and its expression text only");
+            return new Condition(c.get("fieldRef").stringValue(), null, null, null, List.of(), List.of(), null,
+                    c.get("expression").stringValue());
+        }
+        return readCondition(c, true);
+    }
+
     private static Map<String, Literal> outputMap(JsonNode o) {
         require(o != null && o.isObject(), "decision output must be an object");
         Map<String, Literal> map = new TreeMap<>();
@@ -414,7 +591,8 @@ public final class ModelReader {
                     intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")), decimalOrNull(f.get("maximum")),
                     decimalOrNull(f.get("multipleOf")), f.has("items") ? readField(e.getKey(), f.get("items")) : null,
                     intOrNull(f.get("minItems")), intOrNull(f.get("maxItems")), f.path("formatMinimum").asString(null),
-                    f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false)));
+                    f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false),
+                    List.of(), Map.of(), f));
         }
         return new FormSchema(path, List.copyOf(required), Collections.unmodifiableMap(fields));
     }
@@ -441,7 +619,8 @@ public final class ModelReader {
                 f.get("title").stringValue(),
                 enums, intOrNull(f.get("minLength")), intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")),
                 decimalOrNull(f.get("maximum")), decimalOrNull(f.get("multipleOf")), null, null, null,
-                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false));
+                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false),
+                List.of(), Map.of(), f);
     }
 
     private static InputUi readInputUi(JsonNode ui) {
@@ -461,9 +640,18 @@ public final class ModelReader {
                     s.path("columns").asInt(1), List.copyOf(fields),
                     s.has("visibleWhen") ? readCondition(s.get("visibleWhen")) : null));
         }
+        List<InputUi.FormRule> rules = new ArrayList<>();
+        int ruleIndex = 0;
+        for (JsonNode r : ui.path("rules")) {
+            List<String> ruleFields = new ArrayList<>();
+            r.path("fields").forEach(f -> ruleFields.add(f.stringValue()));
+            rules.add(new InputUi.FormRule(ruleIndex++, r.path("id").asString(""), r.path("check").asString(""),
+                    r.path("message").asString(""), List.copyOf(ruleFields)));
+        }
         return new InputUi(List.copyOf(order), ui.has("widgets") ? stringMap(ui.get("widgets")) : Map.of(),
                 conditionMap(ui.get("visibleWhen")), conditionMap(ui.get("requiredWhen")), List.copyOf(sections),
-                "above".equals(ui.path("layout").path("helpText").asString("below")));
+                "above".equals(ui.path("layout").path("helpText").asString("below")),
+                ui.has("computed") ? stringMap(ui.get("computed")) : Map.of(), List.copyOf(rules));
     }
 
     private static Map<String, Condition> conditionMap(JsonNode o) {
@@ -486,6 +674,28 @@ public final class ModelReader {
                     e.getValue().get("y").decimalValue()));
         }
         return new Layout(Collections.unmodifiableMap(positions));
+    }
+
+    /**
+     * The step's input mapping plus, for a for-each step (CG-E06, S138), the inputs that receive the current item:
+     * {@code /input/<list>/*} for a list of single values, {@code /input/<list>/*}{@code /<column>} for a row column.
+     * An explicit mapping of the same input wins (ForEachRules reports the clash).
+     */
+    private static Map<String, String> inputsWithItem(JsonNode c) {
+        Map<String, String> mapping = stringMap(c.get("inputMapping"));
+        JsonNode f = c.path("forEach");
+        if (!f.isObject()) {
+            return mapping;
+        }
+        Map<String, String> all = new TreeMap<>(mapping);
+        String list = f.get("itemsRef").stringValue() + "/*";
+        if (f.has("itemInput")) {
+            all.putIfAbsent(f.get("itemInput").stringValue(), list);
+        }
+        for (Map.Entry<String, JsonNode> e : f.path("itemMapping").properties()) {
+            all.putIfAbsent(e.getKey(), list + "/" + e.getValue().stringValue());
+        }
+        return Collections.unmodifiableMap(all);
     }
 
     private static Map<String, String> stringMap(JsonNode o) {

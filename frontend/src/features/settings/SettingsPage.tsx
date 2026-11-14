@@ -1,4 +1,4 @@
-import { Archive, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
+import { Activity, Archive, Bot, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,11 +9,21 @@ import { AgentWriteRetentionPanel } from './AgentWriteRetentionPanel'
 import { DocumentTemplatesPanel } from './DocumentTemplatesPanel'
 import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
+import { GitConnectionPanel } from './GitConnectionPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
+import { ConnectorPackagesPanel } from './ConnectorPackagesPanel'
 import { FeaturesPanel } from './FeaturesPanel'
+import { McpServerPanel } from './McpServerPanel'
+import { WorkingCalendarsPanel } from './WorkingCalendarsPanel'
+import { SchedulesPanel } from './SchedulesPanel'
+import { TaskActionsPanel } from './TaskActionsPanel'
+import { JobDashboardPanel } from './JobDashboardPanel'
+import { AlertRulesPanel } from './AlertRulesPanel'
+import { RunRetentionPanel } from './RunRetentionPanel'
+import { AuditIntegrityPanel } from './AuditIntegrityPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -28,12 +38,16 @@ export function SettingsPage() {
   const showAccess = can('workspace.manage-access')
   const showConnections = can('connection.read')
   const showWebhooks = showConnections || can('run.operate')
+  const showPackages = can('connector.manage', 'connector.approve', 'connection.read')
   const showTemplates = can('workflow.read')
   const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
+  const showOperations = can('run.operate')
+  const showAlerts = can('alert.manage')
+  const showRetention = can('workspace.manage-access', 'audit.read')
 
-  if (!showAccess && !showConnections && !showTemplates && !showWebhooks) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks && !showPackages && !showOperations && !showAlerts && !showRetention) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -47,7 +61,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Who can do what in this workspace, and which systems it can reach." />
-      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : 'webhooks'}>
+      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : showWebhooks ? 'webhooks' : showOperations ? 'operations' : showAlerts ? 'alerts' : 'run-retention'}>
         <TabsList aria-label="Settings sections">
           {showAccess ? (
             <TabsTrigger value="access">
@@ -59,19 +73,34 @@ export function SettingsPage() {
               <ToggleRight className="size-4" aria-hidden="true" /> Features
             </TabsTrigger>
           ) : null}
+          {showAccess ? (
+            <TabsTrigger value="mcp">
+              <Bot className="size-4" aria-hidden="true" /> AI assistants
+            </TabsTrigger>
+          ) : null}
+          {showAccess ? <TabsTrigger value="task-actions">Actionable tasks</TabsTrigger> : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
             </TabsTrigger>
           ) : null}
+          {showOperations ? (
+            <TabsTrigger value="operations">
+              <Activity className="size-4" aria-hidden="true" /> Operations
+            </TabsTrigger>
+          ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
+          {showAlerts ? <TabsTrigger value="alerts">Alerts</TabsTrigger> : null}
           {showWebhooks ? <TabsTrigger value="kafka">Kafka</TabsTrigger> : null}
+          {showPackages ? <TabsTrigger value="packages">Connector packages</TabsTrigger> : null}
           {showAi ? (
             <TabsTrigger value="ai">
               <Sparkles className="size-4" aria-hidden="true" /> AI
             </TabsTrigger>
           ) : null}
           {showAssets ? <TabsTrigger value="assets">Shared assets</TabsTrigger> : null}
+          {showTemplates ? <TabsTrigger value="calendars">Working calendars</TabsTrigger> : null}
+          {showTemplates ? <TabsTrigger value="schedules">Schedules</TabsTrigger> : null}
           {showTemplates ? <TabsTrigger value="templates">Document templates</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
           {showAccess ? (
@@ -81,6 +110,7 @@ export function SettingsPage() {
           ) : null}
           {showAccess ? <TabsTrigger value="retention">File retention</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="agent-write-retention">Agent write retention</TabsTrigger> : null}
+          {showRetention ? <TabsTrigger value="run-retention">Run retention</TabsTrigger> : null}
           {showAccess ? (
             <TabsTrigger value="exit-export">
               <Archive className="size-4" aria-hidden="true" /> Exit export
@@ -90,9 +120,13 @@ export function SettingsPage() {
         {showAccess ? <TabsContent value="documents"><DocumentSourcesPanel /></TabsContent> : null}
         {showTemplates ? <TabsContent value="templates"><DocumentTemplatesPanel /></TabsContent> : null}
         {showAssets ? <TabsContent value="assets"><SharedAssetsPanel /></TabsContent> : null}
+        {showTemplates ? <TabsContent value="calendars"><WorkingCalendarsPanel /></TabsContent> : null}
+        {showTemplates ? <TabsContent value="schedules"><SchedulesPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="retention"><AttachmentRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="agent-write-retention"><AgentWriteRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="exit-export"><ExitExportPanel /></TabsContent> : null}
+        {showAlerts ? <TabsContent value="alerts"><AlertRulesPanel /></TabsContent> : null}
+        {showRetention ? <TabsContent value="run-retention"><div className="space-y-10"><RunRetentionPanel />{can('audit.read') ? <AuditIntegrityPanel /> : null}</div></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />
@@ -104,6 +138,12 @@ export function SettingsPage() {
           </TabsContent>
         ) : null}
         {showAccess ? (
+          <TabsContent value="mcp">
+            <McpServerPanel />
+          </TabsContent>
+        ) : null}
+        {showAccess ? <TabsContent value="task-actions"><TaskActionsPanel /></TabsContent> : null}
+        {showAccess ? (
           <TabsContent value="migration">
             <MigrationPolicyPanel />
           </TabsContent>
@@ -111,10 +151,13 @@ export function SettingsPage() {
         {showConnections ? (
           <TabsContent value="connections">
             <ConnectionsPanel />
+            <GitConnectionPanel />
           </TabsContent>
         ) : null}
+        {showOperations ? <TabsContent value="operations"><JobDashboardPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
         {showWebhooks ? <TabsContent value="kafka"><KafkaTriggersPanel /></TabsContent> : null}
+        {showPackages ? <TabsContent value="packages"><ConnectorPackagesPanel /></TabsContent> : null}
         {showAi ? (
           <TabsContent value="ai">
             <AiSettingsPanel />

@@ -29,9 +29,19 @@ public abstract class RuntimeTestBase extends IntegrationTestBase {
     @Autowired
     protected ManagementService managementService;
 
+    @Autowired
+    private com.orqix.integration.health.BindingRateLimiter rateLimiter;
+
     @BeforeEach
     void resetStub() {
         Stub.reset();
+        // CG-W04 (S131): circuits and request limits are shared state of the binding; every test starts closed and
+        // unlimited, so failures injected by earlier tests never pause later ones.
+        jdbc.sql("DELETE FROM connection_circuit").update();
+        jdbc.sql("DELETE FROM connection_rate_limit").update();
+        for (UUID ws : java.util.List.of(PURCHASING, SANDBOX)) {
+            rateLimiter.invalidate(ws, "procurement");
+        }
         bindStub(PURCHASING);
         bindStub(SANDBOX);
     }

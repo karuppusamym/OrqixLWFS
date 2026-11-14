@@ -393,6 +393,170 @@
       "expectBlockers": [
         "WF_CONNECTION_UNBOUND"
       ]
+    },
+    {
+      "name": "step-retry-valid",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT10S",
+            "multiplier": 3,
+            "maxDelay": "PT30M",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": []
+    },
+    {
+      "name": "step-retry-minimal-valid",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 10,
+            "delay": "PT1H"
+          }
+        }
+      ],
+      "expectBlockers": []
+    },
+    {
+      "name": "step-retry-delay-too-short",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT4S",
+            "multiplier": 3,
+            "maxDelay": "PT30M",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RETRY_DELAY_TOO_SHORT"
+      ]
+    },
+    {
+      "name": "step-retry-delay-too-long",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT1H1S",
+            "multiplier": 3,
+            "maxDelay": "PT6H",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RETRY_DELAY_TOO_LONG"
+      ]
+    },
+    {
+      "name": "step-retry-max-delay-too-long",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT10S",
+            "multiplier": 3,
+            "maxDelay": "PT6H1S",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RETRY_MAX_DELAY_TOO_LONG"
+      ]
+    },
+    {
+      "name": "step-retry-max-delay-below-delay",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT1M",
+            "multiplier": 3,
+            "maxDelay": "PT30S",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RETRY_MAX_DELAY_BELOW_DELAY"
+      ]
+    },
+    {
+      "name": "step-retry-too-many-attempts",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 11,
+            "delay": "PT10S",
+            "multiplier": 3,
+            "maxDelay": "PT30M",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "step-retry-multiplier-too-large",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "PT10S",
+            "multiplier": 5,
+            "maxDelay": "PT30M",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "step-retry-days-not-accepted",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/retry",
+          "value": {
+            "maxAttempts": 6,
+            "delay": "P1D",
+            "multiplier": 3,
+            "maxDelay": "PT30M",
+            "honorRetryAfter": true
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
     }
   ]
 }

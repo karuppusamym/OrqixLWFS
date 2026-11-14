@@ -13,6 +13,8 @@ import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LIFECYCLE_LABELS } from '@/lib/status'
 import { ConsistencyScanPanel } from './ConsistencyScanPanel'
+import { BulkActionsPanel } from './BulkActionsPanel'
+import { FieldFilters } from './FieldFilters'
 import { RunsTable } from './RunsTable'
 
 const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', 'cancelled']
@@ -21,21 +23,26 @@ const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', '
 export function RunsPage() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
-  const { params, update: setParams, lifecycle: selectedLifecycle } = useListFilters()
+  const { params, update: setParams, updateAll, lifecycle: selectedLifecycle } = useListFilters()
   const lifecycle = selectedLifecycle || (can('run.operate') && params.size === 0 ? 'needsAttention' : '')
   // Operators open on the exception view only while no filter and no explicit opt-out (scope=all) is in the URL.
   // Any change that would leave the URL without filters records the opt-out, so removing a filter never snaps back.
   const update = (values: Record<string, string>) => {
     const next = (key: string) => (key in values ? values[key] : params.get(key) ?? '')
-    const none = ['lifecycle', 'workflowId', 'businessKey', 'overdue', 'outcomeKind'].every((key) => !next(key))
-    setParams({ ...values, scope: none ? 'all' : '' })
+    const none = ['lifecycle', 'workflowId', 'businessKey', 'overdue', 'outcomeKind', 'errorCode'].every((key) => !next(key)) && params.getAll('field').length === 0
+    // Field conditions belong to one workflow: choosing another workflow clears them.
+    if ('workflowId' in values && values.workflowId !== (params.get('workflowId') ?? '')) updateAll('field', [], { ...values, scope: none ? 'all' : '' })
+    else setParams({ ...values, scope: none ? 'all' : '' })
   }
   const workflowId = params.get('workflowId') ?? ''
   const appliedKey = params.get('businessKey') ?? ''
   const rawOutcome = params.get('outcomeKind') ?? ''
   const outcomeKind: OutcomeKind | '' = rawOutcome === 'success' || rawOutcome === 'rejected' || rawOutcome === 'failed' ? rawOutcome : ''
+  const errorCode = params.get('errorCode') ?? ''
+  const fieldConditions = params.getAll('field')
+  const readsData = can('run.read-data')
   const clearFilters = () => {
-    update({ lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
+    updateAll('field', [], { lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '', errorCode: '', scope: 'all' })
   }
   const overdueOnly = params.get('overdue') === 'true'
   const attentionOnly = lifecycle === 'needsAttention'
@@ -48,6 +55,8 @@ export function RunsPage() {
     ...(overdueOnly ? { overdue: true } : {}),
     ...(appliedKey ? { businessKey: appliedKey } : {}),
     ...(outcomeKind ? { outcomeKind } : {}),
+    ...(errorCode ? { errorCode } : {}),
+    ...(workflowId && readsData && fieldConditions.length ? { field: fieldConditions } : {}),
   })
   const runs = query.data?.pages.flatMap((p) => p.items) ?? []
 
@@ -122,8 +131,39 @@ export function RunsPage() {
             Search
           </Button>
         </form>
-        {lifecycle || workflowId || appliedKey || overdueOnly || outcomeKind ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : null}
+        <form
+          className="flex flex-wrap items-end gap-2"
+          role="search"
+          aria-label="Find runs by error code"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const value = new FormData(event.currentTarget).get('errorCode')
+            update({ errorCode: typeof value === 'string' ? value.trim().toUpperCase() : '' })
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="runs-error-code">Error code</Label>
+            <Input id="runs-error-code" key={`${ws}:${errorCode}`} name="errorCode" defaultValue={errorCode} className="w-44 max-w-full" placeholder="e.g. HTTP_503" maxLength={64} pattern="[A-Za-z][A-Za-z0-9_]{1,63}" />
+          </div>
+          <Button type="submit" variant="secondary">Filter</Button>
+        </form>
+        {workflowId && readsData ? <FieldFilters ws={ws} workflowId={workflowId} value={fieldConditions} onChange={(next) => updateAll('field', next, { scope: '' })} /> : null}
+        {lifecycle || workflowId || appliedKey || overdueOnly || outcomeKind || errorCode || fieldConditions.length ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : null}
       </div>
+      {can('run.operate') && can('run.bulk-operate') ? (
+        <BulkActionsPanel
+          key={`${workflowId}|${lifecycle}|${appliedKey}|${overdueOnly}|${errorCode}|${fieldConditions.join(',')}`}
+          ws={ws}
+          filter={{
+            ...(workflowId ? { workflowId } : {}),
+            ...(lifecycle ? { lifecycle } : {}),
+            ...(appliedKey ? { businessKey: appliedKey } : {}),
+            ...(overdueOnly ? { overdue: true } : {}),
+            ...(errorCode ? { errorCode } : {}),
+            ...(workflowId && readsData && fieldConditions.length ? { fields: fieldConditions } : {}),
+          }}
+        />
+      ) : null}
       {query.isFetching && !query.isPending ? <p role="status" className="mb-3 text-sm text-muted-foreground">Updating runs…</p> : null}
       {query.isPending ? (
         <LoadingBlock rows={5} label="Loading runs" />

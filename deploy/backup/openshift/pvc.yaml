@@ -1,0 +1,16 @@
+# Backup sets of orqix-backup.sh. Size it for (retention days + 1) x dump size; the dump is roughly 30-40 % of the
+# database size (custom format, compressed). REPLACE the storage class with an encrypted one; replicate or copy the
+# volume off-cluster (object storage, a second site): a backup on the same storage as the database is not a backup.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orqix-backups
+  labels:
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: REPLACE-encrypted-storage-class
+  resources:
+    requests:
+      storage: 50Gi

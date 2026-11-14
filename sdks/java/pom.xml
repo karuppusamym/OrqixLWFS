@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Orqix Java SDK (CG-K02, docs/build/S149). Independent of the backend build: it depends only on the public
+         contract (contracts/openapi.yaml), never on backend classes. -->
+    <groupId>com.orqix.sdk</groupId>
+    <artifactId>orqix-sdk-parent</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+    <name>Orqix SDK for Java</name>
+
+    <modules>
+        <module>orqix-client</module>
+        <module>orqix-spring-boot-starter</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Same versions as the backend's Spring Boot 4.0.8 line; all Apache-2.0 (JUnit: EPL-2.0). -->
+        <jackson-bom.version>3.1.5</jackson-bom.version>
+        <spring-boot.version>4.0.8</spring-boot.version>
+        <junit.version>6.0.3</junit.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.orqix.sdk</groupId>
+                <artifactId>orqix-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.1</version>
+                    <configuration>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-processing,-serial</arg>
+                        </compilerArgs>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.6</version>
+                    <configuration>
+                        <!-- Tests must not depend on the machine's time zone or locale. -->
+                        <argLine>-Duser.timezone=Pacific/Kiritimati -Duser.language=tr</argLine>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

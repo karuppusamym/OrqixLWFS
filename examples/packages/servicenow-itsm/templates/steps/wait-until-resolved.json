@@ -1,0 +1,37 @@
+{
+  "key": "wait-until-resolved",
+  "label": "Wait until the incident is resolved",
+  "description": "Checks the incident every 15 minutes (backing off to every 2 hours) until it is Resolved or Closed. Canceled takes the failed path; after 5 days it takes the timed-out path. Draw both paths.",
+  "connection": "servicenow-itsm",
+  "operation": "getIncident",
+  "requestFields": {
+    "incidentSysId": { "type": "string", "title": "Incident sys_id", "maxLength": 32 }
+  },
+  "step": {
+    "type": "http",
+    "label": "Wait until the incident is resolved",
+    "config": {
+      "connectionRef": "servicenow-itsm",
+      "operation": "getIncident",
+      "inputMapping": {
+        "sysId": "/input/incidentSysId"
+      },
+      "resultMapping": {
+        "state": "/result/state",
+        "incidentNumber": "/result/number"
+      },
+      "timeoutSeconds": 20,
+      "poll": {
+        "every": "PT15M",
+        "backoff": { "multiplier": 2, "maxInterval": "PT2H" },
+        "jitterPercent": 10,
+        "until": { "fieldRef": "/steps/templateStep/state", "operator": "in", "value": ["6", "7"] },
+        "failWhen": { "fieldRef": "/steps/templateStep/state", "operator": "eq", "value": "8" },
+        "giveUpAfter": "P5D",
+        "onCheckError": { "maxConsecutive": 5, "then": "needsAttention" },
+        "finalCheckAtDeadline": true,
+        "showWhileWaiting": ["state"]
+      }
+    }
+  }
+}

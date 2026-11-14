@@ -1,0 +1,14 @@
+{
+  "label": "Unknown incident",
+  "connection": "servicenow-itsm",
+  "operation": "getIncident",
+  "response": {
+    "status": 404,
+    "body": {
+      "error": { "message": "No Record found", "detail": "Record doesn't exist or ACL restricts the record retrieval" },
+      "status": "failure"
+    }
+  },
+  "resultMapping": { "state": "/result/state" },
+  "expect": { "outcome": "rejected", "code": "INCIDENT_NOT_FOUND" }
+}

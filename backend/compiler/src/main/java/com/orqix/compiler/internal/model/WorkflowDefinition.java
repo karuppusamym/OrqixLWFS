@@ -32,7 +32,16 @@ public record WorkflowDefinition(
         Map<String, OutputEntry> outputMapping,
         Layout uiLayout,
         List<Stage> stages,
-        List<Subprocess> subprocesses) {
+        List<Subprocess> subprocesses,
+        WaitExtras waits) {
+
+    public WorkflowDefinition(String schemaVersion, String workflowKey, String name, FormSchema inputSchema,
+            InputUi inputUi, FormSchema outputSchema, List<Node> nodes, List<Transition> transitions,
+            List<DecisionTable> decisions, Execution execution, String selfApproval, List<Dependency> dependencies,
+            Map<String, OutputEntry> outputMapping, Layout uiLayout, List<Stage> stages, List<Subprocess> subprocesses) {
+        this(schemaVersion, workflowKey, name, inputSchema, inputUi, outputSchema, nodes, transitions, decisions,
+                execution, selfApproval, dependencies, outputMapping, uiLayout, stages, subprocesses, WaitExtras.NONE);
+    }
 
     /**
      * A scope over existing steps (S59). An embedded subprocess is a section entered through one entry step and left
@@ -43,7 +52,25 @@ public record WorkflowDefinition(
     public record Subprocess(int index, String id, String label, boolean event, List<String> nodes,
                              String timeoutAfter, String onTimeout, String errorTo, String errorCode,
                              String triggerType, String triggerErrorCode, String signal, String after,
-                             boolean interrupting) {
+                             boolean interrupting, String message, String correlationField,
+                             List<Node.PayloadField> payload) {
+        public Subprocess(int index, String id, String label, boolean event, List<String> nodes,
+                String timeoutAfter, String onTimeout, String errorTo, String errorCode, String triggerType,
+                String triggerErrorCode, String signal, String after, boolean interrupting) {
+            this(index, id, label, event, nodes, timeoutAfter, onTimeout, errorTo, errorCode, triggerType,
+                    triggerErrorCode, signal, after, interrupting, null, null, List.of());
+        }
+
+        /** @return true for a message handler (CG-E08, S139): a handler started by a message for this request */
+        public boolean messageHandler() {
+            return event && "message".equals(triggerType);
+        }
+
+        /** @return the declared message value with this name, or null */
+        public Node.PayloadField field(String name) {
+            return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+
         public String path() {
             return "/subprocesses/" + index;
         }
@@ -65,7 +92,21 @@ public record WorkflowDefinition(
 
     /** @param label may be null; @param condition non-null only for {@code on: condition} */
     public record Transition(int index, String id, String from, String to, Route on, String label,
-                             Condition condition) {
+                             Condition condition, String aiLabel, Integer maxTraversals, String branch) {
+        public Transition(int index, String id, String from, String to, Route on, String label, Condition condition) {
+            this(index, id, from, to, on, label, condition, null);
+        }
+
+        public Transition(int index, String id, String from, String to, Route on, String label, Condition condition,
+                          String aiLabel) {
+            this(index, id, from, to, on, label, condition, aiLabel, null, null);
+        }
+
+        /** @return true for a declared bounded loop path (CG-E01, S138) */
+        public boolean bounded() {
+            return maxTraversals != null;
+        }
+
         public String path() {
             return "/transitions/" + index;
         }
@@ -77,7 +118,13 @@ public record WorkflowDefinition(
      * and {@code range} the bounds of {@code between} (docs/build/S121).
      */
     public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms,
-                            List<Literal> list, Range range) {
+                            List<Literal> list, Range range, String expression) {
+        public Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms,
+                List<Literal> list, Range range) { this(fieldRef, operator, value, group, terms, list, range, null); }
+        /** A condition written as an Orqix expression (S137). */
+        public static Condition ofExpression(String expression) { return new Condition(null, null, null, null, List.of(), List.of(), null, expression); }
+        /** @return true for a condition written as an Orqix expression (S137) */
+        public boolean isExpression() { return expression != null; }
         public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of(), List.of(), null); }
         public Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) { this(fieldRef, operator, value, group, terms, List.of(), null); }
         public boolean compound() { return group != null; }
@@ -177,9 +224,31 @@ public record WorkflowDefinition(
          * @param then sorted by key
          * @param effective null when the row always applies (docs/build/S41)
          */
-        public record Row(int index, Condition when, Map<String, Literal> then, Window effective) {
+        public record Row(int index, Condition when, Map<String, Literal> then, Window effective,
+                          Map<String, String> thenExpressions) {
+            public Row(int index, Condition when, Map<String, Literal> then, Window effective) {
+                this(index, when, then, effective, Map.of());
+            }
+
             public Row(int index, Condition when, Map<String, Literal> then) {
                 this(index, when, then, null);
+            }
+
+            /** @return every result key the row sets, literal or expression (S146 decision expressions), sorted */
+            public java.util.SortedSet<String> outputKeys() {
+                java.util.SortedSet<String> keys = new java.util.TreeSet<>(then.keySet());
+                keys.addAll(thenExpressions.keySet());
+                return keys;
+            }
+
+            /** @return the terms of the row: the condition itself or the terms of its group */
+            public List<Condition> terms() {
+                return when.compound() ? when.terms() : List.of(when);
+            }
+
+            /** @return true when an input or output entry of the row is an Orqix expression (S146) */
+            public boolean usesExpressions() {
+                return !thenExpressions.isEmpty() || terms().stream().anyMatch(Condition::isExpression);
             }
 
             /** True when the row applies on {@code asOf}. */
@@ -210,6 +279,11 @@ public record WorkflowDefinition(
         public boolean dated() {
             return rows.stream().anyMatch(r -> r.effective() != null);
         }
+
+        /** @return true when an entry of a row is an Orqix expression (S146); only such tables produce new DMN content */
+        public boolean usesExpressions() {
+            return rows.stream().anyMatch(Row::usesExpressions);
+        }
     }
 
     /** Approved JSON Schema subset for request and result forms. {@code properties} sorted by key. */
@@ -220,7 +294,17 @@ public record WorkflowDefinition(
                             Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
                             Field items, Integer minItems, Integer maxItems, String formatMinimum,
                             String formatMaximum, boolean incidentEditable, List<String> rowRequired,
-                            Map<String, Field> rowFields) {
+                            Map<String, Field> rowFields, tools.jackson.databind.JsonNode json) {
+            /** Without the field's JSON (rules that need format details such as lookup or timeZone see none). */
+            public Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
+                         Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
+                         Field items, Integer minItems, Integer maxItems, String formatMinimum,
+                         String formatMaximum, boolean incidentEditable, List<String> rowRequired,
+                         Map<String, Field> rowFields) {
+                this(key, type, title, enumValues, minLength, maxLength, minimum, maximum, multipleOf, items, minItems,
+                        maxItems, formatMinimum, formatMaximum, incidentEditable, rowRequired, rowFields, null);
+            }
+
             public Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
                          Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
                          Field items, Integer minItems, Integer maxItems, String formatMinimum,
@@ -242,9 +326,19 @@ public record WorkflowDefinition(
      * descriptions show above the control.
      */
     public record InputUi(List<String> order, Map<String, String> widgets, Map<String, Condition> visibleWhen,
-                          Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove) {
+                          Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove,
+                          Map<String, String> computed, List<FormRule> rules) {
         public InputUi(List<String> order, Map<String, String> widgets) {
             this(order, widgets, Map.of(), Map.of(), List.of(), false);
+        }
+
+        public InputUi(List<String> order, Map<String, String> widgets, Map<String, Condition> visibleWhen,
+                Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove) {
+            this(order, widgets, visibleWhen, requiredWhen, sections, helpAbove, Map.of(), List.of());
+        }
+
+        /** A cross-field rule (CG-F04, S137): broken when {@code check} is false; {@code fields} may be empty. */
+        public record FormRule(int index, String id, String check, String message, List<String> fields) {
         }
 
         /** A titled group of fields; {@code condition} may be null. */
@@ -253,7 +347,42 @@ public record WorkflowDefinition(
         }
     }
 
-    public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {
+    /**
+     * Workflow-wide execution limits. {@code stepRetry} holds the step-level retry policies (CG-W04, S131) by step id,
+     * sorted by id; a step without one uses {@code maxAttempts} and {@code retryDelaySeconds}.
+     */
+    public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds,
+                            Map<String, StepRetry> stepRetry, Map<String, StepForEach> forEach) {
+        public Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {
+            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, Map.of(), Map.of());
+        }
+
+        public Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds,
+                         Map<String, StepRetry> stepRetry) {
+            this(maxConcurrentRuns, maxAttempts, retryDelaySeconds, stepRetry, Map.of());
+        }
+
+        /** @return the step's for-each policy (CG-E06, S138), or null when it runs once */
+        public StepForEach forEachOf(String stepId) {
+            return forEach.get(stepId);
+        }
+
+        /** @return the step's own policy, or null when it uses the workflow defaults */
+        public StepRetry retryOf(String stepId) {
+            return stepRetry.get(stepId);
+        }
+
+        /** Total attempts of the step: its own policy, else the workflow default. */
+        public int attemptsOf(String stepId) {
+            StepRetry r = retryOf(stepId);
+            return r == null ? maxAttempts : r.maxAttempts();
+        }
+
+        /** First delay of the step in seconds: its own policy, else the workflow default. */
+        public int delaySecondsOf(String stepId) {
+            StepRetry r = retryOf(stepId);
+            return r == null ? retryDelaySeconds : (int) Math.max(0, r.delaySeconds());
+        }
     }
 
     /** Declared connection dependency. */

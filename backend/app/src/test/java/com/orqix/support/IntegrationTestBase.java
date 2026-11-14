@@ -40,6 +40,7 @@ public abstract class IntegrationTestBase {
         System.setProperty("orqix.ai.api-key", AgentLlmStub.KEY);
         System.setProperty("orqix.ai.base-url", AgentLlmStub.baseUrl());
         System.setProperty("orqix.ai.timeout", "5s");
+        AiTaskFixtures.configure();
     }
 
     @Autowired
@@ -53,12 +54,15 @@ public abstract class IntegrationTestBase {
         TestDatabase.appProperties().forEach((key, value) -> registry.add(key, () -> value));
         registry.add("orqix.runtime.lock-owner", () -> "test-node-1");
         String stub = "localhost:" + Stub.port();
-        String oauth = "localhost:" + OAuthProviderStub.port();
+        String oauth = "localhost:" + OAuthProviderStub.port() + ",localhost:" + GitStandIn.port();
         // Extra allowlisted hosts exist only to prove that DNS/IP checks still reject them (T-SEC-07).
         registry.add("orqix.egress.allowed-hosts", () -> stub + "," + oauth + ",public.test.example:443,internal.test.example:443,"
                 + "127.0.0.1:443,169.254.169.254:443,10.1.2.3:443");
         registry.add("orqix.egress.allowed-private-hosts", () -> stub + "," + oauth);
         registry.add("orqix.egress.plain-http-hosts", () -> stub + "," + oauth);
+        // S133: the example publisher key signs examples/packages; the WireMock origin stands in for package hosts.
+        registry.add("orqix.connector-packages.trusted-keys." + ExamplePublisher.KEY_ID, ExamplePublisher::publicKeyBase64);
+        registry.add("orqix.connector-packages.development-hosts", () -> stub);
     }
 
     /**

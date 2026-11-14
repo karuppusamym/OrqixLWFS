@@ -71,6 +71,18 @@ public class RunRepair {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public Verdict diagnose(RunStore.RunRow run) {
+        Verdict verdict = diagnoseSteps(run);
+        if (IN_SYNC.equals(verdict.diagnosis().state()) && waitStateDrift(run)) {
+            // S129: the steps are right, but the "Waiting for" list derived from them is not; repair derives it again.
+            var d = verdict.diagnosis();
+            return new Verdict(new RuntimeDtos.RunDiagnosis(PROJECTION_DRIFT, true,
+                    "The \"Waiting for\" list does not match the request's steps. It can be rebuilt from them.",
+                    d.projectedNodeIds(), d.engineNodeIds(), run.version()), null);
+        }
+        return verdict;
+    }
+
+    private Verdict diagnoseSteps(RunStore.RunRow run) {
         List<String> projected = new ArrayList<>();
         boolean supportedKinds = true;
         boolean waitsOutsideEngine = false;
@@ -107,6 +119,16 @@ public class RunRepair {
                 """).param("ws", run.workspaceId()).param("id", run.id()).query(Long.class).single() > 0;
         waitsOutsideEngine |= childRuns || openJobs;
         List<String> engineActivities = snap.activeActivityIds();
+        // S129: a step that keeps checking waits for the poll scheduler, outside the engine's own work.
+        List<String> checkNodes = jdbc.sql("""
+                SELECT node_id FROM poll_wait WHERE workspace_id=:ws AND run_id=:id AND kind='check'
+                   AND state IN ('waiting','checking','attention')
+                """).param("ws", run.workspaceId()).param("id", run.id()).query(String.class).list();
+        waitsOutsideEngine |= !checkNodes.isEmpty();
+        String pollProblem = pollProblem(run, engineActivities, checkNodes);
+        if (pollProblem != null) {
+            return verdict(UNSUPPORTED, pollProblem, sortedProjection, engineActivities, run);
+        }
         if (!snap.hasDrivingWork() && !waitsOutsideEngine) {
             if (engineActivities.isEmpty()) {
                 return verdict(EMPTY_REQUEST,
@@ -248,6 +270,38 @@ public class RunRepair {
         }
         steps.sort(Comparator.comparing(Rebuild::nodeId));
         return new Plan(steps, null);
+    }
+
+    /** @return why the checks and the steps disagree (S129), or null */
+    private String pollProblem(RunStore.RunRow run, List<String> engineActivities, List<String> checkNodes) {
+        for (String node : checkNodes) {
+            if (!engineActivities.contains(node)) {
+                return "Checks are scheduled for " + node + ", but the engine is not waiting there. Use Stop waiting"
+                        + " on the request page or cancel the request.";
+            }
+        }
+        for (JsonNode step : run.currentSteps()) {
+            if (step.path("polling").asBoolean(false) && !checkNodes.contains(step.path("nodeId").asString(""))) {
+                return "The step " + step.path("nodeId").asString("") + " waits for checks of another system, but no"
+                        + " check is scheduled. The checks cannot be rebuilt safely; cancel the request.";
+            }
+        }
+        return null;
+    }
+
+    /** @return true when the "Waiting for" rows differ from what the current steps say (S129) */
+    private boolean waitStateDrift(RunStore.RunRow run) {
+        java.util.Set<String> expected = new TreeSet<>();
+        for (JsonNode step : run.currentSteps()) {
+            WaitStates.WaitRow w = WaitStates.fromStep(run.id(), step);
+            if (w != null) {
+                expected.add(w.nodeId() + ":" + w.kind());
+            }
+        }
+        java.util.Set<String> stored = new TreeSet<>(jdbc.sql("""
+                SELECT node_id || ':' || kind FROM wait_state WHERE workspace_id=:ws AND run_id=:id
+                """).param("ws", run.workspaceId()).param("id", run.id()).query(String.class).list());
+        return !expected.equals(stored);
     }
 
     private static Plan undetermined(String reason) {

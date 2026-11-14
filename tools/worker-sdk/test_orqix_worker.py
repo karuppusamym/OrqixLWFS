@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from orqix_worker import ApiError, CallbackTicket, Job, JobFailed, Worker  # noqa: E402
+from orqix_worker import ApiError, BusinessError, CallbackTicket, Job, JobFailed, Worker  # noqa: E402
 
 
 class Fake:
@@ -115,6 +115,33 @@ class WorkerTest(unittest.TestCase):
         fail = next(c for c in self.fake.calls if c["path"].endswith("/fail"))
         self.assertFalse(fail["body"]["retryable"])
         self.assertEqual(fail["body"]["message"], "Address service rejected the postcode")
+
+    def test_a_business_error_is_final_and_carries_its_code(self):
+        self.fake.jobs = [job_json()]
+
+        def handler(job):
+            raise BusinessError("ADDRESS_UNKNOWN", "No such street in this town")
+
+        self.assertEqual(self.worker.run({"t": handler}, once=True), 0)
+        fail = next(c for c in self.fake.calls if c["path"].endswith("/fail"))
+        self.assertEqual(fail["body"], {"workerId": "w1", "fence": 3, "message": "No such street in this town",
+                                        "retryable": False, "errorCode": "ADDRESS_UNKNOWN"})
+        self.assertEqual(fail["key"], "j1:3:fail")
+
+    def test_fail_with_error_checks_the_code_before_calling(self):
+        self.fake.jobs = [job_json()]
+        job = self.worker.fetch_and_lock(["t"])[0]
+        for bad in ("address unknown", "ORQIX_STEP_FAILED", "A", "x" * 3):
+            with self.assertRaises(ValueError):
+                self.worker.fail_with_error(job, bad, "no")
+        with self.assertRaises(ValueError):
+            BusinessError("lower", "no")
+        self.assertFalse(any(c["path"].endswith("/fail") for c in self.fake.calls))
+        self.worker.fail_with_error(job, "CREDIT_REFUSED", "m" * 600)
+        fail = self.fake.calls[-1]
+        self.assertEqual(fail["body"]["errorCode"], "CREDIT_REFUSED")
+        self.assertEqual(len(fail["body"]["message"]), 500)
+        self.assertFalse(fail["body"]["retryable"])
 
     def test_an_unexpected_error_reports_only_its_class_name(self):
         self.fake.jobs = [job_json()]

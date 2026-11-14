@@ -39,6 +39,11 @@ final class FormGuards {
     private static void uiCondition(RuleContext rc,String key,Condition condition,String path) {
         if(key!=null && !rc.definition().inputSchema().properties().containsKey(key))
             rc.issues().blocker("WF_FORM_INVALID",path,null,null,"Conditional question does not exist in the request form.");
+        if(condition.isExpression()) {
+            ExpressionRules.expression(rc,condition.expression(),ExpressionRules.formScope(rc),null,path+"/expression",null,
+                    com.orqix.compiler.expr.ExprType.BOOLEAN);
+            return;
+        }
         List<Condition> terms=condition.compound()?condition.terms():List.of(condition);
         for(Condition term:terms) {
             String ref=term.fieldRef();

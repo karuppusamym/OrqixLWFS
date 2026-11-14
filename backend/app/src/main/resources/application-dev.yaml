@@ -57,6 +57,12 @@ orqix:
     allowed-hosts: localhost:8095
     allowed-private-hosts: localhost:8095
     plain-http-hosts: localhost:8095
+  protection:
+    field-keys:
+      # Local development only: never use this key anywhere else.
+      dev-key: ZGV2LW9ubHktZmllbGQta2V5LWRvLW5vdC11c2UtISE=
+    audit-signing:
+      dev-ephemeral: true
   secrets:
     dir: ${ORQIX_SECRETS_DIR:../../deploy/compose/secrets}
   db:

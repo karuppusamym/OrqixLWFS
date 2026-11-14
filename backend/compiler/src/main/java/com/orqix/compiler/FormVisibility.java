@@ -6,27 +6,43 @@ import tools.jackson.databind.JsonNode;
 public final class FormVisibility {
     private FormVisibility() {}
     public static boolean visible(JsonNode ui,JsonNode input,String key) {
+        return visible(null,ui,input,key);
+    }
+    /** As {@link #visible(JsonNode, JsonNode, String)}; the schema types expression conditions (S137). */
+    public static boolean visible(JsonNode schema,JsonNode ui,JsonNode input,String key) {
         var own=ui.path("visibleWhen").path(key);
-        if (!own.isMissingNode() && !matches(own,input)) return false;
+        if (!own.isMissingNode() && !matches(own,input,schema)) return false;
         for (JsonNode section:ui.path("layout").path("sections")) {
             boolean included=false;for(JsonNode field:section.path("fields"))included|=key.equals(field.asString());
-            if (included && section.has("visibleWhen") && !matches(section.path("visibleWhen"),input)) return false;
+            if (included && section.has("visibleWhen") && !matches(section.path("visibleWhen"),input,schema)) return false;
         }
         return true;
     }
     public static boolean required(JsonNode schema,JsonNode ui,JsonNode input,String key) {
-        if (!visible(ui,input,key)) return false;
+        if (!visible(schema,ui,input,key)) return false;
         for(JsonNode name:schema.path("required"))if(key.equals(name.asString()))return true;
-        return ui.path("requiredWhen").has(key) && matches(ui.path("requiredWhen").path(key),input);
+        return ui.path("requiredWhen").has(key) && matches(ui.path("requiredWhen").path(key),input,schema);
     }
     public static boolean matches(JsonNode condition,JsonNode input) {
+        return matches(condition,input,null);
+    }
+    /**
+     * An expression condition (S137) holds only when it gives true; it needs the request schema for the field types
+     * (without one it never holds).
+     */
+    public static boolean matches(JsonNode condition,JsonNode input,JsonNode schema) {
+        if (condition.has("expression")) {
+            if (schema==null) return false;
+            return Boolean.TRUE.equals(FormComputation.test(condition.path("expression").asString(""),
+                    FormComputation.scope(schema),input,java.time.Instant.now()));
+        }
         if (condition.has("all")) {
             if (!condition.path("all").isArray() || condition.path("all").isEmpty())return false;
-            for(JsonNode term:condition.path("all"))if(!matches(term,input))return false;
+            for(JsonNode term:condition.path("all"))if(!matches(term,input,schema))return false;
             return true;
         }
         if (condition.has("any")) {
-            for(JsonNode term:condition.path("any"))if(matches(term,input))return true;
+            for(JsonNode term:condition.path("any"))if(matches(term,input,schema))return true;
             return false;
         }
         String ref=condition.path("fieldRef").asString("");

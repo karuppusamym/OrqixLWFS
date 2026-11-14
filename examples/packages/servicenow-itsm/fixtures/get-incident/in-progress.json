@@ -1,0 +1,22 @@
+{
+  "label": "Incident still in progress",
+  "connection": "servicenow-itsm",
+  "operation": "getIncident",
+  "response": {
+    "status": 200,
+    "body": {
+      "result": {
+        "sys_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "number": "INC0012345",
+        "state": "2",
+        "short_description": "Access to the finance share",
+        "close_code": "",
+        "close_notes": "",
+        "correlation_id": "ORQ-1042-raiseIncident-1",
+        "sys_updated_on": "2026-11-05 08:10:00"
+      }
+    }
+  },
+  "resultMapping": { "state": "/result/state" },
+  "expect": { "outcome": "succeeded", "results": { "state": "2" } }
+}

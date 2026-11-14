@@ -89,6 +89,9 @@ class KafkaConsumerTest extends RuntimeTestBase {
     @Autowired
     private Clock clock;
 
+    @Autowired
+    private com.orqix.runtime.internal.AdmissionControl admission;
+
     private KafkaConsumerRunner replicaB;
 
     /** The cap is 5 triggers per workspace and the database is shared, so each test starts without any (owner connection). */
@@ -353,5 +356,36 @@ class KafkaConsumerTest extends RuntimeTestBase {
                 .query(Integer.class).single()).isEqualTo(10);
         // A later delivery of the same record is a duplicate, not another try.
         assertThat(handler.handle(t, record, "replica-a", 1, false).outcome()).isEqualTo("duplicate");
+    }
+
+    /** CG-P05 (S150): a workspace at its admission limit delays the record; it is not dead-lettered on the last try. */
+    @Test
+    void anAdmissionRefusalIsRetriedEvenOnTheLastAttempt() throws Exception {
+        UUID wf = publishPurchase(PURCHASING, null);
+        start("rhea.requester", PURCHASING, wf, BigDecimal.ONE);
+        int recent = jdbc.sql("SELECT count(*) FROM workflow_run WHERE workspace_id = :ws AND created_at > :since")
+                .param("ws", PURCHASING).param("since", java.sql.Timestamp.from(clock.instant().minusSeconds(60)))
+                .query(Integer.class).single();
+        UUID admin = jdbc.sql("SELECT id FROM subject WHERE external_subject = 'kc-rhea.requester'").query(UUID.class)
+                .single();
+        jdbc.sql("""
+                INSERT INTO workspace_admission_limit (workspace_id, starts_per_minute, updated_by, updated_at)
+                VALUES (:ws, :limit, :by, now())
+                """).param("ws", PURCHASING).param("limit", Math.max(1, recent)).param("by", admin).update();
+        admission.reset();
+        try {
+            UUID trigger = startTrigger("kt-start", wf);
+            jdbc.sql("UPDATE kafka_trigger SET enabled = false WHERE id = :id").param("id", trigger).update();
+            KafkaTriggerService.Trigger t = triggers.find(PURCHASING, trigger).orElseThrow();
+            KafkaRecordHandler.Incoming record = new KafkaRecordHandler.Incoming(0, 9,
+                    "admission-1".getBytes(StandardCharsets.UTF_8), order(10));
+            KafkaRecordHandler.Result last = handler.handle(t, record, "replica-a", 10, true);
+            assertThat(last.outcome()).isEqualTo("retry");
+            assertThat(last.code()).isEqualTo("rate_limited");
+            assertThat(records(trigger, "started") + records(trigger, "dead")).isZero();
+        } finally {
+            jdbc.sql("DELETE FROM workspace_admission_limit WHERE workspace_id = :ws").param("ws", PURCHASING).update();
+            admission.reset();
+        }
     }
 }

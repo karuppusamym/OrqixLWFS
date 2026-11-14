@@ -2,7 +2,7 @@
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
   <process id="start-date-onboarding" name="Prepare for a new colleague's start date" isExecutable="true">
     <extensionElements>
-      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="77b0c5ddb5acccd11dcbc58fb90e39dbe0118eecc23e68e43b0adb0238c7694c"/>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.3.0" semanticHash="77b0c5ddb5acccd11dcbc58fb90e39dbe0118eecc23e68e43b0adb0238c7694c"/>
     </extensionElements>
     <startEvent id="start" name="Start requested"/>
     <userTask id="confirm" name="Confirm the start" flowable:candidateGroups="managers">

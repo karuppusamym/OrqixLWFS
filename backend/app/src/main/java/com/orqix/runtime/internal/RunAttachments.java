@@ -146,6 +146,30 @@ public class RunAttachments {
         return id;
     }
 
+    /**
+     * S140 (CG-F05): a file a guest sent with a guest response form; the caller already checked the link, the field's
+     * file rules and the scan. Counts against the request's file quota like any other file.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public UUID addGuestFile(UUID workspaceId, UUID runId, UUID guestSubject, String name, String contentType,
+            byte[] bytes, String nodeId) {
+        lockRun(runId);
+        Stored stored = read(new Upload(name, contentType, new java.io.ByteArrayInputStream(bytes)),
+                "Sent with the guest response");
+        long[] used = usage(runId);
+        if (used[0] >= settings.maxFilesPerRun() || used[1] + stored.bytes().length > settings.maxBytesPerRun()) {
+            throw new ApiException(ProblemCode.ATTACHMENT_LIMIT_REACHED, "The request has no room for more files.");
+        }
+        AttachmentScanner.Status scan = scanner.scan(stored.bytes());
+        if (scan.blocksDownload()) {
+            throw new ApiException(ProblemCode.ATTACHMENT_BLOCKED, "A file did not pass the file check.");
+        }
+        UUID id = Ids.newId();
+        insert(id, workspaceId, runId, null, guestSubject, stored, scan, null);
+        recordAdded(workspaceId, runId, guestSubject, id, stored, scan, false);
+        return id;
+    }
+
     @Transactional(readOnly = true)
     public AttachmentList list(Caller caller, UUID workspaceId, UUID runId) {
         RunAccess.Visible visible = access.require(caller, workspaceId, runId);

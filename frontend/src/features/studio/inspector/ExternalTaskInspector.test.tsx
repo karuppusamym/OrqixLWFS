@@ -7,6 +7,7 @@ import purchase from '../../../../../examples/purchase-approval.json'
 import { StudioProvider, useStudio } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
 import { allFields } from '../model/fieldRefs'
+import { canConnect, routeForHandle } from '../model/ops'
 import { ExternalTaskInspector } from './ExternalTaskInspector'
 
 function setup(readOnly = false) {
@@ -71,5 +72,60 @@ describe('inspector: Work by an external worker', () => {
     setup(true)
     expect(screen.getByLabelText(/^Topic/)).toBeDisabled()
     expect(screen.queryByRole('button', { name: /^Add a/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('worker business errors (S132)', () => {
+  function sectionSetup(withFailed: boolean) {
+    const definition = normalizeDefinition(structuredClone(purchase))
+    const node = definition.nodes.find((n) => n.id === 'manager')!
+    node.type = 'externalTask'
+    node.label = 'Verify the supplier'
+    node.config = { topic: 'supplier-check', inputMapping: {}, result: [] }
+    definition.transitions = definition.transitions.filter((t) => t.from !== 'manager')
+    definition.transitions.push({ id: 'n1', from: 'manager', to: 'amountPolicy', on: 'next' })
+    if (withFailed) definition.transitions.push({ id: 'f1', from: 'manager', to: 'notifyRejected', on: 'failed' })
+    definition.subprocesses = [{ id: 'verify', label: 'Verify', type: 'embedded', nodes: ['manager'], onError: { to: 'notifyRejected', errorCode: 'SUPPLIER_BLOCKED' } }] as typeof definition.subprocesses
+    const store = createStudioStore()
+    store.getState().load({ workflowId: 'workflow', revision: 1, definition })
+    function Inspector() {
+      const current = useStudio((s) => s.definition.nodes.find((n) => n.id === 'manager')!)
+      return <ExternalTaskInspector node={current} />
+    }
+    render(<StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider>)
+    return store
+  }
+
+  it('lets a worker step have one Failed route', () => {
+    const d = normalizeDefinition(structuredClone(purchase))
+    const node = d.nodes.find((n) => n.id === 'manager')!
+    node.type = 'externalTask'
+    node.config = { topic: 'supplier-check', inputMapping: {}, result: [] }
+    d.transitions = d.transitions.filter((t) => t.from !== 'manager')
+    expect(routeForHandle(node, 'failed')).toBe('failed')
+    expect(canConnect(d, { from: 'manager', to: 'notifyRejected', on: 'failed' }).ok).toBe(true)
+    d.transitions.push({ id: 'f1', from: 'manager', to: 'notifyRejected', on: 'failed' })
+    expect(canConnect(d, { from: 'manager', to: 'rejected', on: 'failed' }).ok).toBe(false)
+    expect(canConnect(d, { from: 'manager', to: 'rejected', on: 'approved' }).ok).toBe(false)
+  })
+
+  it('explains business errors and offers the section opt-in, which removes the Failed route', async () => {
+    const store = sectionSetup(true)
+    const user = userEvent.setup()
+    expect(screen.getByTestId('external-business-errors')).toHaveTextContent(/failureCode/)
+    const box = screen.getByRole('checkbox', { name: /when the worker reports a business error/ })
+    expect(screen.getByText(/The section Verify then stops/)).toBeInTheDocument()
+    await user.click(box)
+    const def = () => store.getState().definition
+    expect(def().nodes.find((n) => n.id === 'manager')!.config.raiseErrorOnFailure).toBe('SUPPLIER_BLOCKED')
+    expect(def().transitions.some((t) => t.id === 'f1')).toBe(false)
+    const refused = canConnect(def(), { from: 'manager', to: 'notifyRejected', on: 'failed' })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok ? '' : refused.reason).toMatch(/business error/)
+  })
+
+  it('does not offer the opt-in outside a section with an error route', () => {
+    setup()
+    expect(screen.queryByRole('checkbox', { name: /when the worker reports a business error/ })).not.toBeInTheDocument()
   })
 })

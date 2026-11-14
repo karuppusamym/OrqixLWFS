@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAnnounce } from '@/components/common/Announcer'
 import { buildFields, presentFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
-import { carryOverValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
+import { carryOverValues, formatZoned, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
 import { visibleFields } from '@/lib/form/visibility'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { formatUsd } from '@/lib/money'
@@ -40,6 +40,7 @@ export function displayValue(field: FieldDef, raw: RawValue | undefined): string
   const text = typeof raw === 'string' ? raw : ''
   if (text === '') return '—'
   if (field.widget === 'file') return 'A file is attached'
+  if (field.widget === 'dateTime') return formatZoned(text, field.schema.timeZone)
   return field.isMoney ? formatUsd(text) : field.optionLabels?.[text]??text
 }
 
@@ -260,7 +261,7 @@ export function StartRequestPage() {
         <Card>
           <CardContent className="space-y-5 pt-5">
             {showSummary ? <ErrorSummary ref={summaryRef} fields={visibleFields(fields, values)} errors={errors} idPrefix={ID_PREFIX} /> : null}
-            <ViewLanguage definition={ui.viewDefinition} locale={appearance.locale} onChange={appearance.setLocale}/><FormRenderer view={appearance.view} key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
+            <ViewLanguage definition={ui.viewDefinition} locale={appearance.locale} onChange={appearance.setLocale}/><FormRenderer view={appearance.view} key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} lookup={{ workspaceId: ws, workflowId, releaseId: startForm.releaseId }} onFileBusyChange={(key, busy) => {
               setUploadingFields((previous) => { const next = new Set(previous); if (busy) next.add(key); else next.delete(key); return next })
             }} />
             {can('document.browse') ? <RequestDocumentPicker key={`${ws}:${workflowId}:${startForm.releaseId}`} workspaceId={ws} fields={fields} onApply={(references) => Object.entries(references).forEach(([key, value]) => change(key, value))} /> : null}

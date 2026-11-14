@@ -10,6 +10,8 @@ import { messageWaitPreview } from '../model/summary'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, DurationPreview, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+import { FallbackCheckFields } from './FallbackCheckFields'
+import { GuestFormSection } from './GuestFormSection'
 
 /** Message names are lowercase letters and digits in kebab-case or camelCase (schema pattern). */
 export const MESSAGE_NAME = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
@@ -99,6 +101,8 @@ export function MessageInspector({ node }: { node: WorkflowNode }) {
       {readOnly || payload.length >= 10 ? null : <Button variant="secondary" onClick={() => setPayload([...payload, { name: `value${payload.length + 1}`, type: 'string' }])}><Plus className="size-4" aria-hidden="true" /> Add a value</Button>}
     </InspectorSection>
     <ExternalSystemSection node={node} payload={payload} />
+    <GuestFormSection node={node} payloadCount={payload.length} />
+    <FallbackCheckFields node={node} payload={payload} />
     <Advanced><StepIdField node={node} /></Advanced>
   </>
 }

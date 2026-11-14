@@ -70,11 +70,27 @@ public class SecurityConfiguration {
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
 
+    /** S133: package webhook triggers, verified by the trigger's own scheme (HMAC, JWT or basic). */
+    private static final java.util.regex.Pattern PACKAGE_TRIGGER_EVENT = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/package-triggers/[^/]+/events$");
+
+    /** S141 (CG-T01): Slack/Teams interactions (platform signature) and signed action links (the token itself). */
+    private static final java.util.regex.Pattern TASK_ACTION_INTERACTION = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/task-actions/(slack|teams)/interactions$");
+    private static final java.util.regex.Pattern TASK_ACTION_LINK = java.util.regex.Pattern
+            .compile("^/api/v1/task-action-links/[A-Za-z0-9_.-]{1,200}$");
+
     /** Callback poll (GET) and resume (POST) of S98: authenticated by the callback token header alone. */
     private static final java.util.regex.Pattern CALLBACK_POLL = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/callbacks/wait$");
     private static final java.util.regex.Pattern CALLBACK_RESUME = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/callbacks/wait/resume$");
+
+    /** Guest response forms of S140: read (GET), add a file and submit (POST) with the guest link token alone. */
+    private static final java.util.regex.Pattern GUEST_FORM = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/guest-response$");
+    private static final java.util.regex.Pattern GUEST_POST = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/guest-response/(files|submit)$");
 
     /**
      * Signed inbound events (S47) and callback-token routes (S98): the only API routes that need neither a session nor
@@ -87,8 +103,14 @@ public class SecurityConfiguration {
     SecurityFilterChain inboundChain(HttpSecurity http) throws Exception {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
                         && (INBOUND.matcher(request.getRequestURI()).matches()
-                                || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
+                                || PACKAGE_TRIGGER_EVENT.matcher(request.getRequestURI()).matches()
+                                || CALLBACK_RESUME.matcher(request.getRequestURI()).matches()
+                                || GUEST_POST.matcher(request.getRequestURI()).matches()
+                                || TASK_ACTION_INTERACTION.matcher(request.getRequestURI()).matches()
+                                || TASK_ACTION_LINK.matcher(request.getRequestURI()).matches())
                         || "GET".equals(request.getMethod()) && (CALLBACK_POLL.matcher(request.getRequestURI()).matches()
+                                || GUEST_FORM.matcher(request.getRequestURI()).matches()
+                                || TASK_ACTION_LINK.matcher(request.getRequestURI()).matches()
                                 || EXTENSION_FILE.matcher(request.getRequestURI()).matches()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(c -> c.disable())

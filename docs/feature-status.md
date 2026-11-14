@@ -110,7 +110,7 @@ Defects found and fixed this round:
 | Reconcile `confirmedApplied` (T-EFF-06), rollback (T-RUN-07), secret leak (T-SEC-08), safe text (T-SEC-12) | B05.5, B03.5, B08.4, B08.6 | Verified. `ReconcileResumeTest`, `RollbackPinningTest` and `SecretLeakScenariosTest` (scans 574 database columns) were added. Production procurement verification remains open |
 | Cross-instance revocation (T-SEC-09) | B02.2 | Verified. 60.1 s with the old 60 s TTL; the TTL is now 50 s |
 | Pilot performance smoke (T-PERF-01) | B08.3 | Verified on the local Docker stack; repeat on the pilot cluster |
-| Database restore exercise (T-RES-06) | B08.5 | Needs input (D06 database access) |
+| Database restore exercise (T-RES-06) | B08.5 | Done locally (S150: restore drill into a scratch database, 23 checks, and point-in-time restore on Compose); production drill needs D06 database access |
 | OpenShift deployment on a real cluster | B08.1 | Implemented: manifests render and pass validation (including the optional `orqix-ai` Secret and a 180 s Route timeout). Not applied; needs D06 |
 | CI pipeline run | B01.5 | Implemented, not executed; needs D15 |
 | Real procurement endpoint | D07 | Needs input |

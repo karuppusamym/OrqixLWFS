@@ -43,6 +43,7 @@ public class ReleaseEvidencePack {
             + "template bodies, test inputs or free-text notes. The full definition is in the release export bundle.";
 
     private final JdbcClient jdbc;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks;
     private final PolicyService policy;
     private final SubjectService subjects;
     private final EvidenceRenderer renderer;
@@ -51,7 +52,9 @@ public class ReleaseEvidencePack {
     private final Clock clock;
 
     public ReleaseEvidencePack(JdbcClient jdbc, PolicyService policy, SubjectService subjects,
-            EvidenceRenderer renderer, AuditWriter audit, Json json, Clock clock) {
+            EvidenceRenderer renderer, AuditWriter audit, Json json, Clock clock,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.integration.AiTaskPort> aiTasks) {
+        this.aiTasks = aiTasks;
         this.jdbc = jdbc;
         this.policy = policy;
         this.subjects = subjects;
@@ -145,6 +148,30 @@ public class ReleaseEvidencePack {
             references.addObject().put("type", "Child workflow").put("key", w.path("workflowKey").asString())
                     .put("version", "release " + w.path("releaseNumber").asString()).put("hash", w.path("semanticHash").asString(null));
         }
+        // S134: AI skill versions pinned by AI tasks, with the evaluation run that passed the publish gate.
+        ArrayNode aiEvaluations = pack.putArray("aiEvaluations");
+        for (JsonNode s : release.manifest().path("aiSkills")) {
+            references.addObject().put("type", "AI skill").put("key", s.path("skillKey").asString())
+                    .put("version", s.path("version").asString()).put("hash", s.path("contentHash").asString(null));
+            ObjectNode item = aiEvaluations.addObject().put("step", s.path("nodeId").asString())
+                    .put("skill", s.path("skillKey").asString() + " v" + s.path("version").asString())
+                    .put("autonomy", s.path("autonomy").asString()).put("modelProfile", s.path("modelProfile").asString());
+            JsonNode evidence = null;
+            if (s.path("evaluationRunId").isString() && aiTasks.getIfAvailable() != null) {
+                evidence = aiTasks.getIfAvailable().evaluationEvidence(ws,
+                        UUID.fromString(s.path("evaluationRunId").asString()));
+            }
+            if (evidence == null) {
+                item.put("evaluation", "shadow".equals(s.path("autonomy").asString()) ? "Not required (shadow mode)"
+                        : "Not found");
+            } else {
+                item.put("evaluation", evidence.path("status").asString() + ", accuracy "
+                        + evidence.path("accuracy").asString("") + " on " + evidence.path("cases").asInt() + " cases ("
+                        + evidence.path("suite").asString() + ")");
+                item.put("evaluatedAt", evidence.path("finishedAt").asString(null));
+                item.put("evaluationRunId", evidence.path("evaluationRunId").asString());
+            }
+        }
         for (JsonNode a : release.manifest().path("assets")) {
             references.addObject().put("type", "Shared asset").put("key", a.path("key").asString(a.path("id").asString("")))
                     .put("version", a.path("version").asString(""));
@@ -185,6 +212,7 @@ public class ReleaseEvidencePack {
                 }).list();
 
         pack.set("tests", tests(ws, release, people));
+        gitAndBundle(ws, release, pack, controls);
 
         ArrayNode warnings = pack.putArray("warnings");
         for (JsonNode w : release.warnings()) {
@@ -229,6 +257,58 @@ public class ReleaseEvidencePack {
         }
         pack.put("payloadPolicy", PAYLOAD_POLICY);
         return seal(json, pack);
+    }
+
+    /**
+     * S147: the reviewed Git commit the release was published from (CG-S01) and the bundle published with it (CG-S02),
+     * with the promotions of that bundle into later stages. Hashes, ids, keys and Git user names only.
+     */
+    private void gitAndBundle(UUID ws, ReleaseRow release, ObjectNode pack, ObjectNode controls) {
+        JsonNode git = release.manifest().path("gitSource");
+        if (git.isObject()) {
+            ObjectNode source = pack.putObject("gitSource");
+            for (String name : List.of("provider", "repository", "branch", "commit", "contentHash", "pullRequest",
+                    "pullRequestUrl", "reviewState", "verifiedAt")) {
+                source.put(name, git.path(name).asString(null));
+            }
+            List<String> approvers = new ArrayList<>();
+            git.path("approvedBy").forEach(a -> approvers.add(a.asString()));
+            source.put("approvedBy", String.join(", ", approvers));
+            controls.put("publishedFromReviewedCommit", true);
+        }
+        record Bundle(UUID id, String hash, String components, String sourceHash, Instant at) {
+        }
+        Optional<Bundle> bundle = jdbc.sql("""
+                SELECT id, bundle_hash, components::text AS components, source_bundle_hash, published_at
+                FROM release_bundle WHERE workspace_id = :ws AND release_id = :id
+                """).param("ws", ws).param("id", release.id()).query((rs, n) -> new Bundle(Sql.uuid(rs, "id"),
+                rs.getString("bundle_hash").trim(), rs.getString("components"),
+                rs.getString("source_bundle_hash") == null ? null : rs.getString("source_bundle_hash").trim(),
+                Sql.instant(rs, "published_at"))).optional();
+        if (bundle.isEmpty()) {
+            return;
+        }
+        Bundle b = bundle.get();
+        ObjectNode node = pack.putObject("bundle");
+        node.put("id", b.id().toString()).put("bundleHash", b.hash()).put("publishedAt", b.at().toString())
+                .put("sourceBundleHash", b.sourceHash())
+                .put("sameContentAsSource", b.sourceHash() == null ? null : b.sourceHash().equals(b.hash()));
+        ArrayNode components = node.putArray("components");
+        for (JsonNode c : json.parse(b.components())) {
+            components.addObject().put("type", c.path("type").asString()).put("key", c.path("key").asString())
+                    .put("version", c.path("version").asString(null)).put("sha256", c.path("sha256").asString(null));
+        }
+        ArrayNode promotions = node.putArray("promotions");
+        jdbc.sql("""
+                SELECT w.key AS target, p.target_draft_revision, p.created_target, p.promoted_at
+                FROM release_bundle_promotion p JOIN workspace w ON w.id = p.target_workspace_id
+                WHERE p.source_workspace_id = :ws AND p.source_bundle_id = :id ORDER BY p.promoted_at, p.id LIMIT 200
+                """).param("ws", ws).param("id", b.id()).query((rs, n) -> promotions.addObject()
+                        .put("targetWorkspace", rs.getString("target"))
+                        .put("draftRevision", rs.getInt("target_draft_revision"))
+                        .put("createdWorkflow", rs.getBoolean("created_target"))
+                        .put("promotedAt", Sql.instant(rs, "promoted_at").toString())).list();
+        controls.put("publishedAsBundle", true);
     }
 
     private ObjectNode tests(UUID ws, ReleaseRow release, Set<UUID> people) {
@@ -373,6 +453,27 @@ public class ReleaseEvidencePack {
                 "Compiler version", "release.schemaVersion", "Definition schema", "release.processDefinitionId",
                 "Engine definition", "release.provenance", "Provenance", "workspace.name", "Workspace",
                 "generatedAt", "Pack generated", "generatedBy", "Generated by"));
+        if (pack.has("gitSource")) {
+            sections.add(EvidenceDocument.fields("Reviewed Git commit", "Published only from this commit: it was the"
+                    + " approved head (or merge commit) of its pull request, and the SHA-256 content hash of its source files"
+                    + " equals the hash of the published draft.", pack.path("gitSource"), "provider", "Provider",
+                    "repository", "Repository", "branch", "Branch", "commit", "Commit", "contentHash", "Content hash",
+                    "pullRequest", "Pull request", "pullRequestUrl", "Link", "reviewState", "Review state", "approvedBy",
+                    "Approved by", "verifiedAt", "Verified"));
+        }
+        if (pack.has("bundle")) {
+            JsonNode bundle = pack.path("bundle");
+            sections.add(EvidenceDocument.table("Release bundle", "Published as one bundle with hash "
+                    + bundle.path("bundleHash").asString() + (bundle.hasNonNull("sourceBundleHash")
+                            ? "; promoted from a bundle with hash " + bundle.path("sourceBundleHash").asString()
+                                    + (bundle.path("sameContentAsSource").asBoolean() ? " (same content)." : " (content differs).")
+                            : ".") + " The hash covers each component's type, key and SHA-256.",
+                    bundle.path("components"), "No components.", "type", "Component", "key", "Key", "version", "Version",
+                    "sha256", "SHA-256"));
+            sections.add(EvidenceDocument.table("Bundle promotions", null, bundle.path("promotions"),
+                    "This bundle has not been promoted.", "targetWorkspace", "Target workspace", "draftRevision",
+                    "Draft revision", "createdWorkflow", "New workflow", "promotedAt", "Promoted"));
+        }
         sections.add(EvidenceDocument.table("Approvals and separation of duties",
                 "Independent review: " + EvidenceDocument.text(pack.path("controls").path("independentReview"))
                         + ". Warnings acknowledged at publication: "
@@ -396,6 +497,10 @@ public class ReleaseEvidencePack {
         sections.add(EvidenceDocument.table("Pinned references", "Versions this release is bound to; later changes to them do not affect it.",
                 pack.path("pinnedReferences"), "No pinned rule tables, connections, child workflows or shared assets.",
                 "type", "Type", "key", "Key", "version", "Version", "hash", "Hash"));
+        sections.add(EvidenceDocument.table("AI evaluation gate", "Each AI task pins an approved skill version; the"
+                + " evaluation run below passed the publish gate (within 30 days, on the pinned model profile).",
+                pack.path("aiEvaluations"), "No AI tasks.", "step", "Step", "skill", "Skill", "autonomy", "Autonomy",
+                "modelProfile", "Profile", "evaluation", "Evaluation", "evaluatedAt", "Evaluated"));
         sections.add(EvidenceDocument.table("Promotion requests", null, pack.path("promotions"),
                 "No promotion requests for this release.", "targetWorkspace", "Target workspace", "status", "Status",
                 "requestedBy", "Requested by", "requestedAt", "Requested", "decidedBy", "Decided by", "decidedAt", "Decided"));

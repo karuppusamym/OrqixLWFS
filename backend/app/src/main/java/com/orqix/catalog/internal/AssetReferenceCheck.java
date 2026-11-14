@@ -87,6 +87,10 @@ public class AssetReferenceCheck {
                 formIssues(ws, root, ref, key, version, target, path, targets, issues);
                 continue;
             }
+            if ("calendar".equals(kind) && !key.isEmpty() && version >= 1) {
+                calendarIssues(ws, key, version, path, targets, issues);
+                continue;
+            }
             if (!List.of(SharedAssets.DECISION, SharedAssets.TEMPLATE).contains(kind) || key.isEmpty() || version < 1) {
                 continue; // the schema reports the shape
             }
@@ -129,6 +133,43 @@ public class AssetReferenceCheck {
         issues.addAll(requestViews.issues(ws, root));
         issues.addAll(approvalViews.issues(ws, root));
         return issues;
+    }
+
+    /**
+     * S139 (CG-W05): a pinned working calendar. Calendars are used by reference to their pinned version (nothing is
+     * copied), so a pin is checked for existence, archive and a newer version; the compiler checks that every calendar a
+     * step counts working time in is pinned.
+     */
+    private void calendarIssues(UUID ws, String key, int version, String path, Set<String> claimed,
+            List<ValidationIssue> issues) {
+        if (!claimed.add("calendar|" + key)) {
+            issues.add(blocker(INVALID, "The working calendar \"" + key + "\" is pinned more than once. Keep one pin.",
+                    path, null));
+            return;
+        }
+        record Calendar(int latest, boolean archived, boolean hasVersion) {
+        }
+        Calendar found = jdbc.sql("""
+                SELECT c.latest_version, c.archived_at IS NOT NULL AS archived,
+                       EXISTS (SELECT 1 FROM working_calendar_version v WHERE v.calendar_id = c.id AND v.version = :v) AS has
+                FROM working_calendar c WHERE c.workspace_id = :ws AND c.key = :key
+                """).param("ws", ws).param("key", key).param("v", version)
+                .query((rs, n) -> new Calendar(rs.getInt("latest_version"), rs.getBoolean("archived"),
+                        rs.getBoolean("has"))).optional().orElse(null);
+        if (found == null || !found.hasVersion()) {
+            issues.add(blocker(MISSING, "The working calendar \"" + key + "\" version " + version + " does not exist in"
+                    + " this workspace. It may come from another workspace. Choose an existing calendar.", path, null));
+            return;
+        }
+        if (found.archived()) {
+            issues.add(blocker(ARCHIVED, "The working calendar \"" + key + "\" is archived. Restore it, or choose"
+                    + " another calendar.", path, null));
+        }
+        if (version < found.latest()) {
+            issues.add(warning("The workflow uses version " + version + " of the working calendar \"" + key
+                    + "\"; version " + found.latest() + " is available. Publishing keeps version " + version + ".",
+                    path, null));
+        }
     }
 
     /** One shared form link: target, copied questions, existence, archive, equality with the pinned version, newer version. */

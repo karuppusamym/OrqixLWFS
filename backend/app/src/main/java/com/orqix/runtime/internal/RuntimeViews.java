@@ -134,7 +134,7 @@ public class RuntimeViews {
         String effectId = attention.path("effectId").asString(null);
         return new RuntimeDtos.Attention(attention.path("reason").asString(), attention.path("nodeId").asString(null),
                 effectId == null ? null : UUID.fromString(effectId), attention.path("message").asString(),
-                instant(attention.path("since")));
+                instant(attention.path("since")), attention.path("errorCode").asString(null));
     }
 
     public RuntimeDtos.TaskSummary task(TaskStore.TaskRow task, RunStore.RunRow run, Map<UUID, String> names,
@@ -202,6 +202,10 @@ public class RuntimeViews {
                     && schema.path("format").isMissingNode();
             if (plainText && input.path(field).isString()) {
                 String value = input.path(field).asString().strip();
+                if (!value.isEmpty() && com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), field)) {
+                    // CG-I05 (S151): a protected title field shows the mask.
+                    return com.orqix.compiler.FieldClassification.MASK;
+                }
                 if (!value.isEmpty()) {
                     return value.length() > REQUEST_TITLE_MAX ? value.substring(0, REQUEST_TITLE_MAX).stripTrailing()
                             : value;

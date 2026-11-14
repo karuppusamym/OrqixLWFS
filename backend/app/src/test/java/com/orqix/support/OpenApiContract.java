@@ -63,6 +63,8 @@ public final class OpenApiContract {
                     Files.readString(contracts.resolve("workflow-v0.schema.json"), StandardCharsets.UTF_8));
             docs.put(BASE + "connection-definition-v0.schema.json",
                     Files.readString(contracts.resolve("connection-definition-v0.schema.json"), StandardCharsets.UTF_8));
+            docs.put(BASE + "connection-definition-v1.schema.json",
+                    Files.readString(contracts.resolve("connection-definition-v1.schema.json"), StandardCharsets.UTF_8));
             registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12, builder -> builder
                     .schemas(docs)
                     .schemaRegistryConfig(SchemaRegistryConfig.builder().formatAssertionsEnabled(true).build()));

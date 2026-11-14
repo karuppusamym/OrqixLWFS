@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class SpaController {
 
     @GetMapping({"/w/**", "/workspaces/**", "/settings/**", "/admin/**", "/tasks/**", "/requests/**", "/runs/**",
-            "/workflows/**", "/notifications/**", "/start/**", "/not-found", "/forbidden"})
+            "/workflows/**", "/notifications/**", "/start/**", "/not-found", "/forbidden",
+            // S140: the guest response page (no sign-in; the link token stays in the URL fragment)
+            "/guest/**"})
     String forward() {
         return "forward:/index.html";
     }

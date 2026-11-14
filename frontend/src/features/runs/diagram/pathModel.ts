@@ -2,7 +2,7 @@ import type { RunDetail } from '@/api/types'
 import { dueInfo, formatDateTime, formatUtcDateTime } from '@/lib/dates'
 import { humanize } from '@/lib/text'
 import { EFFECT_STATE_LABEL } from '../operatorText'
-import type { PathCurrent, PathVisit, RunPath } from './api'
+import type { PathCurrent, PathForEach, PathLoop, PathVisit, RunPath } from './api'
 
 /**
  * What the diagram shows for one step. Every status has a text label and an icon in the component: color is never the
@@ -17,6 +17,10 @@ export interface StepView {
   status: StepStatus
   visits: PathVisit[]
   current: PathCurrent | undefined
+  /** S138: the bounded "send back to" path leaving this step, and how the request used it. */
+  loop?: PathLoop
+  /** S138: the visits of this step when it runs once for each item of a list. */
+  forEach?: PathForEach[]
 }
 
 const TERMINAL = new Set(['completed', 'cancelled'])
@@ -77,7 +81,9 @@ export function buildStepViews(path: RunPath): Map<string, StepView> {
         })
       status = terminal || passedOver ? 'skipped' : 'ahead'
     }
-    views.set(node.id, { id: node.id, kind: node.kind, label: node.label, status, visits, current })
+    const loop = path.loops?.find((l) => l.from === node.id)
+    const forEach = path.forEach?.filter((f) => f.nodeId === node.id)
+    views.set(node.id, { id: node.id, kind: node.kind, label: node.label, status, visits, current, ...(loop ? { loop } : {}), ...(forEach && forEach.length > 0 ? { forEach } : {}) })
   }
   return views
 }
@@ -213,6 +219,22 @@ export function describeStep(view: StepView, ctx: DescribeContext): Described {
   }
 
   if (view.visits.length > 1) lines.push({ label: 'Times at this step', value: String(view.visits.length) })
+  if (view.loop) {
+    // S138: a bounded "send back to" path.
+    lines.push({
+      label: 'Sent back',
+      value: `${view.loop.traversals} of at most ${view.loop.maxTraversals} ${view.loop.maxTraversals === 1 ? 'time' : 'times'}${view.loop.limitReached ? ' (limit reached)' : ''}`,
+    })
+  }
+  for (const each of view.forEach ?? []) {
+    const visit = (view.forEach?.length ?? 0) > 1 ? ` (visit ${each.occurrence})` : ''
+    lines.push({
+      label: `Items${visit}`,
+      value: each.done
+        ? `${each.completed} of ${each.items} done, ${each.succeeded} succeeded${each.completed < each.items ? ', stopped early' : ''}`
+        : `${each.items} items${each.parallel ? ', in parallel batches' : ', one at a time'}`,
+    })
+  }
 
   if (operator) {
     technical.push({ label: 'Step ID', value: view.id })

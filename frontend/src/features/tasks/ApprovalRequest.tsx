@@ -2,7 +2,8 @@ import { viewGrid } from '@/features/views/presentation'
 import type { TaskDetail } from '@/api/types'
 import { asRecord } from '@/api/types'
 import type { ViewDefinition } from '@/features/views/model'
-import { displayJsonValue } from '@/lib/form/display'
+import { displayJsonValue, isMaskedValue } from '@/lib/form/display'
+import { Badge } from '@/components/ui/badge'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 
 /** Read-only context. Presentation cannot supply values or grant task actions. */
@@ -16,7 +17,7 @@ export function ApprovalRequest({ task,definition }: { task: TaskDetail;definiti
       <dl className={`${viewGrid(view,section.columns)} rounded-card border border-border p-4`}>
         {section.fields.map(field => {
           const key = field.binding.slice(8), source = fields.find(item => item.key === key)
-          return source ? <div key={field.id} className="min-w-0 space-y-1"><dt className="text-sm font-semibold text-muted-foreground">{field.label}</dt><dd className="wrap-anywhere whitespace-pre-wrap">{field.options?.find(option=>option.value===input[key])?.label??displayJsonValue(source, input[key])}</dd></div> : null
+          return source ? <div key={field.id} className="min-w-0 space-y-1"><dt className="text-sm font-semibold text-muted-foreground">{field.label}</dt><dd className="wrap-anywhere whitespace-pre-wrap">{field.options?.find(option=>option.value===input[key])?.label??displayJsonValue(source, input[key])}{isMaskedValue(input[key]) ? <Badge className="ml-2 align-middle">Masked</Badge> : null}</dd></div> : null
         })}
       </dl>
     </section>)}

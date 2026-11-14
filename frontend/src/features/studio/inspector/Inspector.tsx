@@ -14,12 +14,17 @@ import { GenerateDocumentInspector } from './GenerateDocumentInspector'
 import { HttpInspector } from './HttpInspector'
 import { ExternalTaskInspector } from './ExternalTaskInspector'
 import { SendAdapterInspector } from './SendAdapterInspector'
+import { AiTaskInspector } from './AiTaskInspector'
+import { CalculateInspector } from './CalculateInspector'
 import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
 import { StartInspector } from './StartInspector'
 import { CompensateInspector, RaiseErrorInspector, SignalInspector } from './ScopeInspectors'
 import { CommitInput, CommitTextarea } from './controls'
+import { SendBackFields } from './SendBackFields'
+import { ReminderFields, TimeoutCalendarField, WaitForFirstInspector, WorkingTimeFields } from './WaitsAndStartsFields'
+import { SaveAsTemplate } from '../WorkspaceTemplates'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
 export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => void }) {
@@ -42,6 +47,7 @@ export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => 
         <FormField label="Label on the canvas" optionalText id={`edge-label-${t.id}`}>
           {(ids) => <CommitInput id={ids.input} value={t.label ?? ''} maxLength={80} disabled={readOnly} onCommit={(v) => store.getState().updateTransition(t.id, { label: v.trim() })} />}
         </FormField>
+        <SendBackFields transition={t} />
         {t.on === 'condition' || t.on === 'default' ? (
           <Button variant="secondary" onClick={() => from && store.getState().select({ type: 'node', id: from.id })}>
             Edit the paths of &ldquo;{from?.label}&rdquo;
@@ -64,7 +70,7 @@ export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => 
 function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode: (nodeId: string) => void }) {
   const def = useStudio((s) => s.definition)
   const issues = useStudio((s) => s.issues)
-  const { store, readOnly } = useStudioContext()
+  const { store, readOnly, wsId } = useStudioContext()
   const node = nodeById(def, nodeId)
   const mine = useMemo(() => (node ? issues.filter((i) => locateIssue(def, i).nodeId === node.id) : []), [def, issues, node])
   if (!node) return null
@@ -110,10 +116,16 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'generateDocument' ? <GenerateDocumentInspector node={node} /> : null}
       {node.type === 'http' ? <HttpInspector node={node} /> : null}
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}
-      {node.type === 'wait' ? <WaitInspector node={node} /> : null}
+      {node.type === 'wait' && node.config.workingDuration === undefined ? <WaitInspector node={node} /> : null}
+      {node.type === 'wait' ? <WorkingTimeFields node={node} /> : null}
+      {node.type === 'waitForFirst' ? <WaitForFirstInspector node={node} /> : null}
+      {node.type === 'waitForMessage' || node.type === 'http' ? <TimeoutCalendarField node={node} /> : null}
+      {node.type === 'waitForMessage' || node.type === 'http' || node.type === 'externalTask' ? <ReminderFields node={node} /> : null}
       {node.type === 'waitForMessage' ? <MessageInspector node={node} /> : null}
       {node.type === 'externalTask' ? <ExternalTaskInspector node={node} /> : null}
       {node.type === 'sendAdapter' ? <SendAdapterInspector node={node} /> : null}
+      {node.type === 'aiTask' ? <AiTaskInspector node={node} /> : null}
+      {node.type === 'calculate' ? <CalculateInspector node={node} /> : null}
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}
@@ -131,6 +143,8 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
           return next
         })} />}
       </FormField>
+
+      {!readOnly && node.type !== 'start' && node.type !== 'end' ? <SaveAsTemplate ws={wsId} node={node} /> : null}
 
       {node.type !== 'start' && !readOnly ? (
         <div className="border-t border-border pt-4">

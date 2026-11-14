@@ -95,6 +95,11 @@ public final class DefaultWorkflowSimulator implements WorkflowSimulator {
             return new SimulationResult(SimulationResult.Status.INVALID_INPUT, List.of(new FormValidator.FieldError("",
                     "type", "The sample request must be an object with the form answers.")), List.of(), 0, 0, null);
         }
+        // CG-F04 (S137): computed fields are filled as the server fills them when the request is submitted.
+        if (input.isObject() && root.path("inputUi").has("computed")) {
+            input = com.orqix.compiler.FormComputation.apply(root.path("inputSchema"), root.path("inputUi"), input,
+                    context.today().atTime(12, 0).toInstant(java.time.ZoneOffset.UTC));
+        }
         List<FormValidator.FieldError> errors = Compilers.formValidator().validate(
                 StrictJson.write(root.path("inputSchema")), StrictJson.write(input),root.has("inputUi") ? StrictJson.write(root.path("inputUi")) : null);
         if (!errors.isEmpty()) {

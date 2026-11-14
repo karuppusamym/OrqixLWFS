@@ -18,3 +18,11 @@ regexes = [
   '''https://hooks\.slack\.com/services/T00000000/B00000000/X{24}1a''',
   '''e2e-inbound-secret-0123456789abcdef''',
 ]
+
+[[allowlists]]
+description = "Fixed field-protection keys for the dev and test profiles only (S151). Values only in application-dev.yaml and application-test.yaml; production keys come from mounted secrets."
+regexes = [
+  '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=''',
+  '''ZGV2LW9ubHktZmllbGQta2V5LWRvLW5vdC11c2UtISE=''',
+  '''0123456789abcdef0123456789abcdef''',
+]

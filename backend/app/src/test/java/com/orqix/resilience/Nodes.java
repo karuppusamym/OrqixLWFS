@@ -34,7 +34,10 @@ public final class Nodes {
     @TestPropertySource(properties = {
             "orqix.runtime.async-job-lock-time=" + LOCK_TIME,
             "orqix.runtime.reset-expired-jobs-interval=" + RESET_INTERVAL,
-            "orqix.policy.cache-ttl=" + POLICY_TTL
+            "orqix.policy.cache-ttl=" + POLICY_TTL,
+            // These nodes prove engine retries and failover with bursts of injected failures across many runs; the
+            // binding circuit breaker (S131, its own tests) would rightly pause them, so it stays out of the way here.
+            "orqix.integration.circuit.failure-threshold=100000"
     })
     public abstract static class Base {
 

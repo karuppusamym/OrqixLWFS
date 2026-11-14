@@ -5,9 +5,9 @@ import { keys } from '@/api/queries'
 import type { ConnectionDetail } from '@/api/types'
 import type { ConnectionLookup, FieldType } from './model/fieldRefs'
 import { normalizeDefinition } from './model/types'
-import { connectionDefinition, responsePointerType } from './connectionSchema'
+import { connectionDefinition, resultPointerType, type V1Operation } from './connectionSchema'
 
-type Ops = Record<string, { responseSchema?: { properties?: Record<string, { type?: string }> } }>
+type Ops = Record<string, V1Operation>
 
 /**
  * Loads the definitions of the connections a workflow uses, so field chips know the type of each result
@@ -48,7 +48,7 @@ export function useConnectionLookup(ws: string, connectionKeys: string[], enable
         const detail = byKey.get(connectionKey)
         const record = connectionDefinition(detail, version)
         const ops = record?.definition.operations as Ops | undefined
-        return responsePointerType(ops?.[operation]?.responseSchema, pointer)
+        return resultPointerType(ops?.[operation], pointer)
       },
       responseSchema(connectionKey, version, operation) {
         const record = connectionDefinition(byKey.get(connectionKey), version)

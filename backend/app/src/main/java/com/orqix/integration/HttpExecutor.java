@@ -67,9 +67,33 @@ public class HttpExecutor {
      * @param attentionReason S5 section 6.3 reason when the outcome stops automatic progress (null on success)
      * @param errorCode       short code, e.g. CONNECT_FAILED, TIMEOUT, HTTP_500, RESPONSE_INVALID
      * @param detail          redacted: status and error class only, never bodies, headers or credentials
+     * @param retryAfter      the {@code Retry-After} of a 429 or 503 (CG-W04, S131), else null
      */
     public record CallResult(Outcome outcome, Observation observation, Integer httpStatus, String errorCode,
-            String detail, String attentionReason, ObjectNode result, String remoteReference, long durationMs) {
+            String detail, String attentionReason, ObjectNode result, String remoteReference, long durationMs,
+            Page page, String failureMessage, Duration retryAfter) {
+
+        public CallResult(Outcome outcome, Observation observation, Integer httpStatus, String errorCode,
+                String detail, String attentionReason, ObjectNode result, String remoteReference, long durationMs) {
+            this(outcome, observation, httpStatus, errorCode, detail, attentionReason, result, remoteReference,
+                    durationMs, null, null, null);
+        }
+
+        CallResult withPage(Page page) {
+            return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
+                    remoteReference, durationMs, page, failureMessage, retryAfter);
+        }
+
+        CallResult withFailureMessage(String message) {
+            return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
+                    remoteReference, durationMs, page, message, retryAfter);
+        }
+
+        /** The same result carrying the server's {@code Retry-After} (S131). */
+        public CallResult withRetryAfter(Duration value) {
+            return new CallResult(outcome, observation, httpStatus, errorCode, detail, attentionReason, result,
+                    remoteReference, durationMs, page, failureMessage, value);
+        }
 
         public String classification() {
             return switch (outcome) {
@@ -79,6 +103,13 @@ public class HttpExecutor {
                 case UNKNOWN -> "unknown";
             };
         }
+    }
+
+    /**
+     * What a v1 caller needs beyond the mapped result (S130): the parsed body for pagination and lookups, the next
+     * page link and the result keys whose lists were cut at the row bound.
+     */
+    public record Page(JsonNode body, String nextLink, List<String> truncated) {
     }
 
     /** Credentials resolved for one call; built from the binding and the secret file. */
@@ -102,6 +133,14 @@ public class HttpExecutor {
         this.documents = documents;
     }
 
+    private io.micrometer.observation.ObservationRegistry observations = io.micrometer.observation.ObservationRegistry.NOOP;
+
+    /** CG-P06: optional, so the tests that build an executor by hand need no registry. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setObservationRegistry(io.micrometer.observation.ObservationRegistry registry) {
+        this.observations = registry == null ? io.micrometer.observation.ObservationRegistry.NOOP : registry;
+    }
+
     /**
      * Performs the call. {@code secretMissing} outcomes are reported by {@link #resolveSecret}; this method assumes
      * the credential is available.
@@ -111,6 +150,46 @@ public class HttpExecutor {
      */
     public CallResult call(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
             Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue) {
+        return call(target, definition, operation, body, resultMapping, effectKey, timeoutSeconds, secretValue,
+                V1Requests.Context.NONE);
+    }
+
+    /**
+     * As above, with the request files and pagination parameters of a v1 operation. CG-P06 (S150): every call is one
+     * observation {@code orqix.connector.call}: a client span under the engine job or poll check that makes it, and the
+     * timer {@code orqix_connector_call_seconds} by effect class and outcome. The trace context is not sent to the
+     * connected system (decision S150: no trace headers leave Orqix for third parties).
+     */
+    CallResult call(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
+            Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue,
+            V1Requests.Context context) {
+        io.micrometer.observation.Observation observation = io.micrometer.observation.Observation
+                .createNotStarted("orqix.connector.call", observations)
+                .contextualName("connector " + definition.key() + " " + operation.name())
+                .lowCardinalityKeyValue("effect.class", String.valueOf(operation.effectClass()))
+                .highCardinalityKeyValue("orqix.connection", String.valueOf(definition.key()))
+                .highCardinalityKeyValue("orqix.operation", String.valueOf(operation.name()))
+                .start();
+        try (io.micrometer.observation.Observation.Scope ignored = observation.openScope()) {
+            CallResult result = send(target, definition, operation, body, resultMapping, effectKey, timeoutSeconds,
+                    secretValue, context);
+            observation.lowCardinalityKeyValue("outcome", String.valueOf(result.outcome()));
+            if (result.httpStatus() != null) {
+                observation.highCardinalityKeyValue("http.response.status_code", String.valueOf(result.httpStatus()));
+            }
+            return result;
+        } catch (RuntimeException e) {
+            observation.lowCardinalityKeyValue("outcome", "ERROR");
+            observation.error(e);
+            throw e;
+        } finally {
+            observation.stop();
+        }
+    }
+
+    private CallResult send(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
+            Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue,
+            V1Requests.Context context) {
         long started = System.nanoTime();
         if (definition.isMicrosoftGraph()) {
             try {
@@ -126,7 +205,7 @@ public class HttpExecutor {
         }
         HttpRequest request;
         try {
-            request = buildRequest(target, operation, body, effectKey, timeoutSeconds, secretValue);
+            request = buildRequest(target, operation, body, effectKey, timeoutSeconds, secretValue, context);
         } catch (IllegalArgumentException e) {
             return finish(started, Observation.CLIENT_ERROR, operation.effectClass(), null, "INVALID_REQUEST",
                     "Request could not be built", null, null);
@@ -158,28 +237,152 @@ public class HttpExecutor {
         int status = response.statusCode();
         if (status == 401 && ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType())) && secrets != null)
             secrets.invalidateOAuth(target.workspaceId(), target.secretRef());
+        return handle(started, definition, operation, resultMapping, status, response.body(), response.headers(),
+                target.baseUrl(), request.uri());
+    }
+
+    /**
+     * Replays a recorded answer through exactly the response handling of a live call (CG-C03 fixtures, S133): status
+     * classification, error mapping, accepted asynchronous answers, the response schema and result mapping. Nothing is
+     * sent. {@code baseUrl} stands for the binding (status locations are checked against it).
+     */
+    public CallResult replay(ConnectionDefinition definition, Operation operation, int status, Map<String, String> headers,
+            byte[] body, Map<String, String> resultMapping, String baseUrl) {
+        Map<String, List<String>> map = new java.util.LinkedHashMap<>();
+        if (headers != null) {
+            headers.forEach((name, value) -> map.put(name, List.of(value)));
+        }
+        java.net.http.HttpHeaders recorded = java.net.http.HttpHeaders.of(map, (a, b) -> true);
+        URI request = URI.create(baseUrl.replaceAll("/+$", "") + operation.path().replaceAll("\\{[^}]*\\}", "x"));
+        return handle(System.nanoTime(), definition, operation, resultMapping, status, body, recorded, baseUrl, request);
+    }
+
+    /** Everything after the status line arrived; shared by live calls and fixture replays. */
+    private CallResult handle(long started, ConnectionDefinition definition, Operation operation,
+            Map<String, String> resultMapping, int status, byte[] responseBytes, java.net.http.HttpHeaders responseHeaders,
+            String baseUrl, URI requestUri) {
         if (status >= 300 && status < 400) {
             return finish(started, Observation.REDIRECT, operation.effectClass(), status, "UNEXPECTED_STATUS",
                     "HTTP " + status + " (redirects are not followed)", null, null);
         }
         if (status == 429) {
             return finish(started, Observation.DECLINED_429, operation.effectClass(), status, "RATE_LIMITED",
-                    "HTTP 429", null, null);
+                    "HTTP 429", null, null).withRetryAfter(retryAfter(responseHeaders));
         }
         if (status == 408 || status >= 500) {
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), status, "HTTP_" + status,
-                    "HTTP " + status, null, null);
+                    "HTTP " + status, null, null).withRetryAfter(status == 503 ? retryAfter(responseHeaders) : null);
         }
         if (status >= 400) {
+            if (operation.v1()) {
+                CallResult mapped = mappedError(started, operation, status, responseBytes);
+                if (mapped != null) {
+                    return mapped;
+                }
+            }
             return finish(started, Observation.CLIENT_ERROR, operation.effectClass(), status, "HTTP_" + status,
                     "HTTP " + status, null, null);
         }
-        // 2xx
-        if (!operation.successStatuses().contains(status)) {
+        // 2xx; an accepted status of an asynchronous operation (CG-W02) counts as success.
+        boolean accepted = AsyncStatus.accepted(operation, status);
+        if (!operation.successStatuses().contains(status) && !accepted) {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "UNEXPECTED_STATUS",
                     "HTTP " + status + " is not a declared success status", null, null);
         }
-        return mapResponse(started, definition, operation, resultMapping, status, response.body());
+        if (operation.v1()) {
+            return mapV1Response(started, definition, operation, resultMapping, status, responseBytes,
+                    responseHeaders, accepted ? new AsyncContext(baseUrl, requestUri) : null);
+        }
+        return mapResponse(started, definition, operation, resultMapping, status, responseBytes);
+    }
+
+    /** v1 error mapping: a declared client error becomes a known rejection with the business code. */
+    private CallResult mappedError(long started, Operation operation, int status, byte[] bytes) {
+        for (JsonNode error : operation.source().path("errors")) {
+            if (error.path("status").asInt() != status) {
+                continue;
+            }
+            String code = error.path("code").asString();
+            String message = error.has("message") ? error.get("message").asString() : null;
+            if (error.has("bodyPointer") && bytes != null && bytes.length > 0) {
+                try {
+                    JsonNode text = json.parse(bytes).at(error.get("bodyPointer").asString());
+                    if (text.isString() && !text.asString().isBlank()) {
+                        message = text.asString();
+                    }
+                } catch (IllegalArgumentException e) {
+                    // Not JSON: keep the fixed message. The body is never logged.
+                }
+            }
+            return finish(started, Observation.CLIENT_ERROR, operation.effectClass(), status, code,
+                    "HTTP " + status + " mapped to " + code, null, null)
+                    .withFailureMessage(message == null ? null : truncate(message, 200));
+        }
+        return null;
+    }
+
+    /** Where an accepted asynchronous answer came from: the binding base and the request address (CG-W02). */
+    private record AsyncContext(String baseUrl, URI requestUri) {
+    }
+
+    /**
+     * v1 results: JSON pointers with array indexes, /[*] list projections, /@headers/ response headers and, for an
+     * accepted asynchronous answer, /@async/ status location values.
+     */
+    private CallResult mapV1Response(long started, ConnectionDefinition definition, Operation operation,
+            Map<String, String> resultMapping, int status, byte[] bytes, java.net.http.HttpHeaders headers,
+            AsyncContext async) {
+        if (bytes == null) {
+            return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_TOO_LARGE",
+                    "Response body exceeds 1 MiB", null, null);
+        }
+        JsonNode responseBody;
+        try {
+            responseBody = bytes.length == 0 ? json.object() : json.parse(bytes);
+        } catch (IllegalArgumentException e) {
+            return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
+                    "Response body is not JSON", null, null);
+        }
+        if (!validResponse(definition, operation, responseBody)) {
+            return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
+                    "Response body does not match the operation response schema", null, null);
+        }
+        Map<String, JsonNode> asyncValues = null;
+        if (async != null) {
+            try {
+                asyncValues = AsyncStatus.read(async.baseUrl(), async.requestUri(), definition, operation, headers,
+                        responseBody);
+            } catch (AsyncStatus.Refused e) {
+                // The remote system accepted the work but pointed elsewhere: never followed, never retried blindly.
+                return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, e.code(),
+                        "HTTP " + status + ": " + e.getMessage(), null, null);
+            }
+        }
+        V1Results.Mapped mapped;
+        try {
+            mapped = V1Results.map(operation, resultMapping, responseBody, headers, json, asyncValues);
+        } catch (V1Results.Unresolved e) {
+            return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
+                    "Result pointer " + e.getMessage() + " did not resolve", null, null);
+        }
+        String remoteReference = remoteReference(responseBody, mapped.result());
+        return finish(started, Observation.SUCCESS, operation.effectClass(), status, null, "HTTP " + status,
+                mapped.result(), remoteReference)
+                .withPage(new Page(responseBody, V1Results.nextLink(headers), mapped.truncated()));
+    }
+
+    /**
+     * Maps a document that did not come from this call (a lookup's found record placed where this operation's
+     * response keeps it, CG-C02) with the operation's result pointers.
+     *
+     * @return the result, or null when a pointer does not resolve
+     */
+    ObjectNode mapRecorded(Operation operation, Map<String, String> resultMapping, JsonNode document) {
+        try {
+            return V1Results.map(operation, resultMapping, document, null, json).result();
+        } catch (V1Results.Unresolved e) {
+            return null;
+        }
     }
 
     private CallResult mapResponse(long started, ConnectionDefinition definition, Operation operation,
@@ -201,7 +404,10 @@ public class HttpExecutor {
         }
         ObjectNode result = json.object();
         for (Map.Entry<String, String> mapping : resultMapping.entrySet()) {
-            JsonNode value = responseBody.at(mapping.getValue());
+            JsonNode value = responseBody.at(ResultMappings.pointer(mapping.getValue()));
+            if ((value.isMissingNode() || value.isNull()) && ResultMappings.isOptional(mapping.getValue())) {
+                continue; // S129: an optional result of a check is simply not there yet
+            }
             if (value.isMissingNode() || value.isNull() || value.isContainer()) {
                 return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_INVALID",
                         "Result pointer " + mapping.getValue() + " did not resolve", null, null);
@@ -213,11 +419,18 @@ public class HttpExecutor {
                 remoteReference);
     }
 
+    /** CG-W04 (S131): the server's {@code Retry-After}, seconds or an HTTP date; null when absent or not valid. */
+    private static Duration retryAfter(java.net.http.HttpHeaders headers) {
+        return RetryAfter.parse(headers.firstValue("Retry-After").orElse(null), java.time.Instant.now());
+    }
+
     /** S5 section 6.2 classification table. */
     public static Outcome classify(Observation observation, EffectClass effectClass) {
         return switch (observation) {
             case NOT_SENT, DECLINED_429 -> Outcome.RETRYABLE;
-            case MAYBE_APPLIED -> effectClass == EffectClass.NON_IDEMPOTENT ? Outcome.UNKNOWN : Outcome.RETRYABLE;
+            // idempotentByLookup is UNKNOWN here; EffectDispatcher then runs the lookup before recording (CG-C02).
+            case MAYBE_APPLIED -> effectClass == EffectClass.NON_IDEMPOTENT
+                    || effectClass == EffectClass.IDEMPOTENT_BY_LOOKUP ? Outcome.UNKNOWN : Outcome.RETRYABLE;
             case SUCCESS -> Outcome.SUCCEEDED;
             case INVALID_RESPONSE, REDIRECT -> effectClass == EffectClass.READ_ONLY ? Outcome.PERMANENT : Outcome.UNKNOWN;
             case CLIENT_ERROR -> Outcome.PERMANENT;
@@ -275,7 +488,10 @@ public class HttpExecutor {
     }
 
     private HttpRequest buildRequest(Target target, Operation operation, JsonNode body, String effectKey,
-            int timeoutSeconds, String secretValue) {
+            int timeoutSeconds, String secretValue, V1Requests.Context context) {
+        if (operation.v1()) {
+            return buildV1Request(target, operation, body, effectKey, timeoutSeconds, secretValue, context);
+        }
         String base = target.baseUrl().endsWith("/") ? target.baseUrl().substring(0, target.baseUrl().length() - 1)
                 : target.baseUrl();
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + operation.path()))
@@ -300,6 +516,38 @@ public class HttpExecutor {
         return builder.build();
     }
 
+    private HttpRequest buildV1Request(Target target, Operation operation, JsonNode inputs, String effectKey,
+            int timeoutSeconds, String secretValue, V1Requests.Context context) {
+        V1Requests.Built built = V1Requests.build(target.baseUrl(), operation, inputs, json, context);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(built.uri())
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .header(CorrelationId.HEADER, CorrelationId.current());
+        boolean accept = false;
+        for (Map.Entry<String, String> header : built.headers().entrySet()) {
+            builder.header(header.getKey(), header.getValue());
+            accept |= "accept".equalsIgnoreCase(header.getKey());
+        }
+        if (!accept) {
+            builder.header("Accept", "application/json");
+        }
+        if ("bearerToken".equals(target.authType()) || "oauth2ClientCredentials".equals(target.authType())
+                || "oauth2AuthorizationCode".equals(target.authType())) {
+            builder.header("Authorization", "Bearer " + secretValue);
+        } else if ("apiKeyHeader".equals(target.authType())) {
+            builder.header(target.authHeaderName(), secretValue);
+        }
+        if (operation.effectClass() == EffectClass.IDEMPOTENT_WITH_KEY && operation.idempotencyHeader() != null) {
+            builder.header(operation.idempotencyHeader(), effectKey);
+        }
+        if (built.body() == null) {
+            builder.method(operation.method(), HttpRequest.BodyPublishers.noBody());
+        } else {
+            builder.header("Content-Type", built.contentType());
+            builder.method(operation.method(), HttpRequest.BodyPublishers.ofByteArray(built.body()));
+        }
+        return builder.build();
+    }
+
     private boolean validResponse(ConnectionDefinition definition, Operation operation, JsonNode body) {
         String key = definition.key() + "|" + definition.version() + "|" + operation.name();
         Schema schema = responseSchemas.computeIfAbsent(key, k -> {
@@ -310,7 +558,7 @@ public class HttpExecutor {
         return schema.validate(body).isEmpty();
     }
 
-    private static String remoteReference(JsonNode body, ObjectNode result) {
+    static String remoteReference(JsonNode body, ObjectNode result) {
         JsonNode id = body.path("id");
         if (id.isString() || id.isNumber()) {
             return truncate(id.asString(), 200);

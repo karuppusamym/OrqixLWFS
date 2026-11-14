@@ -86,6 +86,9 @@ public final class FieldTypes {
     }
 
     public Resolution resolve(String fieldRef) {
+        if (fieldRef.startsWith("=")) {
+            return new Indeterminate(); // an Orqix expression (S137), checked by ExpressionRules
+        }
         if (fieldRef.startsWith("/input/")) {
             String key = fieldRef.substring("/input/".length());
             int slash = key.indexOf('/');
@@ -110,14 +113,26 @@ public final class FieldTypes {
         if (producer == null) {
             return new Unknown("There is no step with the ID \"" + stepId + "\".");
         }
+        com.orqix.compiler.internal.model.StepForEach each = definition.execution().forEachOf(stepId);
+        if (each != null && !FailureRules.isFailureOutput(key)) {
+            return forEachOutput(producer, each, key);
+        }
+        return stepOutput(producer, key);
+    }
+
+    /** The output of one run of a step, ignoring any for-each policy. */
+    private Resolution stepOutput(Node producer, String key) {
         return switch (producer) {
             case Node.Approval a -> approvalOutput(a, key);
             case Node.Decision d -> decisionOutput(d, key);
             case Node.Http h -> httpOutput(h, key);
             case Node.StartWorkflow w -> startWorkflowOutput(w, key);
             case Node.WaitForMessage m -> messageOutput(m, key);
+            case Node.WaitForFirst w -> firstOutput(w, key);
             case Node.ExternalTask e -> externalOutput(e, key);
             case Node.SendAdapter a -> adapterOutput(a, key);
+            case Node.AiTask ai -> aiOutput(ai, key);
+            case Node.Calculate c -> calculateOutput(c, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -149,6 +164,9 @@ public final class FieldTypes {
         }
         if (list.type() != FieldKind.ARRAY) {
             return new Unknown("\"" + list.title() + "\" is not a list, so it has no count or total.");
+        }
+        if (tail.equals(ITEM) || tail.startsWith(ITEM + "/")) {
+            return item(key, list, tail);
         }
         int max = list.maxItems() == null ? 0 : list.maxItems();
         if (tail.equals("count")) {
@@ -191,8 +209,90 @@ public final class FieldTypes {
                 + ("jdbc".equals(a.adapterKind()) ? ", rowCount." : "."));
     }
 
+    /**
+     * Outputs of an AI task (S134): {@code status} and {@code skillVersion} always; the answer ({@code confidence},
+     * {@code modelUsed} and the mode's values) only when AI answered. Shadow-mode answers may never be used, so they
+     * are marked as possibly missing.
+     */
+    private Resolution aiOutput(Node.AiTask ai, String key) {
+        if ("status".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(new TreeSet<>(
+                    AiTaskRules.STATUSES)), false, null, null), ai, key);
+        }
+        if ("skillVersion".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ONE, null), ai, key);
+        }
+        CompileContext.AiSkillVersion v = AiTaskRules.pinned(workspace, ai);
+        if (v == null) {
+            return new Indeterminate();
+        }
+        boolean shadow = ai.shadow();
+        if ("confidence".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.NUMBER, null, shadow, BigDecimal.ZERO, BigDecimal.ONE), ai, key);
+        }
+        if ("modelUsed".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+        }
+        List<String> produced = new ArrayList<>(List.of("status", "skillVersion", "confidence", "modelUsed"));
+        switch (v.mode()) {
+            case "classify" -> {
+                produced.addAll(List.of("label", "reasons"));
+                if ("label".equals(key)) {
+                    Set<String> domain = new TreeSet<>();
+                    v.labels().forEach(l -> domain.add(l.key()));
+                    return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(domain), shadow,
+                            null, null), ai, key);
+                }
+            }
+            case "extract" -> {
+                produced.addAll(new TreeSet<>(v.fields().keySet()));
+                String type = v.fields().get(key);
+                if (type != null) {
+                    FieldKind kind = FieldKind.fromJson("date".equals(type) ? "string" : type, "date".equals(type)
+                            ? "date" : null);
+                    return new Resolved(new FieldType(kind, null, shadow || !v.requiredFields().contains(key), null,
+                            null), ai, key);
+                }
+            }
+            case "score" -> {
+                produced.addAll(List.of("score", "reasons"));
+                if ("score".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.NUMBER, null, shadow, v.scoreMin(), v.scoreMax()), ai,
+                            key);
+                }
+            }
+            case "recommend" -> {
+                produced.addAll(List.of("recommendation", "rationale"));
+                if ("recommendation".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(new TreeSet<>(
+                            v.outcomes())), shadow, null, null), ai, key);
+                }
+                if ("rationale".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+                }
+            }
+            default -> {
+                produced.add("summary");
+                if ("summary".equals(key)) {
+                    return new Resolved(new FieldType(FieldKind.STRING, null, shadow, null, null), ai, key);
+                }
+            }
+        }
+        if ("reasons".equals(key) && ("classify".equals(v.mode()) || "score".equals(v.mode()))) {
+            return new Resolved(new FieldType(FieldKind.ARRAY, null, shadow, null, null, FieldType.of(FieldKind.STRING)),
+                    ai, key);
+        }
+        return new Unknown("\"" + ai.label() + "\" does not produce \"" + key + "\". It produces: "
+                + String.join(", ", produced) + ".");
+    }
+
     /** Outputs of "Work by an external worker": the declared result fields (S43); a field that is not required may be missing. */
     private Resolution externalOutput(Node.ExternalTask e, String key) {
+        if (FailureRules.isFailureOutput(e, key) && FailureRules.hasFailedRoute(graph, e)) {
+            return "failureKind".equals(key)
+                    ? new Resolved(new FieldType(FieldKind.STRING, FailureRules.EXTERNAL_FAILURE_KINDS, false, null, null), e, key)
+                    : new Resolved(FieldType.of(FieldKind.STRING), e, key);
+        }
         Node.PayloadField field = e.field(key);
         if (field == null) {
             String declared = e.result().isEmpty() ? "no values"
@@ -211,6 +311,29 @@ public final class FieldTypes {
             return new Unknown("\"" + m.label() + "\" does not carry \"" + key + "\". It carries: " + carried + ".");
         }
         return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), m, key);
+    }
+
+    /**
+     * Outputs of "Wait for the first" (S139): {@code branch}, the id of the winning branch, and the values the
+     * branches declare. A value exists only when its branch wins, so a required one is guaranteed only on that branch's
+     * path ({@code Conditions.availability}); one that is not required may be missing.
+     */
+    private Resolution firstOutput(Node.WaitForFirst w, String key) {
+        if (Node.WaitForFirst.BRANCH_OUTPUT.equals(key)) {
+            Set<String> ids = new TreeSet<>();
+            w.branches().forEach(b -> ids.add(b.id()));
+            return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(ids), false, null, null),
+                    w, key);
+        }
+        Node.FirstBranch branch = w.declaring(key);
+        if (branch == null) {
+            List<String> names = new java.util.ArrayList<>(List.of(Node.WaitForFirst.BRANCH_OUTPUT));
+            w.branches().forEach(b -> b.payload().forEach(f -> names.add(f.name())));
+            return new Unknown("\"" + w.label() + "\" does not provide \"" + key + "\". It provides: "
+                    + String.join(", ", names) + ".");
+        }
+        Node.PayloadField field = branch.field(key);
+        return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), w, key);
     }
 
     /** Extra outputs of a list-driven approval (S88). */
@@ -323,6 +446,16 @@ public final class FieldTypes {
         }
     }
 
+    /** Calculate (S137): the declared type; an optional output may be missing. */
+    private Resolution calculateOutput(Node.Calculate c, String key) {
+        Node.Calculate.Output o = c.output(key);
+        if (o == null) {
+            return new Unknown("\"" + c.label() + "\" does not produce \"" + key + "\". It produces: "
+                    + String.join(", ", c.outputs().stream().map(Node.Calculate.Output::key).toList()) + ".");
+        }
+        return new Resolved(new FieldType(FieldKind.fromJson(o.type()), null, o.optional(), null, null), c, key);
+    }
+
     private Resolution decisionOutput(Node.Decision d, String key) {
         DecisionTable table = tables.get(d.decisionRef());
         if (table == null) {
@@ -363,19 +496,28 @@ public final class FieldTypes {
         if (operation == null) {
             return new Indeterminate();
         }
-        Connections.ResponseScalar scalar = Connections.responseScalar(operation, pointer);
+        Connections.ResponseList list = Connections.responseList(operation, pointer);
+        if (list != null) {
+            // A list of rows or of single values projected from the response (connection definition v1, S130).
+            FieldType item = new FieldType(list.itemKind(), list.itemKind() == FieldKind.STRING ? list.enumValues()
+                    : null, false, null, null);
+            return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, item), h, key);
+        }
+        Connections.ResponseScalar scalar = connections.result(h.connectionRef(), h.operation(), pointer);
         if (scalar == null) {
             return new Indeterminate();
         }
+        // S129: an optional result of a check may be missing even when the work is done.
+        boolean optional = h.polls() && h.poll().optional(key);
         return new Resolved(new FieldType(scalar.kind(), scalar.kind() == FieldKind.STRING ? scalar.enumValues()
-                : null, false, null, null), h, key);
+                : null, optional, null, null), h, key);
     }
 
     /** @return output keys of all rows and the default, sorted */
     public static Set<String> outputKeys(DecisionTable table) {
         Set<String> keys = new TreeSet<>(table.defaultOutput().keySet());
         for (DecisionTable.Row row : table.rows()) {
-            keys.addAll(row.then().keySet());
+            keys.addAll(row.outputKeys());
         }
         return keys;
     }
@@ -401,6 +543,15 @@ public final class FieldTypes {
         if (typeNames.size() != 1) {
             return null;
         }
+        // S146: a result computed by a formula has the default's type but no known set of values, and a number may
+        // have decimals.
+        if (table.rows().stream().anyMatch(r -> r.thenExpressions().containsKey(key))) {
+            return switch (values.get(0)) {
+                case Literal.Str s -> FieldType.of(FieldKind.STRING);
+                case Literal.Bool b -> FieldType.of(FieldKind.BOOLEAN);
+                case Literal.Num n -> FieldType.of(FieldKind.NUMBER);
+            };
+        }
         return switch (values.get(0)) {
             case Literal.Str s -> {
                 Set<String> domain = new TreeSet<>();
@@ -421,8 +572,10 @@ public final class FieldTypes {
      */
     public static String incompatibility(FieldType source, FieldKind targetKind, Set<String> targetEnum) {
         boolean kindOk = switch (targetKind) {
-            case STRING -> source.kind() == FieldKind.STRING || (source.kind() == FieldKind.DATE && targetEnum == null);
+            case STRING -> source.kind() == FieldKind.STRING || (source.kind().temporal() && targetEnum == null);
             case DATE -> source.kind() == FieldKind.DATE;
+            case TIME -> source.kind() == FieldKind.TIME;
+            case DATETIME -> source.kind() == FieldKind.DATETIME;
             case NUMBER -> source.kind().numeric();
             case INTEGER -> source.kind() == FieldKind.INTEGER;
             case BOOLEAN -> source.kind() == FieldKind.BOOLEAN;
@@ -437,6 +590,65 @@ public final class FieldTypes {
                     + ", but the source can have other values";
         }
         return null;
+    }
+
+    /** The current item of a for-each step (CG-E06, S138): the reader maps it as {@code /input/<list>/*}. */
+    public static final String ITEM = "*";
+
+    /**
+     * {@code /input/<list>/*} (a list of single values) and {@code /input/<list>/*}{@code /<column>} (a list of rows):
+     * the item a for-each step is running for. Only the step itself is given these references.
+     */
+    private Resolution item(String key, FormSchema.Field list, String tail) {
+        if (list.items() == null) {
+            return new Unknown("\"" + list.title() + "\" has no typed items.");
+        }
+        if (tail.equals(ITEM)) {
+            if (list.rows()) {
+                return new Unknown("\"" + list.title() + "\" is a list of rows. Choose which column fills which input.");
+            }
+            return new Resolved(formType(list.items(), false), null, key);
+        }
+        String column = tail.substring(ITEM.length() + 1);
+        FormSchema.Field col = list.rows() ? list.items().rowFields().get(column) : null;
+        if (col == null) {
+            return new Unknown("The list \"" + list.title() + "\" has no column \"" + column + "\"."
+                    + (list.rows() ? " Columns: " + String.join(", ", list.items().rowFields().keySet()) + "." : ""));
+        }
+        return new Resolved(formType(col, !list.items().rowRequired().contains(column)), null, key);
+    }
+
+    /**
+     * Outputs of a for-each step (CG-E06, S138): {@code itemCount}, {@code completedCount}, {@code stoppedEarly}, and
+     * each collected output as a list of the per-item result in item order. A list entry may be empty when the step
+     * stops early or the item result was optional.
+     */
+    private Resolution forEachOutput(Node producer, com.orqix.compiler.internal.model.StepForEach each, String key) {
+        BigDecimal max = BigDecimal.valueOf(each.maxItems());
+        if (com.orqix.compiler.internal.model.StepForEach.ITEM_COUNT.equals(key)
+                || com.orqix.compiler.internal.model.StepForEach.COMPLETED_COUNT.equals(key)) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ZERO, max), producer, key);
+        }
+        if (com.orqix.compiler.internal.model.StepForEach.STOPPED_EARLY.equals(key)) {
+            return new Resolved(new FieldType(FieldKind.BOOLEAN, null, false, null, null), producer, key);
+        }
+        String source = each.collect().get(key);
+        if (source == null) {
+            return new Unknown("\"" + producer.label() + "\" runs for each item, so it produces itemCount,"
+                    + " completedCount, stoppedEarly" + (each.collect().isEmpty() ? "" : ", "
+                    + String.join(", ", each.collect().keySet())) + ", not \"" + key + "\". Collect a result to use it.");
+        }
+        Resolution one = stepOutput(producer, source);
+        if (!(one instanceof Resolved r)) {
+            return one;
+        }
+        FieldType it = r.type();
+        if (it.kind() == FieldKind.ARRAY || it.kind() == FieldKind.OBJECT) {
+            return new Unknown("Only single values can be collected; \"" + source + "\" is a list.");
+        }
+        FieldType entry = new FieldType(it.kind(), it.domain(), it.mayBeAbsent() || each.stopsEarly(), it.minimum(),
+                it.maximum());
+        return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, entry), producer, key);
     }
 
     private static FieldType formType(FormSchema.Field field, boolean optional) {

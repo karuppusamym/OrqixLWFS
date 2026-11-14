@@ -361,3 +361,44 @@ Shared decision tables (DMN) have their own **Decisions** page under Design, so 
 ## Regional template packs (designers) - 31 October 2026
 
 The template picker can filter by region (India, EU, Kenya, Nigeria) and industry. The regional packs include loan exceptions, KYC refresh, group loans, vendor onboarding, permits and grant applications, with local working calendars and second-language labels. They are starting points, not compliance-approved processes. See [regional template packs](regional-template-packs.md).
+
+## Retries per step and paused connections (designers and operators) - 5 November 2026
+
+A call to a system, an external worker step or a send step can have its own retry policy (`config.retry`): up to 10
+attempts, a first delay from 5 seconds to 1 hour that grows by a multiplier, and a longest delay of up to 6 hours.
+When the system answers "too many requests" (429) or "unavailable" (503) with a `Retry-After`, the next attempt waits
+that long, at most the longest delay. A call whose outcome is unknown is never retried automatically. When a
+connection is paused after repeated failures, or its request limit is reached, the timeline says the step is waiting
+and that no attempt was used. Details: [S131](build/S131-retry-and-circuit-breaker.md).
+
+## Send back with a limit, and steps that run for each item (designers) - 6 November 2026
+
+- **Send back to an earlier step.** Select a connection (for example "Rejected" after a finance review) and choose *Send back to an earlier step*: pick the step, how many times at most (1 to 10), and where the request continues when the limit is reached. Each time back is a new visit: new tasks with their own deadlines, new calls and notices. People kept apart by separation of duties stay apart across every visit. Drawing a loop by hand is still refused; every loop needs a limit. Message waits, child workflows, document generation, signals and undo steps cannot be inside a loop yet.
+- **For each item.** A call to a system, an external worker or an AI task can run once for each item of a list on the request form (up to 500 items). Map the item (or each row's columns) to the step's inputs, choose when the step is done (after every item, after the first success, or once enough items succeeded) and which results to collect into lists. Calls can send items in parallel batches of up to 25; workers and AI tasks take items one at a time. After the step you can use itemCount, completedCount, stoppedEarly and the collected lists.
+- **Where is my request.** A step shows how often the request was there, how often it was sent back and whether the limit was reached, and for a for-each step how many items finished. Operators can list the items of a step (`GET .../runs/{runId}/steps/{nodeId}/items`).
+- **Moving requests to a new release.** A request inside a loop moves only when the loop is the same in the new release.
+
+## Escalation, tasks from email and chat, and step templates - 6 November 2026
+
+**Designers.** An approval step's *Escalate when nobody decides* adds up to five levels: tell a supervisor group, move
+the task to a supervisor group, or alert the operators, after a number of hours (working hours when the step has a
+calendar). Each level happens once and only while the task is still open; the due date does not change. The timeline
+shows every level. *Save as template* in a step's panel keeps the step's settings as a workspace template, found in
+the step list under *From workspace templates* by name or by what it does (for example a connection and operation).
+
+**Approvers.** When your workspace has actionable tasks on, a task can reach you by email, Teams or Slack with Open,
+Claim, Approve and Reject. Nothing happens until you confirm, and the same rules apply as on the task page. An email
+link works only for you and that task and expires. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).
+
+## Bulk actions, searching by request fields and the operations dashboard (operators) - 8 November 2026
+
+**Designers.** Mark up to ten request questions *searchable* (text, choice, number, yes/no or date) so operators can
+find requests by their answers. It does not change how the workflow runs.
+
+**Operators.** On the Runs page, choose a workflow to filter by its searchable questions (with request-data access), or
+type an error code to find requests stuck on the same error. With the extra permission *run.bulk-operate*, *Bulk action
+on these runs* retries, cancels, suspends, resumes or moves to a release every request the filters match: a dry run
+shows exactly how many and which requests; you type that number and a reason to start. At most 1,000 requests change
+in one operation, at the speed you chose; each one gets the usual checks, a request that no longer matches is skipped,
+and you can pause, resume or cancel the rest. Settings → Operations shows worker job queues, checks that wait on other
+systems, package trigger delays and connection errors. Details: [S142](build/S142-bulk-search-job-dashboard.md).

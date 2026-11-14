@@ -1,0 +1,599 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/ai-skill-v1.schema.json",
+  "title": "Orqix AI skill v1",
+  "description": "A shared, versioned AI skill used by aiTask steps, or an evaluation suite for one (docs/build/S134, doc 29 sections 7.3-7.7). A skill version is authored by a designer and approved by a different person holding ai.approve-skill. Request data is always sent as data, never as instructions.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/skill"
+    },
+    {
+      "$ref": "#/$defs/evaluationSuite"
+    }
+  ],
+  "$defs": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+    },
+    "labelKey": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
+    },
+    "scalarType": {
+      "enum": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "date"
+      ]
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "key",
+        "name",
+        "mode",
+        "instructions",
+        "input",
+        "modelProfile"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "skill"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "mode": {
+          "enum": [
+            "classify",
+            "extract",
+            "score",
+            "recommend",
+            "summarize"
+          ]
+        },
+        "instructions": {
+          "description": "Fixed instructions; request values are appended as data.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 20000
+        },
+        "input": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "description": "A scalar type, or attachment: the id of a request file, allowed only as the document input of an extract skill (document.attachmentInput).",
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "date",
+                  "attachment"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "classification": {
+                "description": "Drives minimization through the workspace AI policy: public and internal are sent; customer-text is sent with card numbers and e-mail addresses masked; personal is hashed; sensitive is dropped unless the policy allows it.",
+                "enum": [
+                  "public",
+                  "internal",
+                  "customer-text",
+                  "personal",
+                  "sensitive"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          }
+        },
+        "labels": {
+          "description": "classify only.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 30,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "description"
+            ],
+            "properties": {
+              "key": {
+                "$ref": "#/$defs/labelKey"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "risk": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "adverse": {
+                "description": "An outcome with legal or similarly significant effect on a person; in regulated workspaces a person always decides it.",
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "fields": {
+          "description": "extract only: the typed fields to extract. A document skill with a built-in document type may leave them out: the template's fields are used.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "type": {
+                "$ref": "#/$defs/scalarType"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "hint": {
+                "description": "Validation hint checked on the extracted value: iban (mod-97 checksum), currency (ISO 4217 code), country (ISO 3166 alpha-2 or alpha-3), pastDate (not after today), futureDate (not before today). A failing hint lowers the field's confidence and flags it for verification.",
+                "enum": [
+                  "iban",
+                  "currency",
+                  "country",
+                  "pastDate",
+                  "futureDate"
+                ]
+              }
+            }
+          }
+        },
+        "score": {
+          "description": "score only: the declared range.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        },
+        "outcomes": {
+          "description": "recommend only: the outcomes the AI may suggest to the person who decides.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "description"
+            ],
+            "properties": {
+              "key": {
+                "$ref": "#/$defs/labelKey"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "adverse": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "summary": {
+          "description": "summarize only.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 8000
+            }
+          }
+        },
+        "document": {
+          "description": "extract only: the skill reads a request file. The file passes OCR (the workspace's OCR provider), then the model extracts the fields from the recognized text with a source location per field; a person verifies values below the threshold.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "attachmentInput"
+          ],
+          "properties": {
+            "type": {
+              "description": "Document-type template: invoice, idDocument and bankStatement bring their fields and validation rules; custom uses the skill's own fields.",
+              "enum": [
+                "invoice",
+                "idDocument",
+                "bankStatement",
+                "custom"
+              ]
+            },
+            "attachmentInput": {
+              "description": "The input (of type attachment) that carries the file.",
+              "$ref": "#/$defs/name"
+            }
+          }
+        },
+        "examples": {
+          "description": "Approved examples shown to the model (synthetic or redacted data only).",
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "input",
+              "output"
+            ],
+            "properties": {
+              "input": {
+                "type": "object"
+              },
+              "output": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "modelProfile": {
+          "description": "Model profile id (Settings > AI); the evaluation gate is per skill version and profile.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+        },
+        "confidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "single",
+                "selfConsistency"
+              ]
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            }
+          }
+        },
+        "evaluation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "suite": {
+              "$ref": "#/$defs/key"
+            },
+            "minAccuracy": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minRecall": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/labelKey"
+              },
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "minCases": {
+              "description": "Default 50; 200 are recommended before auto.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxInputTokens": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 200000
+            },
+            "maxOutputTokens": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 16000
+            },
+            "maxCostUsd": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 5
+            },
+            "timeoutSeconds": {
+              "description": "Deadline of the whole task, all samples and the repair turn included (at most 10 minutes).",
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 600
+            }
+          }
+        },
+        "promotion": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minShadowCases": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "targetAgreement": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "drift": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxAgreementDrop": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "fallbackToSuggest": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "classify"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "labels"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "extract"
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "fields"
+                ]
+              },
+              {
+                "required": [
+                  "document"
+                ],
+                "properties": {
+                  "document": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "invoice",
+                          "idDocument",
+                          "bankStatement"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "score"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "score"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "recommend"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcomes"
+            ]
+          }
+        }
+      ]
+    },
+    "evaluationSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "key",
+        "name",
+        "skillKey",
+        "cases"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "evaluationSuite"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "skillKey": {
+          "$ref": "#/$defs/key"
+        },
+        "cases": {
+          "description": "Labelled cases: synthetic, or production data imported and redacted on purpose.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "input",
+              "expected"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+              },
+              "input": {
+                "type": "object"
+              },
+              "expected": {
+                "description": "label (classify), fields (extract), score with tolerance (score), outcome (recommend); summarize cases check required phrases.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "$ref": "#/$defs/labelKey"
+                  },
+                  "fields": {
+                    "type": "object"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "tolerance": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "outcome": {
+                    "$ref": "#/$defs/labelKey"
+                  },
+                  "mustMention": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                }
+              },
+              "source": {
+                "enum": [
+                  "synthetic",
+                  "redactedProduction",
+                  "override"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

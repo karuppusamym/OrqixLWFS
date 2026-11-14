@@ -5,7 +5,7 @@ import { isMultipleOf } from '@/lib/form/validate'
 import { emptyValues, validateForm, type RawValue, type RawValues } from '@/lib/form/values'
 import { visibleFields } from '@/lib/form/visibility'
 import { MONEY_PATTERN } from '@/lib/money'
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition } from '../model/types'
+import { comparisonCondition, conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition } from '../model/types'
 import { CASE_VERSION, MAX_CASES, type SavedCase } from './savedCases'
 import { sampleValues } from './sampleValues'
 import { emptyAssertions, emptySettings, NEEDS_ATTENTION, stepControls, type TestSettings } from './scenarioModel'
@@ -55,7 +55,7 @@ export function inputConditions(def: Definition, fields: FieldDef[]): ConditionS
   }
   for (const t of def.transitions) if (t.on === 'condition') add('route', t.condition)
   const used = new Set(def.nodes.filter((n) => n.type === 'decision').map((n) => String(n.config.decisionRef ?? '')))
-  for (const table of def.decisions) if (used.has(table.key)) for (const row of table.rows) add('rule', row.when)
+  for (const table of def.decisions) if (used.has(table.key)) for (const row of table.rows) add('rule', comparisonCondition(row.when))
   for (const f of fields) {
     for (const c of f.visibleWhen ?? []) add('form', c)
     add('form', f.requiredWhen)

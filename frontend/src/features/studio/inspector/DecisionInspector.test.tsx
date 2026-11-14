@@ -114,3 +114,58 @@ describe('lists, ranges and hit policies in the rule table (docs/build/S121)', (
     expect(screen.getByRole('button', { name: /Import DMN/ })).toBeInTheDocument()
   })
 })
+
+describe('formulas in rule rows (docs/build/S146)', () => {
+  function setup() {
+    const store = createStudioStore()
+    store.getState().load({ workflowId: 'workflow', revision: 1, definition: normalizeDefinition(purchase) })
+    function Inspector() {
+      const node = useStudio(s => s.definition.nodes.find(n => n.type === 'decision')!)
+      return <DecisionInspector node={node} />
+    }
+    render(<QueryClientProvider client={testQueryClient()}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
+    return store
+  }
+
+  it('switches a row test to a formula of its column, checks its type live and back to a comparison', async () => {
+    const store = setup()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Write a formula instead (dates, calculations)' }))
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toEqual({ fieldRef: '/input/amount', expression: 'input.amount >= 5000' })
+    expect(screen.getAllByText('Formula')[0]).toBeInTheDocument()
+    expect(screen.getByLabelText('Column')).toHaveValue('/input/amount')
+    const formula = screen.getByLabelText('Formula (true or false)')
+    expect(formula).toHaveValue('input.amount >= 5000')
+    await user.clear(formula)
+    await user.type(formula, 'input.amount * 2')
+    expect(screen.getByText('This must give true or false, but it gives a number.')).toBeInTheDocument()
+    await user.clear(formula)
+    await user.type(formula, 'input.costCenter = "IT"')
+    await user.tab()
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toEqual({ fieldRef: '/input/amount', expression: 'input.costCenter = "IT"' })
+    expect(screen.getByRole('alert')).toHaveTextContent('The formula must use its column, /input/amount.')
+    // "Test this rule" asks for every field the table reads, also the ones named only inside formulas.
+    expect(screen.getByLabelText('Sample: /input/costCenter')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Use a comparison instead' }))
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toEqual({ fieldRef: '/input/amount', operator: 'eq', value: 0 })
+  })
+
+  it('computes a result with a formula of the Otherwise value type', async () => {
+    const store = setup()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Compute Route with a formula' }))
+    expect(store.getState().definition.decisions[0]!.rows[0]!.then).toEqual({ route: { expression: '"financeReview"' } })
+    const formula = screen.getByLabelText('Route: formula')
+    await user.clear(formula)
+    await user.type(formula, 'input.amount')
+    expect(screen.getByText('This must give text, but it gives a number.')).toBeInTheDocument()
+    await user.clear(formula)
+    await user.type(formula, 'upper(input.costCenter)')
+    await user.tab()
+    expect(store.getState().definition.decisions[0]!.rows[0]!.then).toEqual({ route: { expression: 'upper(input.costCenter)' } })
+    // The Otherwise result stays a plain value.
+    expect(screen.queryAllByRole('button', { name: /with a formula/ })).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Use a value instead' }))
+    expect(store.getState().definition.decisions[0]!.rows[0]!.then).toEqual({ route: 'standard' })
+  })
+})

@@ -20,7 +20,8 @@ import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/input'
-import { displayJsonValue } from '@/lib/form/display'
+import { displayJsonValue, isMaskedValue } from '@/lib/form/display'
+import { Badge } from '@/components/ui/badge'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { FormRenderer, fieldDomId } from '@/components/form/FormRenderer'
 import { buildPayload, emptyValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
@@ -300,6 +301,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
                 <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
                 <dd className="wrap-anywhere whitespace-pre-wrap">
                   {displayJsonValue(f, asRecord(task.request.input)[f.key])}
+                  {isMaskedValue(asRecord(task.request.input)[f.key]) ? <Badge className="ml-2 align-middle" title="Personal or sensitive: reveal it from the request page if you are allowed">Masked</Badge> : null}
                   {fieldAccess?.[f.key] === 'required' && isEmptyValue(asRecord(task.request.input)[f.key])
                     ? <span className="ml-2 text-sm font-medium text-danger">Fill this in before approving</span> : null}
                 </dd>

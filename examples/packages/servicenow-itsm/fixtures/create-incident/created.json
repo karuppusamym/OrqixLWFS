@@ -1,0 +1,18 @@
+{
+  "label": "Incident created",
+  "connection": "servicenow-itsm",
+  "operation": "createIncident",
+  "response": {
+    "status": 201,
+    "body": {
+      "result": {
+        "sys_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "number": "INC0012345",
+        "state": "1",
+        "correlation_id": "ORQ-1042-raiseIncident-1"
+      }
+    }
+  },
+  "resultMapping": { "incidentNumber": "/result/number", "correlationId": "/result/correlation_id" },
+  "expect": { "outcome": "succeeded", "results": { "incidentNumber": "INC0012345", "correlationId": "ORQ-1042-raiseIncident-1" } }
+}

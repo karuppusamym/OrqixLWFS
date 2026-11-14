@@ -1,26 +1,31 @@
 import { filterLoadedTasks, parseDueFilter } from '@/features/tasks/taskFilters'
+import { mockRunExplanation } from './runExplain'
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { awaitedSignals, deliverSignal, migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { awaitedSignals, deliverSignal, migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, maskedInput, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
 import { disabledFeaturesOf } from './features'
-import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
+import { normalizeDefinition, tableUsesExpressions, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
+import { decisionTypes } from '@/features/studio/model/expressionScope'
+import { DecisionEvaluationError, evaluateExpressionTable } from '@/lib/expr/decision'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
+import { applyComputed } from '@/lib/form/computed'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
-import { exportDmn, readDmn } from './decisionDmn'
+import { dmnRefusals, exportDmn, readDmn } from './decisionDmn'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
+import { shortfalls as coverageShortfalls, suiteCoverage, type CoverageMinimum, type CoverageRun } from './suiteCoverage'
 import {
   GROUPS,
   TEMPLATES,
@@ -56,7 +61,7 @@ import {
 // Access (Settings → Members and groups): seeded memberships plus the changes an administrator made -------------------
 
 const ROLE_KEYS = ['WORKSPACE_ADMIN', 'WORKFLOW_DESIGNER', 'PUBLISHER', 'OPERATOR', 'VIEWER', 'APPROVER']
-const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool']
+const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool', 'ai.approve-skill', 'ai.evaluate', 'run.bulk-operate', 'alert.manage', 'data.reveal']
 
 function edits(): NonNullable<typeof db.accessEdits> {
   return (db.accessEdits ??= { roleBindings: [], grants: [], removed: [], groups: [] })
@@ -113,6 +118,21 @@ export function getCurrentUser(): MockUser {
 
 // Response helpers ----------------------------------------------------------------------------------------
 
+/** S142: key:op:value against request data (text ignores case). */
+export function matchesCondition(input: Record<string, unknown>, raw: string): boolean {
+  const [key = '', op = '', ...rest] = raw.split(':')
+  const want = rest.join(':')
+  const value = input[key]
+  if (value === undefined || value === null) return false
+  if (typeof value === 'number') {
+    const n = Number(want)
+    return op === 'gte' ? value >= n : op === 'lte' ? value <= n : value === n
+  }
+  const text = String(value).toLowerCase()
+  const w = want.toLowerCase()
+  return op === 'prefix' ? text.startsWith(w) : op === 'gte' ? text >= w : op === 'lte' ? text <= w : text === w
+}
+
 function problem(status: number, code: ProblemCode, title: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}): Response {
   return HttpResponse.json(
     {
@@ -129,6 +149,15 @@ function problem(status: number, code: ProblemCode, title: string, extra: Record
 
 const notFound = () => problem(404, 'NOT_FOUND', 'Not found', { detail: 'The resource does not exist or is not visible to you.' })
 const forbidden = (detail = 'You do not have permission to do this.') => problem(403, 'FORBIDDEN', 'Forbidden', { detail })
+/** 422 when the table cannot be written as DMN (S146: an Any row with a formula under COLLECT), else null. */
+function dmnNotRepresentable(table: DecisionTable): Response | null {
+  const reasons = dmnRefusals(table)
+  if (!reasons.length) return null
+  return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+    detail: `This decision table cannot be written as DMN: ${reasons[0]}`,
+    fieldErrors: reasons.map((message) => ({ pointer: `/decisions/${table.key}`, code: 'notRepresentable', message })),
+  })
+}
 
 type Guard = { ok: true; user: MockUser; perms: Permission[] } | { ok: false; res: Response }
 
@@ -254,7 +283,7 @@ function releaseSummary(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
   }
 }
 
-function releaseFull(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
+export function releaseFull(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
   return {
     ...releaseSummary(wf, r),
     sourceHash: r.sourceHash,
@@ -355,7 +384,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
   const claimAllowed = open && !task.assigneeId && eligibleGroup && !own && !separated
   return {
     ...summaryValue,
-    request: { input: Object.fromEntries(Object.entries(run.input).filter(([key]) => stepAccessOf(run, task)[key] !== 'hidden')), inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
+    request: { input: maskedInput(run, Object.fromEntries(Object.entries(run.input).filter(([key]) => stepAccessOf(run, task)[key] !== 'hidden'))), inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
     approvalView: rel.definition.nodes.find(node => node.id === task.nodeId)?.config.viewBinding ? (rel.definition.nodes.find(node => node.id === task.nodeId)!.config.viewBinding as { definition: unknown }).definition : undefined,
     form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [],
@@ -706,6 +735,8 @@ export function createHandlers(): HttpHandler[] {
       const table = draft?.definition.decisions.find((d) => d.key === str(params.key))
       if (!wf || !draft || !table) return notFound()
       const label = draft.definition.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === table.key)?.label
+      const refused = dmnNotRepresentable(table)
+      if (refused) return refused
       return new HttpResponse(exportDmn(table, table.key, label), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-draft-${draft.revision}.dmn"` } })
     }),
     http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/decisions/:key/dmn`, async ({ params }) => {
@@ -716,6 +747,8 @@ export function createHandlers(): HttpHandler[] {
       const rel = wf?.releases.find((r) => r.id === str(params.rid))
       const table = rel?.definition.decisions.find((d) => d.key === str(params.key))
       if (!wf || !rel || !table) return notFound()
+      const refused = dmnNotRepresentable(table)
+      if (refused) return refused
       return new HttpResponse(exportDmn(table, table.key), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-r${rel.releaseNumber}.dmn"` } })
     }),
     http.put(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params, request }) => {
@@ -771,6 +804,16 @@ export function createHandlers(): HttpHandler[] {
       if (!draft || !table) return notFound()
       const { ['$asOf']: given, ...values } = (input.values ?? {}) as Record<string, Literal>
       const asOf = typeof given === 'string' ? given : clock.now().toISOString().slice(0, 10)
+      if (tableUsesExpressions(table)) {
+        // S146: formulas with the server's semantics and the field types the compiler pins; dates are YYYY-MM-DD text.
+        try {
+          const r = evaluateExpressionTable(table, { ...values, $asOf: asOf, $now: clock.iso() }, decisionTypes(draft.definition, table))
+          return HttpResponse.json({ matchedRow: r.matchedRow, usedDefault: r.usedDefault, output: r.output, matchedRows: r.matchedRows, expressions: r.expressions })
+        } catch (e) {
+          if (!(e instanceof DecisionEvaluationError)) throw e
+          return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: e.message })
+        }
+      }
       const result = evaluateTable(table, values, asOf)
       return HttpResponse.json(result)
     }),
@@ -783,12 +826,14 @@ export function createHandlers(): HttpHandler[] {
     http.put(`${B}/workspaces/:ws/workflows/:id/test-suite`, async ({ params, request }) => {
       const g = guard(params.ws, 'workflow.edit'); if (!g.ok) return g.res
       const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
-      const input = await body<{ expectedVersion: number; cases: SharedCase[] }>(request)
+      const input = await body<{ expectedVersion: number; cases: SharedCase[]; coverageMinimum?: CoverageMinimum }>(request)
       const current = wf.testSuite ?? { version: 0, cases: [] }
       if (input.expectedVersion !== current.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before saving.')
       if (!Array.isArray(input.cases) || input.cases.length > 20 || input.cases.some(c => !c.expect || c.scenario?.simulateChildren)) return problem(422, 'VALIDATION_FAILED', 'Use at most 20 tests with explicit expectations and child outcomes.')
       if (new TextEncoder().encode(JSON.stringify(input.cases)).length > 65536) return problem(413, 'PAYLOAD_TOO_LARGE', 'Shared tests exceed 64 KiB.')
-      const suite = { version: current.version + 1, cases: structuredClone(input.cases) }
+      const minimum = input.coverageMinimum
+      if (minimum !== undefined && (typeof minimum !== 'object' || minimum === null || Object.keys(minimum).length === 0 || Object.entries(minimum).some(([k, v]) => !['steps', 'routes', 'rules', 'formRules'].includes(k) || !Number.isInteger(v) || (v as number) < 0 || (v as number) > 100))) return problem(422, 'VALIDATION_FAILED', 'The coverage minimum is not valid.', { fieldErrors: [{ pointer: '/coverageMinimum', code: 'type', message: 'Give whole percentages from 0 to 100 for steps, routes, rules or formRules.' }] })
+      const suite = { version: current.version + 1, cases: structuredClone(input.cases), ...(minimum ? { coverageMinimum: structuredClone(minimum) } : {}) }
       wf.testSuite = suite
       return HttpResponse.json(suite)
     }),
@@ -800,17 +845,25 @@ export function createHandlers(): HttpHandler[] {
       if (!suite || suite.version !== input.suiteVersion) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before testing.')
       if (!wf.drafts.some(d => d.revision === input.revision)) return notFound()
       const results = []
+      const runs: CoverageRun[] = []
       for (const c of suite.cases) {
         const assertions = { ...(c.assertions ?? {}), outcome: c.expect }
         const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, input: c.input, scenario: c.scenario, assertions }) })
-        const output = await response.json() as { outcome?: { status: string }; assertions?: { passed: boolean; results: Array<{ passed: boolean }> } }
+        const output = await response.json() as { outcome?: { status: string }; coverage?: Record<string, unknown>; assertions?: { passed: boolean; results: Array<{ passed: boolean }> } }
+        if (response.ok && output.coverage) runs.push({ input: c.input as Record<string, unknown>, coverage: output.coverage })
         const status = response.ok ? (output.outcome?.status ?? 'invalid') : 'invalid'
         const failures = (output.assertions?.results ?? []).filter((r) => !r.passed)
         results.push({ id: c.id, passed: response.ok && output.assertions?.passed === true, status, ...(failures.length > 0 ? { failures } : {}) })
       }
-      const passed = results.length > 0 && results.every(r => r.passed)
-      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id), passedCases: results.filter((r) => r.passed).length, totalCases: results.length, testedAt: clock.now().toISOString() }
-      return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results })
+      const casesPassed = results.length > 0 && results.every(r => r.passed)
+      // CG-Q03 (S148): coverage of the cases together; a suite with a minimum passes only when it is reached.
+      const definition = wf.drafts.find((d) => d.revision === input.revision)?.definition as unknown as Record<string, unknown>
+      const coverage = suiteCoverage(definition, runs)
+      const short = coverageShortfalls(coverage, suite.coverageMinimum)
+      const passed = casesPassed && short.length === 0
+      const counts = coverage ? Object.fromEntries((['steps', 'routes', 'rules', 'formRules'] as const).map((k) => [k, { covered: coverage[k].covered, total: coverage[k].total }])) : undefined
+      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id), passedCases: results.filter((r) => r.passed).length, totalCases: results.length, testedAt: clock.now().toISOString(), ...(counts ? { coverage: counts } : {}) }
+      return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results, casesPassed, ...(coverage ? { coverage } : {}), ...(suite.coverageMinimum ? { coverageMinimum: suite.coverageMinimum, coverageShortfalls: short } : {}) } as JsonBodyType)
     }),
     http.get(`${B}/workspaces/:ws/workflows/:id/test-suite/summary`, ({ params }) => {
       const g = guard(params.ws, 'workflow.read'); if (!g.ok) return g.res
@@ -820,8 +873,9 @@ export function createHandlers(): HttpHandler[] {
       return HttpResponse.json({
         suiteVersion: suite.version,
         cases: suite.cases.length,
-        lastRun: last ? { revision: last.revision, passed: last.passed, passedCases: last.passedCases ?? (last.passed ? suite.cases.length : 0), totalCases: last.totalCases ?? suite.cases.length, testedAt: last.testedAt ?? clock.now().toISOString() } : null,
-      })
+        lastRun: last ? { revision: last.revision, passed: last.passed, passedCases: last.passedCases ?? (last.passed ? suite.cases.length : 0), totalCases: last.totalCases ?? suite.cases.length, testedAt: last.testedAt ?? clock.now().toISOString(), ...(last.coverage ? { coverage: last.coverage } : {}) } : null,
+        ...(suite.coverageMinimum ? { coverageMinimum: suite.coverageMinimum } : {}),
+      } as JsonBodyType)
     }),
     // STU03 "Run all": every case through the simulate handler, one result list.
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate-cases`, async ({ params, request }) => {
@@ -832,20 +886,24 @@ export function createHandlers(): HttpHandler[] {
       if (!Array.isArray(cases) || cases.length === 0 || cases.length > 20) return problem(422, 'VALIDATION_FAILED', 'Give 1 to 20 cases.')
       if (new Set(cases.map((c) => c.id)).size !== cases.length) return problem(422, 'VALIDATION_FAILED', 'Every case needs its own ID.', { fieldErrors: [{ pointer: '/cases', code: 'unique', message: 'This ID is used by another case.' }] })
       const results = []
+      const runs: CoverageRun[] = []
       let source: unknown = null
       for (const c of cases) {
         const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, useActiveRelease: input.useActiveRelease, input: c.input, scenario: c.scenario, assertions: c.assertions }) })
-        const output = await response.json() as { code?: string; detail?: string; title?: string; fieldErrors?: unknown[]; source?: unknown; outcome?: { status: string; businessOutcome?: string | null; outcomeKind?: string | null; summary: string }; assertions?: { passed: boolean } }
+        const output = await response.json() as { code?: string; detail?: string; title?: string; fieldErrors?: unknown[]; source?: unknown; coverage?: Record<string, unknown>; outcome?: { status: string; businessOutcome?: string | null; outcomeKind?: string | null; summary: string }; assertions?: { passed: boolean } }
         if (!response.ok && output.code !== 'VALIDATION_FAILED') return HttpResponse.json(output as JsonBodyType, { status: response.status })
         if (!response.ok) {
           results.push({ id: c.id, status: 'invalid', passed: false, problem: output.detail ?? output.title ?? 'Not valid', fieldErrors: output.fieldErrors ?? [] })
           continue
         }
         source = output.source
+        if (output.coverage) runs.push({ input: c.input, coverage: output.coverage })
         const o = output.outcome as NonNullable<typeof output.outcome>
         results.push({ id: c.id, status: o.status, passed: output.assertions ? output.assertions.passed : true, outcome: { status: o.status, businessOutcome: o.businessOutcome ?? null, outcomeKind: o.outcomeKind ?? null, summary: o.summary }, ...(output.assertions ? { assertions: output.assertions } : {}) })
       }
-      return HttpResponse.json({ source: source ?? { revision: input.revision ?? null, releaseNumber: null }, passed: results.filter((r) => r.passed).length, total: results.length, results } as JsonBodyType)
+      const tested = input.useActiveRelease ? wf.releases.find((r) => r.id === wf.activeReleaseId)?.definition : (wf.drafts.find((d) => d.revision === (input.revision ?? wf.drafts[wf.drafts.length - 1]?.revision)) ?? wf.drafts[wf.drafts.length - 1])?.definition
+      const coverage = suiteCoverage((tested ?? {}) as unknown as Record<string, unknown>, runs)
+      return HttpResponse.json({ source: source ?? { revision: input.revision ?? null, releaseNumber: null }, passed: results.filter((r) => r.passed).length, total: results.length, results, ...(coverage ? { coverage } : {}) } as JsonBodyType)
     }),
     // "Test this workflow": a dry run with the mock-side port of the simulator (mocks/simulator.ts).
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate`, async ({ params, request }) => {
@@ -1351,6 +1409,14 @@ export function createHandlers(): HttpHandler[] {
       if (workflowId) runs = runs.filter((r) => r.workflowId === workflowId)
       if (outcomeKind) runs = runs.filter((r) => r.outcomeKind === outcomeKind)
       if (key) runs = runs.filter((r) => r.businessKey === key || r.reference === key)
+      // S142: error-code and searchable-field filters (field conditions need run.read-data, like the server).
+      const errorCode = url.searchParams.get('errorCode')
+      if (errorCode) runs = runs.filter((r) => r.lifecycle === 'needsAttention' && (r.attention as { errorCode?: string } | null)?.errorCode === errorCode)
+      const conditions = url.searchParams.getAll('field')
+      if (conditions.length) {
+        if (!permissionsOf(g.user, str(params.ws)).includes('run.read-data')) return problem(403, 'FORBIDDEN', 'You are not allowed to do this')
+        runs = runs.filter((r) => conditions.every((c) => matchesCondition(r.input, c)))
+      }
       runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const page = paginate(runs, url)
       return HttpResponse.json({ items: page.items.map((r) => toRun(r, g.user)), nextCursor: page.nextCursor })
@@ -1368,6 +1434,8 @@ export function createHandlers(): HttpHandler[] {
         if (input.expectedReleaseId && input.expectedReleaseId !== rel.id) return problem(409, 'RELEASE_NOT_ACTIVE', 'The form was updated')
         const schema = parseFormSchema(rel.definition.inputSchema)
         const fields = buildFields(schema, {})
+        // CG-F04 (S137): the server recomputes computed fields and replaces what was sent.
+        input.input = applyComputed(schema, parseFormUi(rel.definition.inputUi), input.input ?? {}, clock.iso())
         const issues = validateJsonForm(schema, parseFormUi(rel.definition.inputUi), input.input ?? {})
         const horizon = issues.length === 0 ? waitHorizonErrors(rel.definition, input.input ?? {}, clock.now()) : []
         if (issues.length > 0 || horizon.length > 0) {
@@ -1375,7 +1443,7 @@ export function createHandlers(): HttpHandler[] {
             fieldErrors: [...issues.map((i) => ({
               pointer: `/input${i.pointer}`,
               code: i.keyword,
-              message: `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
+              message: i.message ?? `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
             })), ...horizon],
           })
         }
@@ -1523,6 +1591,15 @@ export function createHandlers(): HttpHandler[] {
         resumeRun(run, g.user, input.reason.trim())
         return { status: 200, body: toRunDetail(run, g.user) }
       })
+    }),
+    // CG-A07 (S146 part C): read-only explanation; rule-based in mock mode, changes nothing.
+    http.post(`${B}/workspaces/:ws/runs/:id/explain`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      return HttpResponse.json(mockRunExplanation(toRunDetail(run, g.user)))
     }),
     http.get(`${B}/workspaces/:ws/runs/:id/diagnosis`, async ({ params }) => {
       await slow()

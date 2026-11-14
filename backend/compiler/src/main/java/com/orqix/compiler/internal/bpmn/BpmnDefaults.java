@@ -53,6 +53,15 @@ public final class BpmnDefaults {
             new Rule("startWorkflow", "collectionMapping", F.objectNode(), config -> true),
             new Rule("waitForMessage", "payload", F.arrayNode(), config -> true));
 
+    /**
+     * Step retry policy defaults (CG-W04, S131): inside {@code config.retry} of these step types, {@code multiplier: 1}
+     * and {@code honorRetryAfter: true} mean the same as leaving them out.
+     */
+    static final List<String> RETRY_TYPES = List.of("externalTask", "http", "sendAdapter");
+    static final List<Rule> RETRY_RULES = List.of(
+            new Rule("retry", "honorRetryAfter", F.booleanNode(true), retry -> true),
+            new Rule("retry", "multiplier", F.numberNode(1), retry -> true));
+
     /** {@code required: false} on a payload or result field; its {@code title} is kept display text. */
     private static final Map<String, String> FIELD_LISTS = Map.of("waitForMessage", "payload", "externalTask", "result");
 
@@ -73,6 +82,7 @@ public final class BpmnDefaults {
         RULES.forEach(r -> out.add(r.type() + "." + r.key() + " = " + r.value()));
         FIELD_LISTS.forEach((type, list) -> out.add(type + "." + list + "[].required = false"));
         SCOPE_RULES.forEach(r -> out.add(r.type() + "[]." + r.key() + " = " + r.value()));
+        RETRY_TYPES.forEach(type -> RETRY_RULES.forEach(r -> out.add(type + ".retry." + r.key() + " = " + r.value())));
         out.sort(String::compareTo);
         return List.copyOf(out);
     }
@@ -164,8 +174,30 @@ public final class BpmnDefaults {
                 adoptDefault(rule.key(), rule.value(), draft, target);
             }
         }
+        if (RETRY_TYPES.contains(type) && draft.path("retry").isObject() && target.path("retry").isObject()) {
+            for (Rule rule : RETRY_RULES) {
+                adoptDefault(rule.key(), rule.value(), (ObjectNode) draft.get("retry"), (ObjectNode) target.get("retry"));
+            }
+        }
+        if ("waitForFirst".equals(type) && draft.path("branches").isArray() && target.path("branches").isArray()) {
+            // S139: the branches of "Wait for the first" keep their value titles like message waits do.
+            Map<String, JsonNode> before = new LinkedHashMap<>();
+            draft.get("branches").forEach(b -> before.putIfAbsent(b.path("id").asString(""), b));
+            for (JsonNode branch : target.get("branches")) {
+                JsonNode was = before.get(branch.path("id").asString(""));
+                if (was != null && was.isObject() && branch.isObject()) {
+                    adoptFields((ObjectNode) was, (ObjectNode) branch, "payload");
+                }
+            }
+        }
         String list = FIELD_LISTS.get(type);
-        if (list != null && draft.path(list).isArray() && target.path(list).isArray()) {
+        if (list != null) {
+            adoptFields(draft, target, list);
+        }
+    }
+
+    private static void adoptFields(ObjectNode draft, ObjectNode target, String list) {
+        if (draft.path(list).isArray() && target.path(list).isArray()) {
             Map<String, JsonNode> fields = new LinkedHashMap<>();
             draft.get(list).forEach(f -> fields.putIfAbsent(f.path("name").asString(""), f));
             for (JsonNode field : (ArrayNode) target.get(list)) {

@@ -43,8 +43,12 @@ public class CatalogController {
     private final BpmnSourceService bpmn;
     private final DecisionCsvService decisionCsv;
 
+    private final com.orqix.integration.ConnectorPackageTemplates packageTemplates;
+
     public CatalogController(CallerResolver callers, WorkflowService workflows, ReleaseService releases,
-            SimulationService simulations, BpmnSourceService bpmn, DecisionCsvService decisionCsv) {
+            SimulationService simulations, BpmnSourceService bpmn, DecisionCsvService decisionCsv,
+            com.orqix.integration.ConnectorPackageTemplates packageTemplates) {
+        this.packageTemplates = packageTemplates;
         this.simulations = simulations;
         this.bpmn = bpmn;
         this.decisionCsv = decisionCsv;
@@ -70,6 +74,17 @@ public class CatalogController {
     public ResponseEntity<CatalogDtos.WorkflowView> createWorkflow(@PathVariable UUID workspaceId,
             @Valid @RequestBody CatalogDtos.CreateWorkflowRequest request) {
         CatalogDtos.WorkflowView workflow = workflows.createWorkflow(callers.current(), workspaceId, request);
+        return ResponseEntity.created(URI.create("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflow.id()))
+                .eTag(WorkflowService.etag(workflow.draftRevision())).body(workflow);
+    }
+
+    /** S133: a workflow from a starter workflow of an installed connector package. */
+    @PostMapping("/connector-packages/{packageVersionId}/workflow-templates/{templateKey}/workflows")
+    public ResponseEntity<CatalogDtos.WorkflowView> createWorkflowFromPackageTemplate(@PathVariable UUID workspaceId,
+            @PathVariable UUID packageVersionId, @PathVariable String templateKey,
+            @Valid @RequestBody CatalogDtos.CreateWorkflowRequest request) {
+        CatalogDtos.WorkflowView workflow = workflows.createFromPackageTemplate(callers.current(), workspaceId,
+                packageVersionId, templateKey, request, packageTemplates);
         return ResponseEntity.created(URI.create("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflow.id()))
                 .eTag(WorkflowService.etag(workflow.draftRevision())).body(workflow);
     }

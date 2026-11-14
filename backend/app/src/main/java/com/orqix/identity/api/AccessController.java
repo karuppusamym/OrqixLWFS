@@ -73,8 +73,23 @@ public class AccessController {
             @NotNull @Valid PrincipalRef principal) {
     }
 
-    public record CreateGrantRequest(@NotNull @Pattern(regexp = "workflow\\.start|connection\\.manage|message\\.send|document\\.browse|job\\.work|audit\\.read|workflow\\.approve-promotion|agent\\.approve-write-tool") String permission,
+    public record CreateGrantRequest(@NotNull @Pattern(regexp = "workflow\\.start|connection\\.manage|message\\.send|document\\.browse|job\\.work|audit\\.read|workflow\\.approve-promotion|agent\\.approve-write-tool|connector\\.manage|connector\\.approve|ai\\.approve-skill|ai\\.evaluate|run\\.bulk-operate|alert\\.manage|data\\.reveal") String permission,
             UUID workflowId, @NotNull @Valid PrincipalRef principal) {
+    }
+
+    /** CG-I01 (S151). */
+    public record ResourceGrant(UUID id, String resourceType, String resourceId,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String resourceName, String permission, Principal principal,
+            Instant createdAt) {
+    }
+
+    public record ResourceGrantList(List<ResourceGrant> items) {
+    }
+
+    public record CreateResourceGrantRequest(@NotNull @Pattern(regexp = "folder|workflow|decision|connection") String resourceType,
+            @NotNull @Size(min = 1, max = 64) String resourceId,
+            @NotNull @Pattern(regexp = "workflow\\.read|workflow\\.edit|workflow\\.publish|workflow\\.start|run\\.read|run\\.operate|connection\\.read|connection\\.manage") String permission,
+            @NotNull @Valid PrincipalRef principal) {
     }
 
     public record PutGroupRequest(@NotNull @Size(min = 1, max = 200) String name,
@@ -162,6 +177,46 @@ public class AccessController {
     public ResponseEntity<Void> deletePermissionGrant(@PathVariable UUID workspaceId, @PathVariable UUID grantId) {
         access.deleteGrant(callers.current(), workspaceId, grantId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------------------------------------------------------------- CG-I01 resource grants (S151)
+
+    @GetMapping("/workspaces/{workspaceId}/access/resource-grants")
+    public ResourceGrantList listResourceGrants(@PathVariable UUID workspaceId,
+            @RequestParam(required = false) String resourceType, @RequestParam(required = false) String resourceId) {
+        access.requireManager(callers.current(), workspaceId, "listResourceGrants", false);
+        if (resourceType != null && !resourceType.matches("folder|workflow|decision|connection")) {
+            throw ApiException.malformed("resourceType must be folder, workflow, decision or connection.");
+        }
+        if (resourceId != null && (resourceId.isEmpty() || resourceId.length() > 64)) {
+            throw ApiException.malformed("resourceId must be 1 to 64 characters.");
+        }
+        List<AccessService.ResourceGrantRow> rows = access.resourceGrants(workspaceId, resourceType, resourceId);
+        Map<UUID, String> names = subjects.displayNames(rows.stream().filter(r -> "subject".equals(r.principalType()))
+                .map(r -> Ids.parseOrNull(r.principalValue())).filter(java.util.Objects::nonNull).toList());
+        return new ResourceGrantList(rows.stream().map(r -> resourceGrant(r, names)).toList());
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/access/resource-grants")
+    public ResponseEntity<ResourceGrant> createResourceGrant(@PathVariable UUID workspaceId,
+            @Valid @RequestBody CreateResourceGrantRequest request) {
+        AccessService.ResourceGrantRow row = access.createResourceGrant(callers.current(), workspaceId,
+                request.resourceType(), request.resourceId(), request.permission(),
+                new AccessService.PrincipalRef(request.principal().type(), request.principal().value()));
+        Map<UUID, String> names = "subject".equals(row.principalType())
+                ? subjects.displayNames(List.of(Ids.parseOrNull(row.principalValue()))) : Map.of();
+        return ResponseEntity.status(HttpStatus.CREATED).body(resourceGrant(row, names));
+    }
+
+    @DeleteMapping("/workspaces/{workspaceId}/access/resource-grants/{grantId}")
+    public ResponseEntity<Void> deleteResourceGrant(@PathVariable UUID workspaceId, @PathVariable UUID grantId) {
+        access.deleteResourceGrant(callers.current(), workspaceId, grantId);
+        return ResponseEntity.noContent().build();
+    }
+
+    private static ResourceGrant resourceGrant(AccessService.ResourceGrantRow r, Map<UUID, String> names) {
+        return new ResourceGrant(r.id(), r.resourceType(), r.resourceId(), r.resourceName(), r.permission(),
+                principal(r.principalType(), r.principalValue(), names), r.createdAt());
     }
 
     @PutMapping("/workspaces/{workspaceId}/groups/{groupKey}")

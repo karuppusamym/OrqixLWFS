@@ -45,3 +45,10 @@ evidence/
 
 # Isolated final architecture/API verification output
 target-final-review/
+
+# .NET SDK build output
+sdks/dotnet/**/bin/
+sdks/dotnet/**/obj/
+sdks/dotnet/TestResults/
+# TypeScript SDK test build
+sdks/typescript/dist-test/

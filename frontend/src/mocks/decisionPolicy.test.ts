@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import purchase from '../../../examples/purchase-approval.json'
-import { normalizeDefinition, type Condition, type Definition } from '@/features/studio/model/types'
+import { normalizeDefinition, type Condition, type DecisionCondition, type DecisionTerm, type Definition } from '@/features/studio/model/types'
 import { evaluateTable } from './engine'
 import { validateDefinition } from './validate'
 
 const amount = (operator: 'gte' | 'lt', value: number) => ({ fieldRef: '/input/amount', operator, value })
 
-function withRows(hitPolicy: 'UNIQUE' | 'FIRST', ...whens: Condition[]): Definition {
+function withRows(hitPolicy: 'UNIQUE' | 'FIRST', ...whens: Array<Condition | DecisionCondition>): Definition {
   const def = normalizeDefinition(structuredClone(purchase))
   const table = def.decisions[0]!
   table.hitPolicy = hitPolicy
-  table.rows = whens.map(when => ({ when, then: { ...table.default } }))
+  table.rows = whens.map(when => ({ when: when as DecisionCondition, then: { ...table.default } }))
   return def
 }
 
@@ -125,5 +125,43 @@ describe('lists, ranges and the new hit policies (docs/build/S121)', () => {
     expect(evaluateTable(table, { '/input/amount': 10 }).usedDefault).toBe(true)
     table.default = { fee: 'none' }
     expect(codes(def)).toContain('WF_DECISION_COLLECT_OUTPUT')
+  })
+})
+
+describe('formulas in decision rows (docs/build/S146)', () => {
+  const issuesOf = (def: Definition) => validateDefinition(def, { groups: ['managers', 'finance'], connections: [], isTestWorkspace: false })
+  const formula = (expression: string, fieldRef = '/input/amount'): DecisionTerm => ({ fieldRef, expression })
+
+  it('checks formula tests like the compiler: syntax, type, column and single values', () => {
+    const at = (def: Definition, code: string) => issuesOf(def).find(i => i.code === code)
+    const ok = withRows('FIRST', formula('input.amount > 100 and input.costCenter = "IT"'))
+    expect(issuesOf(ok).filter(i => i.severity === 'blocker' && i.path.startsWith('/decisions'))).toEqual([])
+    const invalid = at(withRows('FIRST', formula('input.amount >')), 'WF_EXPRESSION_INVALID')!
+    expect(invalid.path).toBe('/decisions/0/rows/0/when/expression')
+    expect(invalid.message).toMatch(/\(at character \d+\)/)
+    expect(at(withRows('FIRST', formula('input.amount + 1')), 'WF_EXPRESSION_TYPE')).toBeDefined()
+    expect(at(withRows('FIRST', formula('input.costCenter = "IT"')), 'WF_DECISION_EXPRESSION_COLUMN')).toBeDefined()
+    const all = at(withRows('FIRST', { all: [amount('gte', 1), formula('input.costCenter = "IT"', '/input/amount')] }), 'WF_DECISION_EXPRESSION_COLUMN')!
+    expect(all.path).toBe('/decisions/0/rows/0/when/all/1/expression')
+  })
+
+  it('checks formula results against the Otherwise type and keeps the priority result plain', () => {
+    const def = withRows('FIRST', amount('gte', 1))
+    def.decisions[0]!.rows[0]!.then = { route: { expression: 'input.amount' } }
+    expect(issuesOf(def).find(i => i.code === 'WF_EXPRESSION_TYPE')?.path).toBe('/decisions/0/rows/0/then/route/expression')
+    def.decisions[0]!.rows[0]!.then = { route: { expression: 'upper(input.costCenter)' } }
+    expect(issuesOf(def).filter(i => i.severity === 'blocker' && i.path.startsWith('/decisions'))).toEqual([])
+    def.decisions[0]!.hitPolicy = 'PRIORITY'
+    def.decisions[0]!.priority = { output: 'route', order: ['financeReview', 'standard'] }
+    expect(codes(def)).toContain('WF_DECISION_EXPRESSION_UNSUPPORTED')
+  })
+
+  it('warns that UNIQUE rows with formulas cannot be proven exclusive and refuses formulas in tier-1 workflows', () => {
+    const def = withRows('UNIQUE', formula('input.amount > 10'), formula('input.amount > 20'))
+    expect(codes(def)).toContain('WF_DECISION_EXPRESSION_OVERLAP')
+    expect(codes(def)).not.toContain('WF_DECISION_OVERLAP')
+    def.acceptanceProfile = 'tier1'
+    expect(issuesOf(def).filter(i => i.code === 'WF_TIER1_RULE_EXPRESSION').map(i => i.path)).toEqual(['/decisions/0/rows/0/when/expression', '/decisions/0/rows/1/when/expression'])
+    expect(codes(withRows('UNIQUE', amount('gte', 10000), amount('gte', 5000)))).not.toContain('WF_DECISION_EXPRESSION_OVERLAP')
   })
 })

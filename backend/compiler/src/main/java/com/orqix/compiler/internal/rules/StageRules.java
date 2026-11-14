@@ -22,11 +22,11 @@ final class StageRules {
     /** Steps that only route the request: they take no time of their own, so a stage does not need to list them. */
     private static final Set<NodeKind> ROUTING = Set.of(NodeKind.START, NodeKind.END, NodeKind.BRANCH, NodeKind.DECISION,
             NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL,
-            NodeKind.PARALLEL_SPLIT, NodeKind.PARALLEL_JOIN);
+            NodeKind.PARALLEL_SPLIT, NodeKind.PARALLEL_JOIN, NodeKind.CALCULATE);
     /** Steps that never show as the current step of a request (they finish within the same moment). */
     private static final Set<NodeKind> INSTANT = Set.of(NodeKind.START, NodeKind.END, NodeKind.BRANCH, NodeKind.DECISION,
             NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL,
-            NodeKind.PARALLEL_SPLIT, NodeKind.PARALLEL_JOIN, NodeKind.NOTIFICATION);
+            NodeKind.PARALLEL_SPLIT, NodeKind.PARALLEL_JOIN, NodeKind.NOTIFICATION, NodeKind.CALCULATE);
 
     private StageRules() {
     }

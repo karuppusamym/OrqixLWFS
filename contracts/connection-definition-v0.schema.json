@@ -9,11 +9,12 @@
       "const": "0.1"
     },
     "kind": {
-      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph.",
+      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph. mcpServer (CG-M01, docs/build/S135): a registered MCP tool server: its binding is the endpoint and its definition is the tool catalog agents may reference as <key>.<tool> (no operations).",
       "enum": [
         "http",
         "agent",
-        "microsoftGraph"
+        "microsoftGraph",
+        "mcpServer"
       ]
     },
     "key": {
@@ -40,14 +41,16 @@
       "propertyNames": {
         "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
       }
+    },
+    "mcpServer": {
+      "$ref": "#/$defs/mcpServerSpec"
     }
   },
   "required": [
     "schemaVersion",
     "key",
     "version",
-    "name",
-    "operations"
+    "name"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -374,10 +377,10 @@
           "pattern": "^[a-z][a-z0-9-]{0,31}$"
         },
         "tools": {
-          "description": "Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called.",
+          "description": "Allow-list of tools. Only these are offered to the model and only these can be called: tools of the MCP server in the binding, <server>.<tool> of registered tool servers, and Orqix tools with a source.",
           "type": "array",
           "minItems": 1,
-          "maxItems": 8,
+          "maxItems": 16,
           "items": {
             "$ref": "#/$defs/agentTool"
           }
@@ -401,6 +404,77 @@
           "items": {
             "$ref": "#/$defs/agentWriteTool"
           }
+        },
+        "loop": {
+          "description": "CG-M03 durable loop: each model turn runs as its own engine job, long tools (workflow, askPerson, approvals, elicitation) become waits, and the state between turns is encrypted and short-lived. Without loop the agent runs synchronously within maxTimeoutSeconds.",
+          "type": "object",
+          "properties": {
+            "maxTurns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            "maxToolCalls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "maxDuration": {
+              "description": "ISO-8601 duration from the first turn, at most P7D.",
+              "type": "string",
+              "pattern": "^P(?:\\d+D)?(?:T(?:\\d+H)?(?:\\d+M)?(?:\\d+S)?)?$"
+            },
+            "budgetUsd": {
+              "description": "Most this agent step may spend in one run, within the workspace budget.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "maxTurns",
+            "maxToolCalls",
+            "maxDuration",
+            "budgetUsd"
+          ],
+          "additionalProperties": false
+        },
+        "resources": {
+          "description": "Read-only resources of registered tool servers (<server key>.<resource name>) given to the model as untrusted reference data.",
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]\\.[a-z][A-Za-z0-9_-]{0,31}$"
+          }
+        },
+        "elicitation": {
+          "description": "MCP elicitation requests become a task for this group (needs loop). Without it every elicitation is declined.",
+          "type": "object",
+          "properties": {
+            "group": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+            }
+          },
+          "required": [
+            "group"
+          ],
+          "additionalProperties": false
+        },
+        "inputDataClasses": {
+          "description": "Data class of request fields (default internal). A tool argument carrying the value of a field whose class the tool may not receive is refused.",
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal"
+            ]
+          }
         }
       },
       "required": [
@@ -414,9 +488,9 @@
       "type": "object",
       "properties": {
         "name": {
-          "description": "Tool name as listed by the MCP server.",
+          "description": "Tool name: a tool of the MCP server in the agent's own binding, <mcpServer connection key>.<tool name> of a registered tool server (CG-M01), or the name of an Orqix tool with a source (CG-M02).",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
         },
         "label": {
           "description": "Business name of the tool or the system behind it, shown in the studio and on the run timeline.",
@@ -428,6 +502,150 @@
           "description": "Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted).",
           "type": "string",
           "maxLength": 500
+        },
+        "source": {
+          "description": "CG-M02: an Orqix tool instead of an MCP tool. operation: a connection operation (inherits its effect class and journal); decision: a pinned shared decision table; workflow: starts a pinned child release and waits for its outcome; askPerson: a task for a group with a typed answer form. workflow and askPerson need agent.loop.",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+                    },
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "connection",
+                    "operation"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "decision": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "decision"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "workflow": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+                    },
+                    "release": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "release"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "workflow"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "askPerson": {
+                  "type": "object",
+                  "properties": {
+                    "group": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+                    },
+                    "answerSchema": {
+                      "$ref": "#/$defs/requestObject"
+                    }
+                  },
+                  "required": [
+                    "group",
+                    "answerSchema"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "askPerson"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "requiresApproval": {
+          "description": "CG-M03: the loop pauses before every call of this tool; a member of the group sees the proposed arguments and only an approval releases the call. Needs agent.loop.",
+          "type": "object",
+          "properties": {
+            "group": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+            }
+          },
+          "required": [
+            "group"
+          ],
+          "additionalProperties": false
+        },
+        "write": {
+          "description": "Marks an operation tool whose effect class is nonIdempotent: offered only under an active S75 approval for the workflow, connection version, operation and tool, never on the approver's own requests.",
+          "type": "boolean"
+        },
+        "dataClasses": {
+          "description": "Data classes this tool may receive (default public and internal; tools of registered servers take theirs from the server definition).",
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal"
+            ]
+          }
         }
       },
       "required": [
@@ -533,6 +751,105 @@
           }
         }
       ]
+    },
+    "mcpServerSpec": {
+      "description": "Tool catalog of an MCP server (CG-M01). Only these tools can be referenced by agents (as <connection key>.<tool name>); each is pinned per workspace by a tool snapshot that records the SHA-256 of its inputSchema, and a tool whose live schema differs from the pin is refused (TOOL_SCHEMA_CHANGED).",
+      "type": "object",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/mcpServerTool"
+          }
+        },
+        "resources": {
+          "description": "Read-only resources agents may read as context (resources/read of a fixed URI, text only, capped).",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/mcpResource"
+          }
+        }
+      },
+      "required": [
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "mcpServerTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool name as listed by the MCP server.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "description": "Administrator-written description offered to the model. The server's own description is never offered (tool poisoning).",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500
+        },
+        "dataClasses": {
+          "description": "Data classes this tool may receive in its arguments (default public and internal). Request values of other classes are refused before the call.",
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal"
+            ]
+          }
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "mcpResource": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_-]{0,31}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 500,
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+        },
+        "maxChars": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 20000
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "uri",
+        "maxChars"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -820,6 +1137,38 @@
               ]
             }
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "mcpServer"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "mcpServer"
+        ],
+        "not": {
+          "required": [
+            "operations"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "operations"
+        ],
+        "not": {
+          "required": [
+            "mcpServer"
+          ]
         }
       }
     }

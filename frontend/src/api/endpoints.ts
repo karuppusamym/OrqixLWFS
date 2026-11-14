@@ -227,6 +227,10 @@ export const validateDraft = (ws: string, workflowId: string, revision: number) 
     }),
   )
 
+/** CG-X01 (S137): the server's own check and evaluation of an expression, for the guided editor's preview. */
+export const evaluateExpression = (ws: string, body: S['ExpressionEvaluateRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/expressions/evaluate', { params: { path: { workspaceId: ws } }, body }))
+
 export const evaluateDecision = (ws: string, workflowId: string, decisionKey: string, body: S['DecisionEvaluateRequest']) =>
   call(
     api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/evaluate', {
@@ -367,6 +371,46 @@ export const getAgentWriteRetention = (ws: string) =>
 export const setAgentWriteRetention = (ws: string, retentionDays: number | null, expectedVersion: number) =>
   call(api.PUT('/workspaces/{workspaceId}/agent-write-retention', { params: { path: { workspaceId: ws } }, body: { retentionDays, expectedVersion } }))
 
+// Agent tools (docs/build/S135, tag AgentTools)
+export const getMcpToolSnapshot = (ws: string, connectionKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const takeMcpToolSnapshot = (ws: string, connectionKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/connections/{connectionKey}/tool-snapshot', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const listAgentKillSwitches = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-kill-switches', { params: { path: { workspaceId: ws } } }))
+
+export const setAgentKillSwitch = (ws: string, scope: 'agent' | 'server', connectionKey: string, body: S['SetAgentKillSwitch']) =>
+  call(api.PUT('/workspaces/{workspaceId}/agent-kill-switches/{scope}/{connectionKey}', { params: { path: { workspaceId: ws, scope, connectionKey } }, body }))
+
+export const getAgentTraceSettings = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-trace-settings', { params: { path: { workspaceId: ws } } }))
+
+export const setAgentTraceSettings = (ws: string, body: S['SetAgentTraceSettings']) =>
+  call(api.PUT('/workspaces/{workspaceId}/agent-trace-settings', { params: { path: { workspaceId: ws } }, body }))
+
+export const getAgentTrace = (ws: string, runId: string, nodeId?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/agent-trace', { params: { path: { workspaceId: ws, runId }, query: nodeId ? { nodeId } : {} } }))
+
+export const getAgentTestSuite = (ws: string, connectionKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const saveAgentTestSuite = (ws: string, connectionKey: string, body: S['SaveAgentTestSuite']) =>
+  call(api.PUT('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests', { params: { path: { workspaceId: ws, connectionKey } }, body }))
+
+export const runAgentTestSuite = (ws: string, connectionKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/connections/{connectionKey}/agent-tests/run', { params: { path: { workspaceId: ws, connectionKey } } }))
+
+export const listAgentRequests = (ws: string, status?: S['AgentHumanRequest']['status']) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-requests', { params: { path: { workspaceId: ws }, query: status ? { status } : {} } }))
+
+export const answerAgentRequest = (ws: string, requestId: string, body: S['AnswerAgentRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/agent-requests/{requestId}/answer', { params: { path: { workspaceId: ws, requestId } }, body }))
+
+export const getAgentDashboard = (ws: string, days?: number) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-dashboard', { params: { path: { workspaceId: ws }, query: days ? { days } : {} } }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))
@@ -384,6 +428,11 @@ export interface RunListQuery {
   lifecycle?: Lifecycle
   outcomeKind?: OutcomeKind
   businessKey?: string
+  overdue?: boolean
+  /** S142: searchable request field conditions key:op:value (need workflowId and run.read-data). */
+  field?: string[]
+  attentionReason?: S['AttentionReason']
+  errorCode?: string
   cursor?: string
   limit?: number
 }
@@ -461,6 +510,58 @@ export const migrateRun = (ws: string, runId: string, body: S['MigrateRunRequest
       body,
     }),
   )
+
+// S143 (CG-O02, CG-O03): migration with a step mapping, migration batches and guarded moves.
+export const planRunMigration = (ws: string, runId: string, body: S['MigrationPlanRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/migration-plan', { params: { path: { workspaceId: ws, runId } }, body }))
+
+export const migrateRunWithMapping = (ws: string, runId: string, body: S['MappedMigrationRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const previewMigrationBatch = (ws: string, body: S['MigrationBatchPreviewRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migration-batches/preview', { params: { path: { workspaceId: ws } }, body }))
+
+export const createMigrationBatch = (ws: string, body: S['CreateMigrationBatchRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/migration-batches', {
+      params: { path: { workspaceId: ws }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const planRunMove = (ws: string, runId: string, body: S['MovePlanRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/move-plan', { params: { path: { workspaceId: ws, runId } }, body }))
+
+export const listRunMoves = (ws: string, runId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/moves', { params: { path: { workspaceId: ws, runId } } }))
+
+export const moveRun = (ws: string, runId: string, body: S['MoveRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/moves', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const decideRunMove = (ws: string, runId: string, moveId: string, decision: 'approve' | 'reject', body: S['DecideMoveRequest'], idempotencyKey: string) =>
+  decision === 'approve'
+    ? call(
+        api.POST('/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/approve', {
+          params: { path: { workspaceId: ws, runId, moveId }, header: { 'Idempotency-Key': idempotencyKey } },
+          body,
+        }),
+      )
+    : call(
+        api.POST('/workspaces/{workspaceId}/runs/{runId}/moves/{moveId}/reject', {
+          params: { path: { workspaceId: ws, runId, moveId }, header: { 'Idempotency-Key': idempotencyKey } },
+          body,
+        }),
+      )
 
 export const retryRun = (ws: string, runId: string, body: S['RetryRunRequest'], idempotencyKey: string) =>
   call(
@@ -585,6 +686,25 @@ export const createPermissionGrant = (ws: string, permission: components['schema
   call(api.POST('/workspaces/{workspaceId}/access/grants', { params: { path: { workspaceId: ws } }, body: { permission, principal, ...(workflowId ? { workflowId } : {}) } }))
 export const deletePermissionGrant = (ws: string, grantId: string) =>
   callVoid(api.DELETE('/workspaces/{workspaceId}/access/grants/{grantId}', { params: { path: { workspaceId: ws, grantId } } }))
+// Grants on single resources (CG-I01, docs/build/S151)
+export const listResourceGrants = (ws: string, query: { resourceType?: S['ResourceGrant']['resourceType']; resourceId?: string } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/access/resource-grants', { params: { path: { workspaceId: ws }, query } }))
+export const createResourceGrant = (ws: string, body: { resourceType: S['ResourceGrant']['resourceType']; resourceId: string; permission: S['ResourcePermission']; principal: PrincipalRef }) =>
+  call(api.POST('/workspaces/{workspaceId}/access/resource-grants', { params: { path: { workspaceId: ws } }, body }))
+export const deleteResourceGrant = (ws: string, grantId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/access/resource-grants/{grantId}', { params: { path: { workspaceId: ws, grantId } } }))
+
+// Masked request answers (CG-I05) and the tamper-evident audit log (CG-I06), docs/build/S151
+export const revealRunData = (ws: string, runId: string, fields?: string[]) =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/reveal', { params: { path: { workspaceId: ws, runId } }, body: fields ? { fields } : {} }))
+export const listAuditChainChecks = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/chain-verifications', { params: { path: { workspaceId: ws } } }))
+export const verifyAuditChain = (ws: string) =>
+  call(api.POST('/workspaces/{workspaceId}/audit/chain-verifications', { params: { path: { workspaceId: ws } } }))
+export const exportAuditLog = (ws: string, query: { afterSeq?: number; limit?: number } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/export', { params: { path: { workspaceId: ws }, query } }))
+export const listAuditSigningKeys = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/audit/signing-keys', { params: { path: { workspaceId: ws } } }))
 export const putGroup = (ws: string, groupKey: string, body: { name: string; members: PrincipalRef[]; expectedRevision?: number }) =>
   call(api.PUT('/workspaces/{workspaceId}/groups/{groupKey}', { params: { path: { workspaceId: ws, groupKey } }, body }))
 
@@ -718,6 +838,16 @@ export const getWorkspaceFeatures = (ws: string) =>
 export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))
 
+// CG-M04 MCP server (docs/build/S136): per-workspace switch, connection details and recent tool calls.
+export const getMcpServer = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } } }))
+
+export const setMcpServer = (ws: string, enabled: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/mcp-server', { params: { path: { workspaceId: ws } }, body: { enabled } }))
+
+export const listMcpCalls = (ws: string, limit = 50) =>
+  call(api.GET('/workspaces/{workspaceId}/mcp-server/calls', { params: { path: { workspaceId: ws }, query: { limit } } }))
+
 // Control evidence packs (docs/27 section 3): per release and per run, as PDF, DOCX or JSON.
 export type EvidencePackFormat = 'pdf' | 'docx' | 'json'
 
@@ -746,3 +876,158 @@ export async function exportRunEvidencePack(ws: string, runId: string, format: E
   )
   return evidenceFile(data, response, `run-evidence-pack.${format}`)
 }
+
+// S141 (CG-T01): actionable task settings, chat identities, deliveries and signed action links.
+export const getTaskActionSettings = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/settings', { params: { path: { workspaceId: ws } } }))
+
+export const updateTaskActionSettings = (ws: string, body: S['UpdateTaskActionSettings']) =>
+  call(api.PUT('/workspaces/{workspaceId}/task-actions/settings', { params: { path: { workspaceId: ws } }, body }))
+
+export const listChatIdentities = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/identities', { params: { path: { workspaceId: ws } } }))
+
+export const linkChatIdentity = (ws: string, body: S['LinkChatIdentity']) =>
+  call(api.PUT('/workspaces/{workspaceId}/task-actions/identities', { params: { path: { workspaceId: ws } }, body }))
+
+export const unlinkChatIdentity = (ws: string, platform: 'teams' | 'slack', platformUserId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/task-actions/identities/{platform}/{platformUserId}', {
+    params: { path: { workspaceId: ws, platform, platformUserId } },
+  }))
+
+export const listTaskActionMessages = (ws: string, limit = 50) =>
+  call(api.GET('/workspaces/{workspaceId}/task-actions/messages', { params: { path: { workspaceId: ws }, query: { limit } } }))
+
+export const getTaskActionLink = (token: string) =>
+  call(api.GET('/task-action-links/{token}', { params: { path: { token } } }))
+
+export const useTaskActionLink = (token: string, body: S['UseTaskActionLink']) =>
+  call(api.POST('/task-action-links/{token}', { params: { path: { token } }, body }))
+
+// S141 (CG-S03): workspace step templates.
+export const listStepTemplates = (ws: string, q?: string, includeArchived = false) =>
+  call(api.GET('/workspaces/{workspaceId}/step-templates', { params: { path: { workspaceId: ws }, query: { q: q || undefined, includeArchived } } }))
+
+export const createStepTemplate = (ws: string, body: S['CreateStepTemplate']) =>
+  call(api.POST('/workspaces/{workspaceId}/step-templates', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateStepTemplate = (ws: string, key: string, body: S['UpdateStepTemplate']) =>
+  call(api.PUT('/workspaces/{workspaceId}/step-templates/{key}', { params: { path: { workspaceId: ws, key } }, body }))
+
+export const addStepTemplateVersion = (ws: string, key: string, body: S['AddStepTemplateVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/step-templates/{key}/versions', { params: { path: { workspaceId: ws, key } }, body }))
+
+// S144 (CG-O06): alert rules, destinations and incidents.
+export const listAlertDestinations = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-destinations', { params: { path: { workspaceId: ws } } }))
+
+export const createAlertDestination = (ws: string, body: S['AlertDestinationCreateRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-destinations', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateAlertDestination = (ws: string, destinationId: string, body: S['AlertDestinationUpdateRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/alert-destinations/{destinationId}', { params: { path: { workspaceId: ws, destinationId } }, body }))
+
+export const testAlertDestination = (ws: string, destinationId: string) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-destinations/{destinationId}/test', { params: { path: { workspaceId: ws, destinationId } } }))
+
+export const listAlertRules = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-rules', { params: { path: { workspaceId: ws } } }))
+
+export const createAlertRule = (ws: string, body: S['AlertRuleRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-rules', { params: { path: { workspaceId: ws } }, body }))
+
+export const updateAlertRule = (ws: string, ruleId: string, body: S['AlertRuleRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/alert-rules/{ruleId}', { params: { path: { workspaceId: ws, ruleId } }, body }))
+
+export const deleteAlertRule = (ws: string, ruleId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/alert-rules/{ruleId}', { params: { path: { workspaceId: ws, ruleId } } }))
+
+export const silenceAlertRule = (ws: string, ruleId: string, minutes: number) =>
+  call(api.POST('/workspaces/{workspaceId}/alert-rules/{ruleId}/silence', { params: { path: { workspaceId: ws, ruleId } }, body: { minutes } }))
+
+export const listAlertIncidents = (ws: string, query: { ruleId?: string; status?: 'firing' | 'resolved' } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/alert-incidents', { params: { path: { workspaceId: ws }, query } }))
+
+// S144 (CG-O07, CG-P04): run retention, legal holds, sweeps and archives.
+export const listRetentionPolicies = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/retention-policies', { params: { path: { workspaceId: ws } } }))
+
+export const setRetentionPolicy = (ws: string, workflowId: string, body: S['RetentionPolicyRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/retention-policy', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const removeRetentionPolicy = (ws: string, workflowId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/workflows/{workflowId}/retention-policy', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const listLegalHolds = (ws: string, active?: boolean) =>
+  call(api.GET('/workspaces/{workspaceId}/legal-holds', { params: { path: { workspaceId: ws }, query: { active } } }))
+
+export const placeLegalHold = (ws: string, body: S['LegalHoldRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/legal-holds', { params: { path: { workspaceId: ws } }, body }))
+
+export const releaseLegalHold = (ws: string, holdId: string, reason: string) =>
+  call(api.POST('/workspaces/{workspaceId}/legal-holds/{holdId}/release', { params: { path: { workspaceId: ws, holdId } }, body: { reason } }))
+
+export const listRetentionSweeps = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/retention-sweeps', { params: { path: { workspaceId: ws } } }))
+
+export const startRetentionSweep = (ws: string, body: S['RetentionSweepRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/retention-sweeps', { params: { path: { workspaceId: ws } }, body }))
+
+export const listRunArchives = (ws: string, reference?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/run-archives', { params: { path: { workspaceId: ws }, query: { reference: reference || undefined } } }))
+
+/** The archive download is a plain link: the browser streams the ZIP with the session cookie. */
+export const runArchiveUrl = (ws: string, archiveId: string) => `/api/v1/workspaces/${ws}/run-archives/${archiveId}/content`
+
+// Git sync (CG-S01) and release bundles (CG-S02), docs/build/S147
+export const getGitConnection = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws } } }))
+
+export const saveGitConnection = (ws: string, body: S['SaveGitConnection']) =>
+  call(api.PUT('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws } }, body }))
+
+export const deleteGitConnection = (ws: string, expectedVersion: number) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/git-connection', { params: { path: { workspaceId: ws }, query: { expectedVersion } } }))
+
+export const checkGitConnection = (ws: string) =>
+  call(api.POST('/workspaces/{workspaceId}/git-connection/check', { params: { path: { workspaceId: ws } } }))
+
+export const pushWorkflowToGit = (ws: string, workflowId: string, body: S['GitPushRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/push', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const previewGitImport = (ws: string, workflowId: string, branch: string, commit?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/git/import-preview', {
+    params: { path: { workspaceId: ws, workflowId }, query: commit ? { branch, commit } : { branch } },
+  }))
+
+export const importWorkflowFromGit = (ws: string, workflowId: string, body: S['GitImportRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/import', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const publishFromGit = (ws: string, workflowId: string, body: S['GitPublishRequest'], idempotencyKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/git/publish', {
+    params: { path: { workspaceId: ws, workflowId }, header: { 'Idempotency-Key': idempotencyKey } },
+    body,
+  }))
+
+export const listGitSyncEvents = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/git/events', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const listReleaseBundles = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/bundles', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const publishReleaseBundle = (ws: string, workflowId: string, body: S['PublishRequest'], idempotencyKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/bundles', {
+    params: { path: { workspaceId: ws, workflowId }, header: { 'Idempotency-Key': idempotencyKey } },
+    body,
+  }))
+
+export const getReleaseBundle = (ws: string, workflowId: string, releaseId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/bundle', {
+    params: { path: { workspaceId: ws, workflowId, releaseId } },
+  }))
+
+export const checkBundlePromotion = (ws: string, bundleId: string, body: S['BundlePromotionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/bundles/{bundleId}/promotion-check', { params: { path: { workspaceId: ws, bundleId } }, body }))
+
+export const promoteReleaseBundle = (ws: string, bundleId: string, body: S['BundlePromotionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/bundles/{bundleId}/promote', { params: { path: { workspaceId: ws, bundleId } }, body }))

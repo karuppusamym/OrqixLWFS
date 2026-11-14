@@ -106,6 +106,16 @@ public class ReleaseService {
     @Transactional
     public Published publish(Caller caller, UUID workspaceId, UUID workflowId, String idempotencyKey,
             CatalogDtos.PublishRequest request) {
+        return publish(caller, workspaceId, workflowId, idempotencyKey, request, Map.of());
+    }
+
+    /**
+     * Publish with extra manifest members written in the same transaction: {@code gitSource} for a publish from a
+     * reviewed Git commit (S147). Extras never replace a member publish itself writes.
+     */
+    @Transactional
+    public Published publish(Caller caller, UUID workspaceId, UUID workflowId, String idempotencyKey,
+            CatalogDtos.PublishRequest request, Map<String, JsonNode> manifestExtras) {
         String key = IdempotencyService.requireKey(idempotencyKey);
         WorkflowService.Visible visible = workflows.visible(caller, workspaceId, workflowId, "publishDraft");
         WorkspaceAccess access = visible.access();
@@ -186,6 +196,11 @@ public class ReleaseService {
         if (!manifest.path("assets").isArray()) {
             manifest.putArray("assets");
         }
+        manifestExtras.forEach((name, value) -> {
+            if (!manifest.has(name)) {
+                manifest.set(name, value);
+            }
+        });
         store.insertRelease(new CatalogStore.ReleaseRow(releaseId, workspaceId, workflowId, number, draft.revision(),
                 draft.definitionJson(), "0.1", compiled.sourceHash(), compiled.semanticHash(), compiled.compilerVersion(),
                 json.write(manifest), compiled.sourceMapJson(),
@@ -247,6 +262,20 @@ public class ReleaseService {
         ArrayNode closure = manifest.putArray("callClosure");
         compiled.callClosure().forEach(closure::add);
         manifest.put("callHeight", compiled.callHeight());
+        // AI skill versions pinned at publish time (S134) with the evaluation run that passed the publish gate.
+        if (!compiled.aiSkills().isEmpty()) {
+            ArrayNode skills = manifest.putArray("aiSkills");
+            compiled.aiSkills().forEach(a -> {
+                ObjectNode ref = skills.addObject().put("nodeId", a.nodeId()).put("skillKey", a.skillKey())
+                        .put("version", a.version()).put("contentHash", a.contentHash())
+                        .put("modelProfile", a.modelProfile()).put("autonomy", a.autonomy());
+                if (a.evaluationRunId() == null) {
+                    ref.putNull("evaluationRunId");
+                } else {
+                    ref.put("evaluationRunId", a.evaluationRunId());
+                }
+            });
+        }
         return manifest;
     }
 

@@ -360,7 +360,7 @@ public class KafkaConsumerRunner implements DisposableBean {
             p.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
             p.put("security.protocol", cluster.securityProtocol());
             if (cluster.securityProtocol().startsWith("SASL")) {
-                String secret = trigger.secretRef() == null ? null : secrets.read(trigger.secretRef()).orElse(null);
+                String secret = trigger.secretRef() == null ? null : secrets.read(trigger.secretRef(), trigger.workspaceId()).orElse(null);
                 if (secret == null) {
                     return null;
                 }

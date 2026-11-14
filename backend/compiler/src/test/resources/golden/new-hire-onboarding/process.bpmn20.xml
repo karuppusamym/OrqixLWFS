@@ -2,7 +2,7 @@
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
   <process id="new-hire-onboarding" name="New hire onboarding" isExecutable="true">
     <extensionElements>
-      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="900d26d991fe8b3330895c82df52bf316b2f44d3472621b672ffecc2f739e189"/>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.3.0" semanticHash="900d26d991fe8b3330895c82df52bf316b2f44d3472621b672ffecc2f739e189"/>
     </extensionElements>
     <startEvent id="start" name="New colleague submitted"/>
     <parallelGateway id="setup" name="Prepare in parallel"/>

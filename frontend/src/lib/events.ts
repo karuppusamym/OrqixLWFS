@@ -25,6 +25,15 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/** S143: "skipped the step X" / "sent the request back to Y" / "moved the request to Y". */
+function moveText(data: Record<string, unknown>, done = false): string {
+  const from = str(data.fromLabel) || str(data.from)
+  const to = str(data.toLabel) || str(data.to)
+  if (data.kind === 'skip') return `${done ? 'skipped' : 'skip'} the step ${from}`
+  if (data.kind === 'rerun') return `${done ? 'sent' : 'send'} the request back to ${to}`
+  return `${done ? 'moved' : 'move'} the request from ${from} to ${to}`
+}
+
 export function stepLabel(event: RunEvent, ctx: EventContext): string {
   // nodeLabel is the step's name as written in the workflow; the rest are fallbacks for older servers.
   return str(event.nodeLabel) ?? str(event.data.label) ?? (event.nodeId ? (ctx.labels[event.nodeId] ?? humanize(event.nodeId)) : 'this step')
@@ -85,6 +94,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'EXTERNAL_JOB_PUBLISHED':
     case 'EXTERNAL_JOB_CALLBACK_REGISTERED':
     case 'EXTERNAL_JOB_RETRY_SCHEDULED':
+    case 'EFFECT_DEFERRED':
       return 'waiting'
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
@@ -198,6 +208,16 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${label}: the signal ${str(event.data.signal) ?? ''} arrived`.replace('  ', ' ')
     case 'MESSAGE_DISCARDED':
       return `${label}: a message ${str(event.data.message)} that arrived earlier did not fit and was ignored`
+    case 'GUEST_LINK_SENT':
+      return `${label}: a one-time response link was emailed${str(event.data.domain) ? ` to an address at ${str(event.data.domain)}` : ''}`
+    case 'GUEST_LINK_REFUSED':
+      return event.data.reason === 'domainNotApproved'
+        ? `${label}: the response link was not emailed because ${str(event.data.domain) ?? 'the address domain'} is not an approved guest domain`
+        : `${label}: the response link was not emailed (no usable address)`
+    case 'GUEST_RESPONSE_SUBMITTED': {
+      const files = typeof event.data.fileCount === 'number' ? event.data.fileCount : 0
+      return `${label}: the guest sent their response${files ? ` with ${files} file${files === 1 ? '' : 's'}` : ''}`
+    }
     case 'CHILD_STARTED': {
       const name = str(event.data.workflowName)
       const reference = str(event.data.childReference)
@@ -214,6 +234,24 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${actorName(event, ctx)} picked up ${label}`
     case 'TASK_DISPATCHED':
       return `${str(event.data.assignee) ?? 'Someone'} was assigned ${label}${str(event.data.rule) ? `: ${str(event.data.rule)}` : ''}`
+    case 'TASK_ESCALATED': {
+      // CG-T04 (S141): one level of the step's escalation policy; the due date is not changed.
+      const level = Number(event.data.level ?? 0)
+      const hours = Number(event.data.afterHours ?? 0)
+      const waited = `${hours} ${event.data.workingTime ? 'working ' : ''}hour${hours === 1 ? '' : 's'}`
+      const group = groupName(str(event.data.group), ctx)
+      const count = Number(event.data.recipients ?? 0)
+      const people = `${count} ${count === 1 ? 'person' : 'people'}`
+      switch (str(event.data.outcome)) {
+        case 'notified': return `Escalation level ${level}: after ${waited}, ${people} in ${group} were told about ${label}`
+        case 'reassigned': return `Escalation level ${level}: after ${waited}, ${label} moved to ${group}`
+        case 'alerted': return `Escalation level ${level}: after ${waited}, operators were alerted about ${label} (${people})`
+        case 'noEligiblePerson': return `Escalation level ${level}: ${label} stayed in its queue because nobody in ${group} may decide it`
+        case 'noRecipients': return `Escalation level ${level}: nobody in ${group} could be told about ${label}`
+        case 'noOperators': return `Escalation level ${level}: no operator could be alerted about ${label}`
+        default: return `Escalation level ${level} for ${label} did not act (${str(event.data.outcome) ?? 'unknown'})`
+      }
+    }
     case 'TASK_PROPOSED_UNAVAILABLE': {
       // S104: the person named on the request item cannot decide it; the email is never in the event.
       const item = str(event.data.itemLabel)
@@ -260,6 +298,12 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const next = retryTime(event.data.nextRetryAt, now)
       const attemptText = attempt !== undefined ? ` Attempt ${attempt}${max !== undefined ? ` of ${max}` : ''}.` : ''
       return `${failureText(classifyFailure(event.data), label, event.data)}${attemptText}${next ? ` Next retry at ${next}.` : ''}`
+    }
+    case 'EFFECT_DEFERRED': {
+      // CG-W04 (S131): the call waited for its connection; no attempt was used.
+      const next = retryTime(event.data.until, now)
+      const why = str(event.data.reason) === 'RATE_LIMITED' ? 'the connection request limit was reached' : 'calls to the system are paused after repeated failures'
+      return `${label} is waiting because ${why}. No attempt was used${next ? `; it tries again at ${next}` : ''}.`
     }
     case 'EFFECT_UNKNOWN':
     case 'RUN_NEEDS_ATTENTION':
@@ -313,6 +357,20 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} moved the request from version ${String(event.data.fromReleaseNumber ?? '?')} to version ${String(event.data.toReleaseNumber ?? '?')}${reason ? `: ${reason}` : ''}`
     }
+    case 'RUN_MOVE_REQUESTED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} asked to ${moveText(event.data)}; a second operator must approve${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_MOVED': {
+      const reason = str(event.data.reason)
+      const approved = event.data.approvedBy ? ' (approved by a second operator)' : ''
+      const reused = Array.isArray(event.data.reusedResults) && event.data.reusedResults.length > 0 ? '. Recorded call results were reused; nothing was sent again' : ''
+      return `${actorName(event, ctx)} ${moveText(event.data, true)}${approved}${reused}${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_MOVE_REJECTED':
+      return `${actorName(event, ctx)} ${event.data.state === 'withdrawn' ? 'withdrew' : 'rejected'} a requested move${str(event.data.note) ? `: ${str(event.data.note)}` : ''}`
+    case 'RUN_MOVE_LAPSED':
+      return `A requested move was not run: ${str(event.data.why) || 'the request changed'}`
     case 'RUN_PROJECTION_REPAIRED': {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} rebuilt the open approval steps from the workflow engine${reason ? `: ${reason}` : ''}`

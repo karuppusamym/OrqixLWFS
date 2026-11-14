@@ -71,13 +71,29 @@ public class AuditWriter {
             Map.entry("auth.denied", Set.of("permission", "operationId")),
             Map.entry("admin.organization.created", Set.of("key", "isTest")),
             Map.entry("admin.workspace.created", Set.of("key", "isTest")),
+            // CG-P05 (S150): admission control. Limits and counts only, never request data.
+            Map.entry("admission.limit-exceeded", Set.of("kind", "limitPerMinute")),
+            Map.entry("platform.admission-updated", Set.of("startsPerMinute", "messagesPerMinute",
+                    "previousStartsPerMinute", "previousMessagesPerMinute", "cleared")),
             Map.entry("access.role-binding.created", Set.of("role", "principalType", "principalValue")),
             Map.entry("access.role-binding.deleted", Set.of("role", "principalType", "principalValue")),
             Map.entry("access.grant.created", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.grant.deleted", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
+            // CG-I01 / CG-I05 / CG-I06 (S151): ids, keys and counts only; never request values.
+            Map.entry("access.resource-grant.created", Set.of("resourceType", "resourceId", "permission",
+                    "principalType", "principalValue")),
+            Map.entry("access.resource-grant.deleted", Set.of("resourceType", "resourceId", "permission",
+                    "principalType", "principalValue")),
+            Map.entry("data.revealed", Set.of("runId", "fields", "classifications")),
+            Map.entry("audit.chain-verified", Set.of("chainKey", "checked", "intact", "brokenSeq")),
+            Map.entry("audit.exported", Set.of("from", "to", "eventCount", "keyId", "headHash")),
             // S127: workspace feature switches.
             Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
+            // CG-M04 (S136): MCP server switch and tool calls; tool name, step, outcome and ids only, never arguments.
+            Map.entry("mcp.server.updated", Set.of("enabled")),
+            Map.entry("mcp.tool-called", Set.of("tool", "step", "outcome", "errorCode", "confirmationId", "runId", "taskId",
+                    "workflowId", "messageId", "client")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
             // S126: case type drafts; the key and draft version only, never the model or its fields.
@@ -127,6 +143,17 @@ public class AuditWriter {
             Map.entry("release.promotion.received", Set.of("releaseNumber", "sourceWorkspaceId", "targetWorkflowId", "draftRevision", "createdWorkflow", "requestId", "approvedBy")),
             Map.entry("run.started", Set.of("workflowKey", "releaseNumber")),
             Map.entry("task.claimed", Set.of("taskId", "nodeId")),
+            // S141: escalation levels (CG-T04), actionable task channels (CG-T01) and step templates (CG-S03).
+            Map.entry("task.escalated", Set.of("taskId", "nodeId", "level", "action", "groupKey", "outcome", "recipients")),
+            Map.entry("task.action-settings-updated", Set.of("enabled", "linkHours", "channels", "version")),
+            Map.entry("task.chat-identity-linked", Set.of("platform", "subjectId")),
+            Map.entry("task.chat-identity-unlinked", Set.of("platform", "subjectId")),
+            Map.entry("task.action-sent", Set.of("taskId", "channel", "reason", "linkId")),
+            Map.entry("task.action-used", Set.of("taskId", "channel", "action", "outcome", "linkId", "confirmationId",
+                    "errorCode")),
+            Map.entry("workflow.step-template-created", Set.of("key", "version", "stepType", "shared", "sha256")),
+            Map.entry("workflow.step-template-versioned", Set.of("key", "version", "sha256")),
+            Map.entry("workflow.step-template-updated", Set.of("key", "shared", "status")),
             Map.entry("task.released", Set.of("taskId", "nodeId")),
             Map.entry("task.reassigned", Set.of("taskId", "toSubjectId", "fromSubjectId")),
             Map.entry("task.delegated", Set.of("taskId", "toSubjectId", "fromSubjectId")),
@@ -138,15 +165,31 @@ public class AuditWriter {
             Map.entry("externaljob.callback-registered", Set.of("nodeId", "attempt")),
             Map.entry("externaljob.failed", Set.of("topic", "nodeId", "attempt")),
             Map.entry("run.suspended", Set.of()),
+            // CG-O01 (S142): bulk operations by filter; every item also writes the single-request audit record.
+            Map.entry("run.bulk-previewed", Set.of("action", "matchedCount", "cap", "exceedsCap")),
+            Map.entry("run.bulk-started", Set.of("action", "matchedCount", "ratePerMinute")),
+            Map.entry("run.bulk-paused", Set.of()),
+            Map.entry("run.bulk-resumed", Set.of()),
+            Map.entry("run.bulk-cancelled", Set.of("cancelledItems")),
+            Map.entry("run.bulk-completed", Set.of("action", "succeeded", "failed", "skipped")),
+            Map.entry("run.bulk-stopped", Set.of("reasonCode", "cancelledItems")),
             Map.entry("run.signal-sent", Set.of("signal", "delivered")),
             Map.entry("run.resumed", Set.of()),
             Map.entry("run.projection-repaired", Set.of("restored", "removed")),
-            Map.entry("run.migrated", Set.of("fromRelease", "toRelease")),
+            Map.entry("run.migrated", Set.of("fromRelease", "toRelease", "mapped")),
+            // S143 (CG-O02, CG-O03): batch counts and the kind of move only; reasons and step ids stay on the timeline.
+            Map.entry("run.migration-batch.started", Set.of("items", "fromRelease", "toRelease")),
+            Map.entry("run.migration-batch.completed", Set.of("migrated", "refused", "failed")),
+            Map.entry("run.move-requested", Set.of("kind")),
+            Map.entry("run.move-rejected", Set.of("kind", "state")),
+            Map.entry("run.moved", Set.of("kind", "fourEyes", "rerun", "skipped")),
             Map.entry("message.received", Set.of("name", "matched", "buffered")),
             Map.entry("run.retry-requested", Set.of("effectId")),
             Map.entry("effect.reconciled", Set.of("effectId", "resolution", "remoteReference")),
             Map.entry("connection.version.created", Set.of("key", "version", "definitionHash")),
             Map.entry("connection.binding.updated", Set.of("key", "host", "authType", "secretRef", "enabled", "revision")),
+            // CG-W04 (S131): a binding's request limit.
+            Map.entry("connection.rate-limit.updated", Set.of("key", "maxRequestsPerMinute", "revision")),
             Map.entry("connection.oauth.started", Set.of("key")),
             Map.entry("connection.oauth.connected", Set.of("key")),
             Map.entry("connection.oauth.disconnected", Set.of("key")),
@@ -155,6 +198,9 @@ public class AuditWriter {
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome", "workflowId")),
             Map.entry("ai.workflow.explained", Set.of("profile", "model", "promptVersion", "revision", "releaseNumber",
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
+            // S146 part C (CG-A07): counts and codes only, never facts, prompts or the explanation.
+            Map.entry("ai.run.explained", Set.of("source", "profile", "model", "promptVersion", "cached", "factCount",
+                    "suggestedCount", "droppedCount", "fallbackReason")),
             Map.entry("ai.form.suggested", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "outcome", "changesSuggested", "changesRejected")),
             // Conversational authoring (STU02, docs/build/S95): counts only, never the instruction, turns or draft.
@@ -218,20 +264,81 @@ public class AuditWriter {
             Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
             // S98/S99 (EX10, IN05): ids, counts and codes only - never a token, its hash, a key or a payload value.
             Map.entry("callback.token-issued", Set.of("waitId", "runId", "nodeId", "validForSeconds")),
+            // S129: operator actions on checks; ids and the new deadline only, never shown values or the reason text.
+            Map.entry("poll.checked-now", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.deadline-extended", Set.of("waitId", "nodeId", "kind", "deadline")),
+            Map.entry("poll.stopped", Set.of("waitId", "nodeId", "kind")),
+            Map.entry("poll.waits-purged", Set.of("count", "retentionSeconds")),
+            // S139: shared working calendars and scheduled starts (never calendar content or schedule input).
+            Map.entry("calendar.created", Set.of("key", "version")),
+            Map.entry("calendar.versioned", Set.of("key", "version")),
+            Map.entry("calendar.archived", Set.of("key")),
+            Map.entry("calendar.restored", Set.of("key")),
+            Map.entry("schedule.created", Set.of("workflowId", "kind", "enabled")),
+            Map.entry("schedule.updated", Set.of("workflowId", "kind", "enabled")),
+            Map.entry("schedule.paused", Set.of("workflowId", "kind", "enabled")),
+            Map.entry("schedule.resumed", Set.of("workflowId", "kind", "enabled")),
+            Map.entry("schedule.deleted", Set.of("workflowId", "kind", "enabled")),
+            Map.entry("schedule.start-failed", Set.of("workflowId", "fireAt")),
             Map.entry("callback.token-revoked", Set.of("waitId", "runId", "replaced")),
             Map.entry("callback.token-expired", Set.of("waitId", "runId")),
             Map.entry("callback.resumed", Set.of("waitId", "runId", "fieldCount", "channel")),
             Map.entry("callback.waits-purged", Set.of("count", "retentionSeconds")),
+            // S140 (CG-F05): guest response links. Ids, counts, domains and reasons only; never tokens or addresses.
+            Map.entry("guest.link-issued", Set.of("linkId", "runId", "nodeId", "validForSeconds", "channel")),
+            Map.entry("guest.link-revoked", Set.of("linkId", "runId", "replaced")),
+            Map.entry("guest.link-send-requested", Set.of("linkId", "runId")),
+            Map.entry("guest.link-sent", Set.of("linkId", "runId", "domain")),
+            Map.entry("guest.link-refused", Set.of("linkId", "runId", "reason")),
+            Map.entry("guest.link-viewed", Set.of("linkId", "runId")),
+            Map.entry("guest.link-expired", Set.of("linkId", "runId")),
+            Map.entry("guest.file-added", Set.of("linkId", "runId", "sizeBytes", "contentType", "scanStatus")),
+            Map.entry("guest.submitted", Set.of("linkId", "runId", "fieldCount", "fileCount")),
+            Map.entry("guest.links-purged", Set.of("count", "retentionSeconds")),
+            Map.entry("guest.domains.updated", Set.of("count")),
             Map.entry("webhook.subscription-created", Set.of("events", "enabled")),
             Map.entry("webhook.subscription-updated", Set.of("events", "enabled", "version")),
             Map.entry("webhook.subscription-deleted", Set.of("deliveries")),
             Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
             Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
+            // S145: analytics read model (which targets were set, how many runs were queued; never figures or data)
+            Map.entry("analytics.kpi-targets.updated", Set.of("workflowId", "cleared", "targets")),
+            Map.entry("analytics.backfill.requested", Set.of("enqueued", "since")),
+            // S133: connector packages and package triggers (ids, versions, hashes and counts; never content or secrets)
+            Map.entry("connector.package-imported", Set.of("packageId", "version", "sha256", "signatureStatus", "unsignedOverride", "keyId")),
+            Map.entry("connector.package-decided", Set.of("packageId", "version", "sha256", "decision")),
+            Map.entry("connector.package-installed", Set.of("packageId", "version", "previousVersion", "connections")),
+            Map.entry("connector.package-retired", Set.of("packageId", "version", "workspacesAffected")),
+            // S148 (CG-Q04): a contract test of a package archive (counts and hashes only)
+            Map.entry("connector.package-tested", Set.of("packageId", "version", "sha256", "fixtures", "passed")),
+            Map.entry("connector.trigger-configured", Set.of("packageId", "triggerKey", "kind", "action", "enabled", "version")),
+            Map.entry("connector.trigger-record-dead", Set.of("triggerId", "error")),
             Map.entry("kafka.trigger-created", Set.of("key", "action", "cluster")),
             Map.entry("kafka.trigger-updated", Set.of("key", "version", "enabled")),
             Map.entry("kafka.trigger-deleted", Set.of("key", "records", "deadLetters")),
             Map.entry("kafka.record-dead", Set.of("triggerId", "partition", "offset", "error")),
             Map.entry("kafka.test-message", Set.of("triggerId", "outcome")),
+            // S134: AI skills, evaluations, promotions, drift, policy and decision outcomes. Keys, versions and
+            // counts only; never instructions, case data, reasons or model output.
+            Map.entry("ai.skill.version.created", Set.of("skillKey", "version", "mode")),
+            Map.entry("ai.skill.version.updated", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.submitted", Set.of("skillKey", "version")),
+            Map.entry("ai.skill.version.approved", Set.of("skillKey", "version", "contentHash")),
+            Map.entry("ai.skill.version.retired", Set.of("skillKey", "version")),
+            Map.entry("ai.eval-suite.saved", Set.of("suiteKey", "skillKey", "caseCount", "revision")),
+            Map.entry("ai.evaluation.started", Set.of("skillKey", "version", "suiteKey", "profile")),
+            Map.entry("ai.evaluation.finished", Set.of("skillKey", "version", "status", "caseCount")),
+            Map.entry("ai.promotion.requested", Set.of("skillKey", "version", "toAutonomy")),
+            Map.entry("ai.promotion.decided", Set.of("skillKey", "version", "toAutonomy", "decision")),
+            Map.entry("ai.skill.drift-fallback", Set.of("skillKey", "version", "agreement")),
+            Map.entry("ai.skill.drift-cleared", Set.of("skillKey", "version")),
+            Map.entry("ai.policy.updated", Set.of("regulated", "residency", "inputRetention", "version")),
+            Map.entry("ai.decision.outcome-recorded", Set.of("runId", "outcome")),
+            Map.entry("ai.eval-candidate.reviewed", Set.of("skillKey", "decision")),
+            // CG-A06 (S146 part B): provider ids and counts only; never values, file names or recognized text.
+            Map.entry("ai.ocr-settings.updated", Set.of("provider", "version")),
+            Map.entry("ai.verification.submitted", Set.of("runId", "verificationId", "outcome", "corrected",
+                    "confirmed")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.
@@ -244,7 +351,56 @@ public class AuditWriter {
             Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")),
             // IN04 hardening (S85): retention of agent write records, as for files (DOC08).
             Map.entry("agent.write.retention.updated", Set.of("retentionDays", "version")),
-            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")));
+            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")),
+            // S135 (doc 29 §8): ids, names, hashes and counts only; never schemas, arguments, answers or model text.
+            Map.entry("mcp.tool-snapshot.taken", Set.of("connectionKey", "definitionVersion", "pinned", "missing")),
+            Map.entry("mcp.tool-schema-changed", Set.of("connectionKey", "toolName", "kind", "pinnedSha256",
+                    "observedSha256")),
+            Map.entry("agent.kill-switch.changed", Set.of("scope", "connectionKey", "active")),
+            Map.entry("agent.trace.settings-changed", Set.of("enabled", "retentionDays", "redactFields",
+                    "redactPatterns")),
+            Map.entry("agent.request.answered", Set.of("requestId", "runId", "kind", "toolName", "outcome")),
+            Map.entry("agent.test-suite.saved", Set.of("connectionKey", "cases")),
+            Map.entry("agent.test-suite.ran", Set.of("connectionKey", "connectionVersion", "passed", "failed")),
+            // CG-O06/CG-O07/CG-P04 (S144): kinds, counts, ids and checksums only; never recipients, secrets,
+            // hold reasons or request values.
+            Map.entry("alert.destination-created", Set.of("kind", "enabled")),
+            Map.entry("alert.destination-updated", Set.of("kind", "enabled", "version")),
+            Map.entry("alert.destination-tested", Set.of("kind", "status", "errorCode")),
+            Map.entry("alert.rule-created", Set.of("signal", "threshold", "windowMinutes", "severity", "destinations",
+                    "enabled", "version")),
+            Map.entry("alert.rule-updated", Set.of("signal", "threshold", "windowMinutes", "severity", "destinations",
+                    "enabled", "version")),
+            Map.entry("alert.rule-deleted", Set.of("signal")),
+            // S147 Git sync (CG-S01) and release bundles (CG-S02): ids, hashes and counts only.
+            Map.entry("git.connection.saved", Set.of("provider", "repository", "baseBranch", "basePath", "enabled", "version")),
+            Map.entry("git.connection.deleted", Set.of("provider", "repository")),
+            Map.entry("git.connection.checked", Set.of("provider", "reachable", "baseBranchExists")),
+            Map.entry("git.pushed", Set.of("draftRevision", "branch", "commit", "contentHash", "pullRequest", "changedFiles",
+                    "unchanged")),
+            Map.entry("git.pulled", Set.of("branch", "commit", "contentHash", "draftRevision", "unchanged", "testsChanged",
+                    "changes")),
+            Map.entry("git.published", Set.of("releaseNumber", "draftRevision", "commit", "contentHash", "pullRequest",
+                    "reviewState", "approvals", "bundle")),
+            Map.entry("release.bundle.published", Set.of("releaseNumber", "bundleHash", "components", "sourceBundleHash")),
+            Map.entry("release.bundle.promoted", Set.of("bundleHash", "targetWorkspaceId", "targetWorkflowId",
+                    "draftRevision", "createdWorkflow", "components")),
+            Map.entry("release.bundle.received", Set.of("bundleHash", "sourceWorkspaceId", "targetWorkflowId",
+                    "draftRevision", "createdWorkflow", "components")),
+            Map.entry("alert.rule-silenced", Set.of("minutes")),
+            Map.entry("alert.fired", Set.of("ruleId", "signal", "value", "threshold", "notifications", "suppressed")),
+            Map.entry("alert.resolved", Set.of("ruleId", "signal", "value", "notifications")),
+            Map.entry("retention.policy-set", Set.of("workflowId", "keepDays", "includeRunData", "includeFiles",
+                    "enabled", "version")),
+            Map.entry("retention.policy-removed", Set.of("workflowId")),
+            Map.entry("retention.hold-placed", Set.of("target", "targetId")),
+            Map.entry("retention.hold-released", Set.of()),
+            Map.entry("retention.sweep-completed", Set.of("mode", "eligible", "archived", "purged", "held", "skipped",
+                    "failed")),
+            Map.entry("run.archived-and-purged", Set.of("reference", "workflowId", "rootRunId", "archiveId", "sha256",
+                    "bytes", "store", "keepDays")),
+            Map.entry("run.history-purged", Set.of("instances", "skipped")),
+            Map.entry("retention.archive-downloaded", Set.of("runId", "reference", "bytes")));
 
     private final JdbcClient jdbc;
     private final Json json;
@@ -265,6 +421,12 @@ public class AuditWriter {
     /** Writes a denial in its own transaction; the denied command itself is rolled back. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void writeDenied(Entry entry) {
+        insert(entry);
+    }
+
+    /** Writes in its own transaction whatever the outcome (MCP tool calls: the call itself may have rolled back). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeSeparately(Entry entry) {
         insert(entry);
     }
 

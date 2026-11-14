@@ -9,6 +9,7 @@ import org.flowable.engine.delegate.DelegateExecution;
 import org.springframework.stereotype.Component;
 
 import com.orqix.compiler.ConditionMatcher;
+import tools.jackson.databind.JsonNode;
 import com.orqix.shared.json.Json;
 
 /**
@@ -74,6 +75,12 @@ public class OrqixRoute {
             throw new IllegalStateException(transitionId + " is not a sequence flow");
         }
         ExtensionElement condition = OrqixModel.requireExtension(element, "condition");
+        String expression = OrqixModel.attribute(condition, "expression");
+        if (expression != null) {
+            // S137: an Orqix expression; the path is taken only when it gives true (false or no value is not taken).
+            JsonNode value = ProcessData.expression(execution, json, expression, OrqixModel.attribute(condition, "typesBase64"));
+            return value.isBoolean() && value.booleanValue();
+        }
         String group = OrqixModel.attribute(condition, "group");
         if (group != null) {
             var terms = OrqixModel.children(condition, "term");
@@ -83,6 +90,32 @@ public class OrqixRoute {
             throw new IllegalStateException("Unknown logical condition group");
         }
         return matches(execution, condition);
+    }
+
+    /**
+     * A path out of a call that keeps checking until done (docs/build/S129): true when the poll scheduler triggered the
+     * step with this outcome ({@code met}, {@code failed} or {@code timedOut}). The node id and outcome come from the
+     * generated BPMN, never from user text.
+     */
+    public boolean polled(DelegateExecution execution, String nodeId, String outcome) {
+        Object value = execution.getVariable(com.orqix.runtime.internal.PollWaits.outcomeVariable(nodeId));
+        if (value == null) {
+            throw new IllegalStateException("Step " + nodeId + " continued without the outcome of its checks");
+        }
+        return outcome.equals(value);
+    }
+
+    /**
+     * A path out of an AI task (docs/build/S134): true when the AI task worker triggered the step with this route
+     * ({@code next}, {@code lowConfidence}, {@code needsReview}, {@code aiUnavailable} or {@code label:<key>}). The node
+     * id and the route come from the generated BPMN, never from user text or model output.
+     */
+    public boolean ai(DelegateExecution execution, String nodeId, String route) {
+        Object value = execution.getVariable(com.orqix.runtime.internal.AiTaskJobs.routeVariable(nodeId));
+        if (value == null) {
+            throw new IllegalStateException("AI task " + nodeId + " continued without a route");
+        }
+        return route.equals(value);
     }
 
     /** Prefix of the process variable that holds the step a section was left to (S59). */

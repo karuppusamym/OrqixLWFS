@@ -10,16 +10,26 @@ import { createPromotionHandlers } from './promotion'
 import { createPlatformHandlers } from './platform'
 import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
+import { createConnectionHealthHandlers } from './connectionHealth'
 import { createCallbackHandlers } from './callbacks'
+import { createGuestFormHandlers } from './guestForms'
+import { createPackageHandlers } from './connectorPackages'
 import { createFeatureHandlers } from './features'
+import { createMcpServerHandlers } from './mcpServer'
+import { createAlertsRetentionHandlers } from './alertsRetention'
+import { createGitBundleHandlers } from './gitBundles'
+import { createSecurityHandlers, grantAuditRead, grantDataReveal, PROTECTED_WORKFLOW_ID, seedProtectedRequest } from './security'
+import { createTaskActionHandlers } from './taskActions'
+import { createBulkHandlers } from './bulk'
 import { createAgentWriteHandlers } from './agentWrites'
+import { createAgentToolHandlers } from './agentTools'
 import { createCaseFileHandlers } from './caseFiles'
 import { createDocumentLibraryHandlers } from './documentLibrary'
 import { createSharedAssetHandlers, resetSharedAssets, restoreSharedAssets, snapshotSharedAssets } from './sharedAssets'
 import { detectOverdueStages, expireStage } from './stages'
 import { createConversationHandlers, resetConversations } from './conversation'
 import { seedDb } from './seed'
-import { db, restoreDb, snapshotDb, type ProcurementFault, userByName } from './state'
+import { db, restoreDb, snapshotDb, type ProcurementFault, userByName, WS_PURCHASING, WS_SANDBOX } from './state'
 import { setSignOutHandler } from '@/api/auth'
 import { readStorage, removeStorage, writeStorage } from '@/lib/storage'
 
@@ -61,6 +71,13 @@ function persist() {
 export async function startMock(): Promise<void> {
   const saved = readStorage(DB_KEY)
   if (!saved || !restoreDb(saved)) seedDb({ demo: true })
+  // S151: a request with masked answers, and the grant-only reveal and audit permissions for the demo personas.
+  if (!db.workflows.has(PROTECTED_WORKFLOW_ID)) seedProtectedRequest()
+  for (const ws of [WS_PURCHASING, WS_SANDBOX]) {
+    grantDataReveal(ws, userByName('olga.operator').id)
+    grantAuditRead(ws, userByName('olga.operator').id)
+    grantAuditRead(ws, userByName('wade.admin').id)
+  }
   if (!restoreMockViews(readStorage(VIEW_DB_KEY))) resetMockViews()
   if (!restoreMockCases(readStorage(CASE_DB_KEY))) resetMockCases()
   if (!restoreSharedAssets(readStorage(ASSET_DB_KEY))) resetSharedAssets()
@@ -79,7 +96,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createFeatureHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCallbackHandlers(), ...createAgentWriteHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createPlatformHandlers(getCurrentUser), ...createHandlers()]
+  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createBulkHandlers(getCurrentUser), ...createAlertsRetentionHandlers(getCurrentUser), ...createGitBundleHandlers(getCurrentUser), ...createSecurityHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createPlatformHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)
@@ -105,6 +122,7 @@ export async function startMock(): Promise<void> {
   window.__orqixMock = {
     reset(options) {
       seedDb(options ?? { demo: true })
+      if (!options || (options.published !== false && options.sampleRuns !== false)) seedProtectedRequest()
       resetConversations()
       resetSharedAssets()
       db.latencyMs = 150

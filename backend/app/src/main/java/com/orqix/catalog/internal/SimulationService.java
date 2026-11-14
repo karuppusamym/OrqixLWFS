@@ -146,12 +146,28 @@ public class SimulationService {
         body.put("total", outcomes.size());
         var results = body.putArray("results");
         outcomes.forEach(o -> results.add(o.json()));
+        // CG-Q03 (S148): what the cases cover together.
+        JsonNode coverage = coverage(source, request.cases().stream().map(CatalogDtos.SimulateCase::input).toList(), outcomes);
+        if (coverage != null) {
+            body.set("coverage", coverage);
+        }
         return body;
+    }
+
+    /** CG-Q03: the coverage of the cases that ran (inputs in the order of the outcomes), or null when none ran. */
+    JsonNode coverage(Source source, List<JsonNode> inputs, List<CaseOutcome> outcomes) {
+        List<SuiteCoverage.Run> runs = new ArrayList<>();
+        for (int i = 0; i < outcomes.size(); i++) {
+            if (outcomes.get(i).coverage() != null && !outcomes.get(i).coverage().isMissingNode()) {
+                runs.add(new SuiteCoverage.Run(inputs.get(i), outcomes.get(i).coverage()));
+            }
+        }
+        return SuiteCoverage.of(json.parse(source.definitionJson()), runs);
     }
 
     /** The result of one case of a suite: passed, the outcome, the assertion results, or why it could not run. */
     record CaseOutcome(String id, String status, boolean passed, JsonNode outcome, JsonNode assertions, String problem,
-                       List<ApiException.FieldError> fieldErrors) {
+                       List<ApiException.FieldError> fieldErrors, JsonNode coverage) {
 
         ObjectNode json() {
             ObjectNode o = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
@@ -187,7 +203,8 @@ public class SimulationService {
             outcome.put("summary", o.path("summary").asString());
             JsonNode checked = body.get("assertions");
             boolean passed = checked == null || checked.path("passed").asBoolean();
-            return new CaseOutcome(id, o.path("status").asString(), passed, outcome, checked, null, List.of());
+            return new CaseOutcome(id, o.path("status").asString(), passed, outcome, checked, null, List.of(),
+                    body.path("coverage"));
         } catch (ApiException e) {
             if (e.code() != ProblemCode.VALIDATION_FAILED) {
                 throw e;
@@ -197,7 +214,7 @@ public class SimulationService {
                 list.stream().filter(ApiException.FieldError.class::isInstance)
                         .map(ApiException.FieldError.class::cast).limit(20).forEach(errors::add);
             }
-            return new CaseOutcome(id, "invalid", false, null, null, e.detail(), errors);
+            return new CaseOutcome(id, "invalid", false, null, null, e.detail(), errors, null);
         }
     }
 

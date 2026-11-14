@@ -325,6 +325,14 @@ public final class Graph {
      *         node and transition order (every cycle contains at least one)
      */
     public List<Transition> backEdges() {
+        return backEdges(false);
+    }
+
+    /**
+     * @param skipBounded leave out declared bounded loop paths (CG-E01, S138): the back edges that remain are the
+     *                    cycles nobody bounded
+     */
+    public List<Transition> backEdges(boolean skipBounded) {
         int[] state = new int[nodes.size()];
         List<Transition> back = new ArrayList<>();
         List<Node> roots = new ArrayList<>(starts);
@@ -335,13 +343,13 @@ public final class Graph {
         }
         for (Node root : roots) {
             if (state[root.index()] == 0) {
-                dfs(root, state, back);
+                dfs(root, state, back, skipBounded);
             }
         }
         return back;
     }
 
-    private void dfs(Node root, int[] state, List<Transition> back) {
+    private void dfs(Node root, int[] state, List<Transition> back, boolean skipBounded) {
         Deque<Object[]> stack = new ArrayDeque<>();
         state[root.index()] = 1;
         stack.push(new Object[] {root, 0});
@@ -357,6 +365,9 @@ public final class Graph {
             }
             frame[1] = i + 1;
             Transition t = edges.get(i);
+            if (skipBounded && t.bounded()) {
+                continue;
+            }
             Node next = byId.get(t.to());
             if (state[next.index()] == 1) {
                 back.add(t);

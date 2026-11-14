@@ -18,7 +18,7 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class OpenApiReview {
     public record Selection(@NotBlank @Size(max=80) String key,
-            @NotNull @Pattern(regexp="readOnly|idempotentWithKey|nonIdempotent") String effectClass,
+            @NotNull @Pattern(regexp="readOnly|idempotentWithKey|idempotentNatural|nonIdempotent") String effectClass,
             @Size(max=64) String idempotencyHeader) {}
     public record Request(@NotBlank @Size(max=2097152) String source, @Size(max=200) String fileName,
             @Pattern(regexp="^[a-z][a-z0-9-]{0,62}[a-z0-9]$") String key, @Min(1) Integer version,

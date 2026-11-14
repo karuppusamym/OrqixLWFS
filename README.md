@@ -33,6 +33,7 @@ The revised [hackathon requirements baseline](docs/23-hackathon-requirements-bas
 | Import supported workflows | [Migration workbench: Camunda and reviewed Pega mappings](docs/17-migration-workbench.md) |
 | Improve authoring and integration | [Designer, connectors and migration assessment](docs/16-designer-connectors-migration.md) |
 | Compare with Camunda/Pega, banking direction and conversion execution | [20 Competitive analysis](docs/20-competitive-analysis.md), [banking templates](docs/banking-templates.md), [banking capability matrix](docs/banking-capability-matrix.md) |
+| Close the remaining Camunda gaps: polling and waits, connector packages, AI decisions, MCP tools | [29 Camunda gaps, drawbacks and implementation plan](docs/29-camunda-gap-implementation-plan.md) |
 | Review current defects and remaining scope | [Release code audit](docs/18-release-code-audit.md) |
 | Permissions, data lifecycle, operations | [11 Security, data lifecycle and operations](docs/11-security-operations.md) |
 | Standards and dependency sources | [14 Technical references](docs/14-technical-references.md) |

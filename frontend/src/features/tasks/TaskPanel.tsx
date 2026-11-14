@@ -3,7 +3,7 @@ import { viewSurface } from '@/features/views/presentation'
 import { TaskCorrection } from './TaskCorrection'
 import { SendBackPanel } from './SendBackPanel'
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ShieldAlert, Undo2, UserCheck, XCircle } from 'lucide-react'
+import { Bot, CheckCircle2, ShieldAlert, Undo2, UserCheck, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import * as endpoints from '@/api/endpoints'
@@ -34,6 +34,7 @@ import { TaskStage } from '@/features/runs/StageProgress'
 import { TaskDelegation } from './TaskDelegation'
 import { TaskPriority } from './TaskPriority'
 import { ApprovalRequest } from './ApprovalRequest'
+import { AiReviewPanel } from './AiReviewPanel'
 import type { ViewDefinition } from '@/features/views/model'
 
 type Banner = { tone: 'success' | 'warning' | 'info'; text: string }
@@ -312,6 +313,13 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
 
         {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
 
+        {task.aiReview && task.aiReview.status !== 'decided' ? <AiReviewPanel review={task.aiReview} canUse={canDecide} onUse={(text, action) => {
+          setComment(text)
+          setCommentError(undefined)
+          commentRef.current?.focus()
+          announce(action ? `The AI suggestion is in your comment. Choose ${action === 'approve' ? 'Approve' : 'Reject'} to follow it, or the other action to decide otherwise.` : 'The AI suggestion is in your comment.')
+        }} /> : null}
+
         {task.form.sendBack ? null : <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />}
         {captureFields.length > 0 && canDecide ? (
           <section aria-labelledby="task-step-form-heading" className="space-y-3 rounded-card border border-border p-4" data-testid="task-step-form">
@@ -351,6 +359,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
                   <p className="flex items-center gap-1.5 font-semibold">
                     {h.action === 'approve' ? <CheckCircle2 className="size-4 text-success" aria-hidden="true" /> : <XCircle className="size-4 text-status-rejected-fg" aria-hidden="true" />}
                     {h.actor.displayName} {h.action === 'approve' ? 'approved' : 'rejected'} {h.label ?? 'a step'}
+                    {h.decidedBy === 'aiReviewer' ? <Badge className="ml-1" title={h.aiReview ? `Skill ${h.aiReview.skillKey} v${h.aiReview.skillVersion}` : undefined}><Bot className="mr-1 inline size-3" aria-hidden="true" />Decided by AI reviewer</Badge> : null}
                   </p>
                   <p className="text-xs text-muted-foreground">{formatDateTime(h.decidedAt)}</p>
                   {h.reason ? <p className="mt-1 wrap-anywhere whitespace-pre-wrap">Reason: {h.reason}</p> : null}

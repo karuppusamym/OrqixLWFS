@@ -33,6 +33,14 @@ export function aiResult(d: AiDecision): string {
   return 'No result'
 }
 
+/** Why the AI answered as it did: the rationale (recommend) and the reasons (classify, score), when kept in the record. */
+export function aiExplanation(d: AiDecision): { rationale: string | null; reasons: string[] } {
+  const out = (d.output ?? {}) as Record<string, unknown>
+  const rationale = typeof out.rationale === 'string' && out.rationale.trim() ? out.rationale : null
+  const reasons = Array.isArray(out.reasons) ? out.reasons.filter((r): r is string => typeof r === 'string' && r.trim() !== '') : []
+  return { rationale, reasons }
+}
+
 /**
  * AI decision records of a request (docs/build/S134, doc 29 section 7.8): pinned skill version, model, input field
  * names and digest (values only when the workspace keeps them and the viewer may see the request data), result,
@@ -87,6 +95,15 @@ export function AiDecisionsPanel({ ws, runId, canRecord }: { ws: string; runId: 
               Skill {d.skillKey} v{d.skillVersion} · {d.effectiveAutonomy}{d.effectiveAutonomy !== d.autonomy ? ` (designed as ${d.autonomy})` : ''} · model {d.modelUsed ?? 'none'} · route {d.route}
             </p>
             {d.unavailableReason ? <p className="text-muted-foreground">{d.unavailableReason}</p> : null}
+            {(() => {
+              const { rationale, reasons } = aiExplanation(d)
+              return <>
+                {rationale ? <p className="wrap-anywhere">Rationale: {rationale}</p> : null}
+                {reasons.length > 0 ? <ul className="list-disc pl-5" aria-label={`Reasons for ${aiResult(d)}`}>
+                  {reasons.map((r, i) => <li key={i} className="wrap-anywhere">{r}</li>)}
+                </ul> : null}
+              </>
+            })()}
             <p className="text-muted-foreground">
               Sent: {d.inputFields.join(', ') || 'nothing'} · digest {d.inputDigest.slice(0, 12)}…{d.inputValues ? '' : ' (values not kept)'}
             </p>

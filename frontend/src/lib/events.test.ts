@@ -29,6 +29,16 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
     expect(describeEvent(event('TASK_DECIDED', { nodeId: 'manager', actor, data: { action: 'reject' } }), ctx)).toBe('Mani Manager rejected Review request')
   })
 
+  it('the AI reviewer of an approval (S152) is named as such, never as a person', () => {
+    expect(describeEvent(event('TASK_DECIDED_BY_AI', { nodeId: 'manager', data: { action: 'approve', confidence: 0.95 } }), ctx))
+      .toBe('Decided by AI reviewer: approved Review request (confidence 0.95)')
+    expect(eventTone(event('TASK_DECIDED_BY_AI', { data: { action: 'reject' } }))).toBe('rejected')
+    expect(describeEvent(event('AI_REVIEW_SUGGESTED', { nodeId: 'manager', data: { recommendation: 'approve' } }), ctx))
+      .toBe('AI reviewer suggests to approve Review request; a person decides')
+    expect(describeEvent(event('AI_REVIEW_UNAVAILABLE', { nodeId: 'manager' }), ctx)).toBe('AI reviewer could not review Review request; a person decides')
+    expect(describeEvent(event('AI_REVIEW_QUEUED', { nodeId: 'manager' }), ctx)).toBe('AI reviewer started reviewing Review request')
+  })
+
   it('DECISION_EVALUATED puts outputs in words', () => {
     expect(describeEvent(event('DECISION_EVALUATED', { nodeId: 'amountPolicy', data: { outputs: { route: 'financeReview' } } }), ctx)).toBe('Check purchase amount: Route is finance review')
     expect(outputsInWords({ a: 1, bigNumber: 2 })).toBe('A is 1, Big number is 2')

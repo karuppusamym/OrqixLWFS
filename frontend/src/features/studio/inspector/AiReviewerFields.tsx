@@ -23,9 +23,9 @@ export interface AiReviewerConfig {
 }
 
 export const REVIEWER_AUTONOMY_LABEL: Record<ReviewerAutonomy, string> = {
-  suggest: 'Suggest: the approver sees the AI suggestion and decides (default)',
-  autoWithReview: 'Decide when confident, with a review sample afterwards',
-  auto: 'Decide when confident (low-risk answers only)',
+  suggest: 'Suggest only (default)',
+  autoWithReview: 'Decide when confident, sample reviewed',
+  auto: 'Decide when confident (low-risk only)',
 }
 const AUTONOMY_ORDER: ReviewerAutonomy[] = ['suggest', 'autoWithReview', 'auto']
 const REDACTION: Record<string, string> = {
@@ -131,7 +131,7 @@ export function AiReviewerFields({ node }: { node: WorkflowNode }) {
       {reviewer ? <>
         {pinned && !pinned.evaluationGate.passing ? <Alert tone="warning">Version {pinned.version} has no passing evaluation on its model profile in the last 30 days, so this workflow cannot be published. Run its evaluation suite first.</Alert> : null}
         {pinned?.driftFallback ? <Alert tone="warning">Agreement with people dropped; this skill only suggests until someone clears it.</Alert> : null}
-        <FormField label="How much the AI reviewer may decide" id={`ai-reviewer-autonomy-${node.id}`} error={overCeiling ? `This skill version is promoted up to "${ceiling}". Promotion needs shadow evidence and an approved change.` : undefined}>
+        <FormField label="How much the AI reviewer may decide" id={`ai-reviewer-autonomy-${node.id}`} description="Suggest only: the approver sees the suggestion and decides. Decide when confident: a confident approve or reject decides the task; anything else goes to a person." error={overCeiling ? `This skill version is promoted up to "${ceiling}". Promotion needs shadow evidence and an approved change.` : undefined}>
           {(ids) => <Select id={ids.input} value={autonomy} disabled={readOnly} aria-invalid={overCeiling || undefined} onChange={(e) => patch({ autonomy: e.target.value as ReviewerAutonomy })}>
             {AUTONOMY_ORDER.map((a) => <option key={a} value={a}>{REVIEWER_AUTONOMY_LABEL[a]}</option>)}
           </Select>}

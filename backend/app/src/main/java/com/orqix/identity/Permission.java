@@ -24,7 +24,27 @@ public enum Permission {
     JOB_WORK("job.work"),
     WORKFLOW_APPROVE_PROMOTION("workflow.approve-promotion"),
     /** IN04 (S75): grant-only, workspace-wide; approves or revokes agent write tools. No role carries it. */
-    AGENT_APPROVE_WRITE_TOOL("agent.approve-write-tool");
+    AGENT_APPROVE_WRITE_TOOL("agent.approve-write-tool"),
+    /** CG-C04 (S133): grant-only, workspace-wide; imports, reviews, installs, binds and retires connector packages. */
+    CONNECTOR_MANAGE("connector.manage"),
+    /** CG-C04 (S133): grant-only, workspace-wide; approves the exact hash of a package another person imported. */
+    CONNECTOR_APPROVE("connector.approve"),
+    /** Grant-only (S134): approve AI skill versions and promotions written by someone else. */
+    AI_APPROVE_SKILL("ai.approve-skill"),
+    /** Grant-only (S134): run AI evaluation suites, read shadow dashboards and the AI review queue. */
+    AI_EVALUATE("ai.evaluate"),
+    /**
+     * CG-O01 (S142): grant-only, workspace-wide; confirms and controls bulk operations by filter. The single-request
+     * rules still apply to every item (run.operate and the action's own checks).
+     */
+    RUN_BULK_OPERATE("run.bulk-operate"),
+    /** Grant-only, workspace-wide (CG-O06, S144): manage alert rules and destinations, read incidents. */
+    ALERT_MANAGE("alert.manage"),
+    /**
+     * CG-I05 (S151): grant-only, workspace-wide; reveals masked personal and sensitive request values through the
+     * audited reveal operation. No role carries it; without it nobody sees those values in plain text.
+     */
+    DATA_REVEAL("data.reveal");
 
     private final String value;
 

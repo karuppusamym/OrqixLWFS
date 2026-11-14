@@ -36,6 +36,12 @@ public class InsightsController {
         return insights.throughput(callers.current(), workspaceId, from, to, workflowId);
     }
 
+    @GetMapping("/outside-waits")
+    public InsightsDtos.OutsideWaits outsideWaits(@PathVariable UUID workspaceId, @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to, @RequestParam(required = false) UUID workflowId) {
+        return insights.outsideWaits(callers.current(), workspaceId, from, to, workflowId);
+    }
+
     @GetMapping("/steps")
     public InsightsDtos.Steps steps(@PathVariable UUID workspaceId, @RequestParam(required = false) String from,
             @RequestParam(required = false) String to, @RequestParam(required = false) UUID workflowId) {

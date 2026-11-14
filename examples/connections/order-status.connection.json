@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "0.1",
+  "key": "order-status",
+  "version": 1,
+  "name": "Order tracking",
+  "description": "Status of purchase orders (docs/build/S129). getStatus is read-only and used by \"Keep checking until...\" steps and safety-net checks; markShipped changes the order and must never be polled.",
+  "operations": {
+    "getStatus": {
+      "label": "Get order status",
+      "method": "POST",
+      "path": "/status",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "orderId"
+        ],
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "shipped",
+              "cancelled"
+            ]
+          },
+          "trackingRef": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "progress": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    },
+    "markShipped": {
+      "label": "Mark the order shipped",
+      "method": "POST",
+      "path": "/ship",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "orderId"
+        ],
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "shipped",
+              "cancelled"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "idempotentWithKey",
+      "idempotencyHeader": "Idempotency-Key",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    }
+  }
+}

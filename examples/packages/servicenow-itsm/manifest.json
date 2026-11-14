@@ -1,0 +1,52 @@
+{
+  "packageSchema": "orqix-connector-package/1",
+  "id": "com.orqix.servicenow-itsm",
+  "name": "ServiceNow ITSM",
+  "version": "1.0.0",
+  "description": "Incidents and Service Catalog requests in ServiceNow: raise an incident without duplicates (lookup reconciliation on correlation_id), wait for the outcome through a signed business-rule webhook with a polling safety net, check fulfilment, add work notes and attach generated documents. Example package of docs/build/S133; field names and states follow the default ServiceNow data model and must be checked on the customer's release.",
+  "publisher": { "name": "Orqix examples", "keyId": "orqix-example-2026" },
+  "minOrqixVersion": "1.4",
+  "categories": ["itsm"],
+  "hosts": [{ "pattern": "https://*.service-now.com", "purpose": "The customer's ServiceNow instance" }],
+  "authSchemes": ["oauth2ClientCredentials", "oauth2AuthorizationCode", "bearerToken"],
+  "operations": { "readOnly": 6, "idempotentByLookup": 2, "idempotentNatural": 1, "nonIdempotent": 2 },
+  "dataLeavingOrqix": [
+    "Incident short description and description (from the request form)",
+    "Urgency and impact",
+    "Assignment group",
+    "Work notes written by the workflow",
+    "Files of the request attached to an incident",
+    "Requested-for user and justification of catalog orders",
+    "The Orqix reference ORQ-<request>-<step>-<occurrence>"
+  ],
+  "triggers": ["incident-changes", "incident-updated"],
+  "codeComponents": [],
+  "license": "Apache-2.0",
+  "contents": {
+    "connections": [
+      "connections/servicenow-catalog.connection.json",
+      "connections/servicenow-itsm.connection.json"
+    ],
+    "triggers": [
+      "triggers/incident-changes.poll.json",
+      "triggers/incident-updated.webhook.json"
+    ],
+    "stepTemplates": [
+      "templates/steps/raise-incident.json",
+      "templates/steps/wait-until-resolved.json"
+    ],
+    "workflowTemplates": [
+      "templates/workflows/it-access-request.json"
+    ],
+    "fixtures": [
+      "fixtures/create-incident/created.json",
+      "fixtures/create-incident/rate-limited.json",
+      "fixtures/get-incident/in-progress.json",
+      "fixtures/get-incident/not-found.json",
+      "fixtures/get-incident/resolved.json"
+    ],
+    "docs": [
+      "docs/README.md"
+    ]
+  }
+}

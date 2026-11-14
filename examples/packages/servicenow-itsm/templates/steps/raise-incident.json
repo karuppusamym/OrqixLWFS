@@ -1,0 +1,32 @@
+{
+  "key": "raise-incident",
+  "label": "Raise an incident",
+  "description": "Creates an incident from the request. ServiceNow has no idempotency key, so Orqix sets correlation_id and, after a timeout, looks the incident up instead of creating a second one.",
+  "connection": "servicenow-itsm",
+  "operation": "createIncident",
+  "requestFields": {
+    "shortDescription": { "type": "string", "title": "Short description", "maxLength": 160 },
+    "description": { "type": "string", "title": "Description", "maxLength": 4000 },
+    "urgency": { "type": "string", "title": "Urgency", "enum": ["1", "2", "3"] }
+  },
+  "step": {
+    "type": "http",
+    "label": "Raise an incident in ServiceNow",
+    "config": {
+      "connectionRef": "servicenow-itsm",
+      "operation": "createIncident",
+      "inputMapping": {
+        "shortDescription": "/input/shortDescription",
+        "description": "/input/description",
+        "urgency": "/input/urgency",
+        "impact": "/input/urgency"
+      },
+      "resultMapping": {
+        "incidentNumber": "/result/number",
+        "incidentSysId": "/result/sys_id",
+        "correlationId": "/result/correlation_id"
+      },
+      "timeoutSeconds": 20
+    }
+  }
+}

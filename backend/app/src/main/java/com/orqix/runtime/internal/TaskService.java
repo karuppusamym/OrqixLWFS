@@ -591,6 +591,48 @@ public class TaskService {
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
+    /**
+     * CG-T04/CG-T01 (S141): the person rebuilt from the groups stored at their latest login, exactly as delegation and
+     * dispatch see them. Empty for an unknown or disabled person.
+     */
+    java.util.Optional<Caller> storedCaller(UUID subjectId) {
+        SubjectService.Subject subject = subjects.find(subjectId).orElse(null);
+        if (subject == null || subject.disabled()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new Caller(subjectId, subject.displayName(), subject.email(), subject.issuer(),
+                subject.externalSubject(), subjects.storedGroups(subjectId), false));
+    }
+
+    /** Known, enabled people who can see the workspace and belong to the group (stored groups), at most {@code max}. */
+    List<SubjectService.Subject> groupMembers(UUID workspaceId, String groupKey, int max) {
+        List<SubjectService.Subject> members = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (members.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            WorkspaceAccess access = policy.freshAccess(other, workspaceId).filter(WorkspaceAccess::visible).orElse(null);
+            if (access != null && policy.groupKeys(workspaceId, subject.id(), other.groups()).contains(groupKey)) {
+                members.add(subject);
+            }
+        }
+        return members;
+    }
+
+    /** Known, enabled people holding {@code run.operate} in the workspace, at most {@code max}. */
+    List<SubjectService.Subject> operators(UUID workspaceId, int max) {
+        List<SubjectService.Subject> found = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (found.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            if (policy.freshAccess(other, workspaceId).filter(a -> a.visible() && a.has(Permission.RUN_OPERATE)).isPresent()) {
+                found.add(subject);
+            }
+        }
+        return found;
+    }
+
     RuntimeDtos.TaskDetail detail(VisibleTask visible) {
         TaskStore.TaskRow task = visible.task();
         RunStore.RunRow run = visible.run();
@@ -606,7 +648,8 @@ public class TaskService {
         RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
         JsonNode node = release.node(task.nodeId());
         StepForm stepForm = StepForm.of(node);
-        JsonNode input = participant ? run.input() : json.object();
+        // CG-I05 (S151): personal and sensitive answers are masked; only the audited reveal returns them.
+        JsonNode input = participant ? com.orqix.compiler.FieldClassification.mask(run.input(), release.inputSchema()) : json.object();
         if (participant && stepForm.access().containsValue("hidden") && input instanceof ObjectNode full) {
             // S123: a field hidden on this step is left out of the task view.
             ObjectNode shown = full.deepCopy();
@@ -732,14 +775,21 @@ public class TaskService {
         tools.jackson.databind.node.ObjectNode after = json.object();
         for (var change : changes.entrySet()) {
             JsonNode value = change.getValue();
+            boolean hidden = com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), change.getKey());
+            if (hidden && com.orqix.compiler.FieldClassification.isMask(value)) {
+                // CG-I05 (S151): the masked text sent back unchanged keeps the stored answer.
+                continue;
+            }
             if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,
                         "Only the fields this step lets you correct can change, and only to a single value.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/changes/" + change.getKey(), "enum",
                                 "Not a field this step lets you correct")));
             }
-            before.set(change.getKey(), corrected.path(change.getKey()));
-            after.set(change.getKey(), value);
+            // The request timeline never holds a protected answer (CG-I05, S151).
+            before.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK)
+                    : corrected.path(change.getKey()));
+            after.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK) : value);
             corrected.set(change.getKey(), value);
         }
         if (corrected.equals(run.input())) {
@@ -753,7 +803,8 @@ public class TaskService {
                             .map(e -> new ApiException.FieldError("/changes" + e.pointer(), e.code(), e.message())).toList());
         }
         try {
-            engine.correctInput(run.engineProcessInstanceId(), json.write(corrected), caller.subjectId());
+            engine.correctInput(run.engineProcessInstanceId(), runs.engineInput(workspaceId, run.releaseId(), corrected),
+                    caller.subjectId());
         } catch (EngineCommands.EngineConflictException e) {
             throw new ApiException(ProblemCode.RUN_BUSY, "The request is busy; try again shortly.");
         }

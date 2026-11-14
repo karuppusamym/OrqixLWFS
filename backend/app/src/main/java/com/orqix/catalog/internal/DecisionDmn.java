@@ -304,7 +304,15 @@ public final class DecisionDmn {
                 }
                 ObjectNode then = F.objectNode();
                 for (int o = 0; o < outs.size(); o++) {
-                    JsonNode value = literal(text(outs.get(o)), outputTypes.get(o), place + ", output " + (o + 1));
+                    String formula;
+                    try {
+                        formula = orqixExpression(outs.get(o));
+                    } catch (IllegalArgumentException e) {
+                        problem(place + ", output " + (o + 1), e.getMessage());
+                        continue;
+                    }
+                    JsonNode value = formula != null ? F.objectNode().put("expression", formula)
+                            : literal(text(outs.get(o)), outputTypes.get(o), place + ", output " + (o + 1));
                     if (value != null && outputNames.get(o) != null) then.set(outputNames.get(o), value);
                 }
                 List<ObjectNode> cells = new ArrayList<>();
@@ -316,6 +324,32 @@ public final class DecisionDmn {
                     String entry = text(ins.get(i)).strip();
                     if (entry.isEmpty() || entry.equals("-")) continue;
                     String cellPlace = place + ", input " + (i + 1);
+                    String formula;
+                    try {
+                        formula = orqixExpression(ins.get(i));
+                    } catch (IllegalArgumentException e) {
+                        problem(cellPlace, e.getMessage());
+                        bad = true;
+                        continue;
+                    }
+                    if (formula != null) {
+                        // S146: an Orqix expression test in this column, as Orqix's download writes it.
+                        if (column.date() || column.fieldRef() == null) {
+                            problem(cellPlace, "An Orqix expression must be in the column of a field.");
+                            bad = true;
+                            continue;
+                        }
+                        ObjectNode term = F.objectNode();
+                        term.put("fieldRef", column.fieldRef());
+                        term.put("expression", formula);
+                        cells.add(term);
+                        continue;
+                    }
+                    if (column.type() == null) {
+                        problem("input " + (i + 1), "The input column needs a typeRef: string, number or boolean.");
+                        bad = true;
+                        continue;
+                    }
                     if (column.date()) {
                         window = window(entry, cellPlace);
                         bad |= window == null;
@@ -406,7 +440,8 @@ public final class DecisionDmn {
                 problem(place, "The input expression \"" + shorten(name) + "\" is not a field name. Use a request field such"
                         + " as amount, or a step result such as steps.check.score; expressions are not imported.");
             }
-            return new Column(fieldRef, type(typeRef, place, true), false);
+            // S146: a column of Orqix expressions only has no typeRef; a FEEL entry in it is refused where it occurs.
+            return new Column(fieldRef, typeRef.isEmpty() ? null : type(typeRef, place, true), false);
         }
 
         /** {@code string}, {@code number} or {@code boolean}. */
@@ -653,6 +688,29 @@ public final class DecisionDmn {
         } catch (java.time.DateTimeException e) {
             return null;
         }
+    }
+
+    /**
+     * S146: the Orqix expression of an entry marked with the Orqix expression language (as Orqix's own download writes
+     * it), verbatim; null for an ordinary FEEL entry.
+     *
+     * @throws IllegalArgumentException for another expression language, which is not imported
+     */
+    private static String orqixExpression(DmnXml.Element e) {
+        String language = e.attr("expressionLanguage");
+        if (language == null || language.isBlank() || language.strip().toLowerCase(Locale.ROOT).contains("feel")) {
+            return null;
+        }
+        if (!language.strip().equals(com.orqix.compiler.DecisionTables.ORQIX_EXPRESSION_LANGUAGE)) {
+            throw new IllegalArgumentException("The expression language " + shorten(language) + " is not supported;"
+                    + " entries must be FEEL or Orqix expressions.");
+        }
+        DmnXml.Element inner = e.children().stream().filter(c -> "text".equals(c.name())).findFirst().orElse(null);
+        String text = inner == null ? "" : inner.rawText();
+        if (text.isBlank()) {
+            throw new IllegalArgumentException("The Orqix expression is empty.");
+        }
+        return text;
     }
 
     private static String text(DmnXml.Element e) {

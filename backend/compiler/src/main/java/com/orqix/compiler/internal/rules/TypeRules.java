@@ -87,7 +87,8 @@ final class TypeRules {
         for (DecisionTable.Row row : table.rows()) {
             String rowPath = table.path() + "/rows/" + row.index();
             row.then().forEach((k, v) -> Conditions.literalSafety(rc, v, rowPath + "/then/" + k, null, null));
-            if (!row.then().keySet().equals(reference.keySet())) {
+            // S146: a result may be an expression; ExpressionRules checks its type against the default.
+            if (!row.outputKeys().equals(reference.keySet())) {
                 rc.issues().blocker("WF_DECISION_OUTPUT_SHAPE", rowPath + "/then", null, null, "Rule "
                         + (row.index() + 1) + " of " + name + " must set exactly the same results as the default: "
                         + String.join(", ", reference.keySet()) + ".");
@@ -117,7 +118,7 @@ final class TypeRules {
                 rc.issues().blocker("WF_DECISION_DUPLICATE_INPUT",base,null,null,"Each field may appear once in a conjunctive decision row.");
                 continue;
             }
-            var checked=LogicalConditions.check(rc,row.when(),base,null,null);
+            var checked=terms.stream().anyMatch(Condition::isExpression)?literalTerms(rc,row.when(),base):LogicalConditions.check(rc,row.when(),base,null,null);
             if(checked!=null) typed.put(row,checked);
             for(Node user:users) for(Condition term:terms) Conditions.availability(rc,term.fieldRef(),user,base+"/fieldRef",null);
         }
@@ -126,21 +127,74 @@ final class TypeRules {
         // FIRST is ordered on purpose: the first matching row wins, so overlapping rows are allowed (S40).
         // PRIORITY picks by the priority output and COLLECT counts every matching row, so both allow overlaps (S121).
         boolean unique=DecisionTable.UNIQUE.equals(table.hitPolicy()), any=DecisionTable.ANY.equals(table.hitPolicy());
+        List<String> unproven=new ArrayList<>();
         if(unique || any) for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
             var x=table.rows().get(i); var y=table.rows().get(j);
             // Rows in disjoint effective windows never apply on the same day, so they cannot both match (S41).
             if(x.effective()!=null && y.effective()!=null && !x.effective().overlaps(y.effective())) continue;
             // ANY: rows may overlap when they give exactly the same results (S121).
-            if(any && sameOutputs(x.then(),y.then())) continue;
+            if(any && sameOutputs(x.then(),y.then()) && x.thenExpressions().equals(y.thenExpressions())) continue;
+            if(testsByExpression(x) || testsByExpression(y)) {
+                // S146: an expression test may hold for any value, so only the comparisons can prove the rows exclusive.
+                if(LogicalConditions.overlapClauses(clauses(x,typed.get(x)),clauses(y,typed.get(y)))) unproven.add((i+1)+" and "+(j+1));
+                continue;
+            }
             if(LogicalConditions.overlap(x.when(),typed.get(x),y.when(),typed.get(y)))
                 rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,any
                         ? "Rules "+(i+1)+" and "+(j+1)+" can both apply but give different results. With Any matching row, overlapping rows must give the same results."
                         : "Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");
         }
+        if(!unproven.isEmpty()) {
+            rc.issues().warning("WF_DECISION_EXPRESSION_OVERLAP",table.path()+"/rows",null,null,"Rules "
+                    + String.join(", ",unproven.subList(0,Math.min(5,unproven.size())))+(unproven.size()>5?" and others":"")
+                    + " of "+name+" test formulas, so they cannot be proven exclusive. "
+                    + (any?"If two of them apply to a request with different results,":"If two of them apply to a request,")
+                    + " the decision stops with an error; choose First matching row if the order should decide.");
+        }
+        if(table.rows().stream().anyMatch(TypeRules::testsByExpression)) return; // coverage cannot be judged either
         if(scalar) {
             var atoms=table.rows().stream().map(r->typed.get(r).get(0)).toList();
             if(Disjointness.covers(atoms,atoms.get(0).type())) rc.issues().warning("WF_DECISION_DEFAULT_UNREACHABLE",table.path()+"/default",null,null,"The rules cover every possible value, so the default is never used.");
         }
+    }
+
+    private static boolean testsByExpression(DecisionTable.Row row) {
+        return row.terms().stream().anyMatch(Condition::isExpression);
+    }
+
+    /**
+     * The comparisons of a row with expression tests (S146), checked like {@link LogicalConditions#check}; expression
+     * tests are checked by ExpressionRules.
+     *
+     * @return the typed comparisons in term order, or null when one has a problem
+     */
+    private static List<Disjointness.Typed> literalTerms(RuleContext rc, Condition when, String base) {
+        List<Disjointness.Typed> typed = new ArrayList<>();
+        List<Condition> terms = when.compound() ? when.terms() : List.of(when);
+        boolean valid = true;
+        for (int i = 0; i < terms.size(); i++) {
+            Condition term = terms.get(i);
+            if (term.isExpression()) continue;
+            String path = when.compound() ? base + "/" + when.group() + "/" + i : base;
+            Disjointness.Typed value = Conditions.check(rc, term, path, null, null);
+            if (value == null) valid = false; else typed.add(value);
+        }
+        return valid ? List.copyOf(typed) : null;
+    }
+
+    /**
+     * The alternatives of a row for the overlap check, each a conjunction of typed comparisons: one for an All row or a
+     * single test (its expression tests left out, which can only make it wider); one per alternative of an Any row,
+     * where an expression alternative is the empty conjunction (it may hold for anything).
+     */
+    private static List<List<Disjointness.Typed>> clauses(DecisionTable.Row row, List<Disjointness.Typed> typed) {
+        if (!row.when().isAny()) return List.of(typed);
+        List<List<Disjointness.Typed>> out = new ArrayList<>();
+        int next = 0;
+        for (Condition term : row.terms()) {
+            out.add(term.isExpression() ? List.of() : List.of(typed.get(next++)));
+        }
+        return out;
     }
 
     private static boolean sameOutputs(Map<String, Literal> a, Map<String, Literal> b) {
@@ -241,16 +295,28 @@ final class TypeRules {
     private static void branches(RuleContext rc) {
         Map<Node, List<Transition>> byBranch = new LinkedHashMap<>();
         Map<Transition, List<Disjointness.Typed>> typed = new LinkedHashMap<>();
+        java.util.Set<Node> withExpressions = new java.util.LinkedHashSet<>();
         for (Transition t : rc.definition().transitions()) {
             if (t.condition() == null) continue;
             Node from = rc.graph().node(t.from());
+            if (t.condition().isExpression()) {
+                // S137: checked by ExpressionRules; exclusiveness of expressions cannot be proven.
+                if (from != null && from.kind() == NodeKind.BRANCH) withExpressions.add(from);
+                continue;
+            }
             var checked = LogicalConditions.check(rc, t.condition(), t.path() + "/condition", from == null ? null : from.id(), t.id());
             if (checked != null) typed.put(t, checked);
             if (from != null && from.kind() == NodeKind.BRANCH && t.on() == Route.CONDITION)
                 byBranch.computeIfAbsent(from, key -> new ArrayList<>()).add(t);
         }
+        for (Node branch : withExpressions) {
+            rc.issues().warning("WF_BRANCH_EXPRESSION_ORDER", branch.path(), branch.id(), null, q(branch)
+                    + " has conditions written as expressions, which cannot be checked for overlap. Its paths are"
+                    + " tried in the order they are listed and the first whose condition is true is taken.");
+        }
         for (var e : byBranch.entrySet()) {
             Node branch = e.getKey(); List<Transition> routes = e.getValue();
+            if (withExpressions.contains(branch)) continue;
             boolean scalar = routes.stream().noneMatch(t -> t.condition().compound());
             String field = scalar ? routes.get(0).condition().fieldRef() : null;
             boolean mixed = false;
@@ -332,8 +398,20 @@ final class TypeRules {
                 }
             }
         }
+        if (producer instanceof Node.Http polled && polled.polls() && !FailureRules.isFailureOutput(r.key())) {
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
+                        com.orqix.compiler.internal.model.Enums.Route.NEXT, end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when the checks find the work done, but " + q(end)
+                            + " can also be reached otherwise, so the result field " + q(entry.key())
+                            + " cannot be required.");
+                    return;
+                }
+            }
+        }
         if (FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             for (Node end : g.ends()) {
                 if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
                         failureFact ? com.orqix.compiler.internal.model.Enums.Route.FAILED
@@ -341,6 +419,18 @@ final class TypeRules {
                     rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
                             + " of " + q(producer) + " exists only when the step " + (failureFact ? "has failed"
                             : "works") + ", but " + q(end) + " can also be reached otherwise, so the result field "
+                            + q(entry.key()) + " cannot be required.");
+                    return;
+                }
+            }
+        }
+        if (producer instanceof Node.WaitForFirst w && w.declaring(r.key()) != null) {
+            // S139: a branch's values exist only when that branch wins.
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && WaitsAndStartsRules.reachableWithoutBranch(rc, w, w.declaring(r.key()).id(), end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when " + q(w.declaring(r.key()).label())
+                            + " happens first, but " + q(end) + " can also be reached otherwise, so the result field "
                             + q(entry.key()) + " cannot be required.");
                     return;
                 }
@@ -450,7 +540,9 @@ final class TypeRules {
                 invalid(rc, base + "/multipleOf", title + " is a whole number, so it cannot allow cents"
                         + " (multipleOf " + f.multipleOf().toPlainString() + ").");
             }
-            dateBounds(rc, f, base);
+            if (f.type() != FieldKind.TIME && f.type() != FieldKind.DATETIME) {
+                dateBounds(rc, f, base); // S140: time bounds are checked by FormFieldRules
+            }
             if (f.minLength() != null && f.maxLength() != null && f.minLength() > f.maxLength()) {
                 invalid(rc, base + "/minLength", title + " has a minimum length greater than its maximum length.");
             }

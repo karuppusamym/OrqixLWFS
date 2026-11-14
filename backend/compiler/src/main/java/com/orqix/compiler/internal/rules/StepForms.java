@@ -44,7 +44,7 @@ final class StepForms {
                 continue;
             }
             boolean scalar = switch (field.type()) {
-                case STRING, NUMBER, INTEGER, BOOLEAN, DATE -> true;
+                case STRING, NUMBER, INTEGER, BOOLEAN, DATE, TIME, DATETIME -> true;
                 case ARRAY, OBJECT, ATTACHMENT -> false;
             };
             if (!scalar) {

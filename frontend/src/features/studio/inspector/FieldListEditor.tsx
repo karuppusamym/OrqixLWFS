@@ -8,11 +8,19 @@ import { Label } from '@/components/ui/label'
 import { ALL_FILE_TYPES, FILE_TYPES } from '@/api/attachments'
 import { FormPattern, MAX_PATTERN_LENGTH } from '@/lib/form/pattern'
 import type { QuestionRules } from '../model/formRules'
-import { FIELD_KIND_LABELS, type FieldKind, type FormFieldModel } from '../model/ops'
+import { CLASSIFIABLE_KINDS, FIELD_KIND_LABELS, isProtectedClassification, SEARCHABLE_KINDS, type FieldKind, type FormFieldModel } from '../model/ops'
+import type { DataClassification } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea } from './controls'
 import { RowColumnsEditor } from './RowColumnsEditor'
 
-export const ALL_FIELD_KINDS: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
+const CLASSIFICATIONS: { value: DataClassification; label: string }[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'personal', label: 'Personal' },
+  { value: 'sensitive', label: 'Sensitive' },
+]
+
+export const ALL_FIELD_KINDS: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'time', 'dateTime', 'yesNo', 'choice', 'checklist', 'tags', 'lookup', 'collection', 'file']
 
 /** The words the list uses for one item: "question" on the request form, "field" for case data. */
 export interface FieldNoun {
@@ -285,7 +293,7 @@ function QuestionDetails({
       <div className="grid grid-cols-[1fr_auto] items-end gap-3">
         <div className="space-y-1.5">
           <Label htmlFor={`${p}-kind`}>Type</Label>
-          <Select id={`${p}-kind`} value={f.kind} disabled={readOnly} onChange={(e) => onChange({ kind: e.target.value as FieldKind, ...(e.target.value === 'choice' && f.choices.length === 0 ? { choices: ['Option 1', 'Option 2'] } : {}) })}>
+          <Select id={`${p}-kind`} value={f.kind} disabled={readOnly} onChange={(e) => onChange({ kind: e.target.value as FieldKind, ...((e.target.value === 'choice' || e.target.value === 'checklist') && f.choices.length === 0 ? { choices: ['Option 1', 'Option 2'] } : {}) })}>
             {kinds.map((k) => (
               <option key={k} value={k}>
                 {FIELD_KIND_LABELS[k]}
@@ -303,8 +311,8 @@ function QuestionDetails({
       <FormField label="Help text" optionalText id={`${p}-help`}>
         {(ids) => <CommitInput id={ids.input} value={f.help} maxLength={500} disabled={readOnly} onCommit={(v) => onChange({ help: v })} />}
       </FormField>
-      {f.kind === 'choice' ? (
-        <FormField label="Choices" id={`${p}-choices`} description="One choice per line.">
+      {f.kind === 'choice' || f.kind === 'checklist' ? (
+        <FormField label="Choices" id={`${p}-choices`} description={f.kind === 'checklist' ? 'One choice per line; people tick any number of them.' : 'One choice per line.'}>
           {(ids) => (
             <CommitTextarea
               id={ids.input}
@@ -329,6 +337,17 @@ function QuestionDetails({
         </div><p className="text-xs text-muted-foreground">Collections contain 1 to 25 scalar values or rows with up to 10 scalar columns.</p>
         {f.itemSchema?.type === 'object' ? <RowColumnsEditor schema={f.itemSchema} disabled={readOnly} onChange={itemSchema => onChange({ itemSchema })} /> : null}
       </> : null}
+      {f.kind === 'tags' ? (
+        <FormField label="Most tags" id={`${p}-maxtags`} description="People add free text tags, each once (1 to 25).">
+          {(ids) => <CommitNumber id={ids.input} integer value={f.maxItems ?? 10} disabled={readOnly} onCommit={(v) => onChange({ maxItems: Math.max(1, Math.min(25, v ?? 10)) })} />}
+        </FormField>
+      ) : null}
+      {f.kind === 'dateTime' ? (
+        <FormField label="Time zone" optionalText id={`${p}-zone`} description="An IANA name such as Europe/Berlin. Empty: the person's own time zone. The answer always keeps its offset.">
+          {(ids) => <CommitInput id={ids.input} value={f.timeZone ?? ''} maxLength={64} disabled={readOnly} spellCheck={false} onCommit={(v) => onChange({ timeZone: v.trim() || undefined })} />}
+        </FormField>
+      ) : null}
+      {f.kind === 'lookup' ? <LookupFields field={f} idPrefix={idPrefix} readOnly={readOnly} onChange={onChange} /> : null}
       {f.kind === 'file' ? (
         <fieldset className="space-y-2" data-testid={`${idPrefix}file-options-${f.key}`}>
           <legend className="text-sm font-semibold">Accepted file types</legend>
@@ -358,6 +377,24 @@ function QuestionDetails({
           <Checkbox id={`${p}-incident-editable`} checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
           Allow operator correction during an incident before data is consumed
         </label> : null}
+        {incidentEditable && SEARCHABLE_KINDS.has(f.kind) && !isProtectedClassification(f.classification) ? <label htmlFor={`${p}-searchable`} className="flex items-center gap-2 text-sm">
+          <Checkbox id={`${p}-searchable`} checked={!!f.searchable} disabled={readOnly} onCheckedChange={checked => onChange({searchable: checked === true})} />
+          Operators can search requests by this answer (at most 10 questions)
+        </label> : null}
+        {incidentEditable && CLASSIFIABLE_KINDS.has(f.kind) ? (
+          <FormField label="Data classification" optionalText id={`${p}-classification`} description="Personal and sensitive answers are masked for everyone and revealed only with permission. Sensitive answers are also encrypted at rest. They cannot be searchable.">
+            {(ids) => (
+              <Select id={ids.input} aria-describedby={ids.describedBy} value={f.classification ?? ''} disabled={readOnly}
+                onChange={(e) => {
+                  const next = (e.target.value || undefined) as DataClassification | undefined
+                  onChange({ classification: next, ...(isProtectedClassification(next) ? { searchable: false } : {}) })
+                }}>
+                <option value="">Not classified</option>
+                {CLASSIFICATIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </Select>
+            )}
+          </FormField>
+        ) : null}
         <FormField label="Field key" id={`${p}-key`} error={keyError} description={keyDescription}>
           {(ids) => (
             <CommitInput
@@ -379,6 +416,16 @@ function QuestionDetails({
             </FormField>
             <FormField label="Maximum" optionalText id={`${p}-max`}>
               {(ids) => <CommitNumber id={ids.input} value={f.maximum} disabled={readOnly} onCommit={(v) => onChange({ maximum: v })} />}
+            </FormField>
+          </div>
+        ) : null}
+        {f.kind === 'time' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Earliest time" optionalText id={`${p}-mintime`}>
+              {(ids) => <CommitInput id={ids.input} type="time" value={f.minDate ?? ''} disabled={readOnly} onCommit={(v) => onChange({ minDate: v || undefined })} />}
+            </FormField>
+            <FormField label="Latest time" optionalText id={`${p}-maxtime`}>
+              {(ids) => <CommitInput id={ids.input} type="time" value={f.maxDate ?? ''} disabled={readOnly} onCommit={(v) => onChange({ maxDate: v || undefined })} />}
             </FormField>
           </div>
         ) : null}
@@ -405,6 +452,39 @@ function QuestionDetails({
         {textual ? <PatternFields field={f} idPrefix={idPrefix} readOnly={readOnly} onChange={onChange} /> : null}
       </Advanced>
     </>
+  )
+}
+
+/**
+ * A lookup question's source (docs/build/S140): a read-only operation of a connection listed in the workflow's
+ * dependencies. The compiler checks every part when the workflow is checked or published.
+ */
+function LookupFields({ field: f, idPrefix, readOnly, onChange }: { field: FormFieldModel; idPrefix: string; readOnly: boolean; onChange: (patch: Partial<FormFieldModel>) => void }) {
+  const p = `${idPrefix}field-${f.key}-lookup`
+  const spec = f.lookup ?? { connection: '', operation: '', searchInput: '', rows: '/result/[*]', valueColumn: '', labelColumn: '' }
+  const set = (patch: Partial<NonNullable<FormFieldModel['lookup']>>) => onChange({ lookup: { ...spec, ...patch } })
+  const text = (label: string, key: 'connection' | 'operation' | 'searchInput' | 'rows' | 'valueColumn' | 'labelColumn' | 'detailColumn', description?: string) => (
+    <FormField label={label} id={`${p}-${key}`} optionalText={key === 'detailColumn'} description={description}>
+      {(ids) => <CommitInput id={ids.input} value={spec[key] ?? ''} maxLength={200} spellCheck={false} disabled={readOnly} onCommit={(v) => set({ [key]: v.trim() || (key === 'detailColumn' ? undefined : '') })} />}
+    </FormField>
+  )
+  return (
+    <fieldset className="space-y-2" data-testid={`${idPrefix}lookup-options-${f.key}`}>
+      <legend className="text-sm font-semibold">Options from a system</legend>
+      <p className="text-xs text-muted-foreground">People search as they type; the chosen value is checked with the system again when the request is sent. Add the connection to the workflow's connections.</p>
+      {text('Connection key', 'connection')}
+      {text('Read-only operation', 'operation')}
+      {text('Search input', 'searchInput', 'The operation input that receives the typed text.')}
+      {text('Rows', 'rows', 'The rows of the answer, for example /result/[*].')}
+      <div className="grid grid-cols-2 gap-3">
+        {text('Value column', 'valueColumn')}
+        {text('Label column', 'labelColumn')}
+      </div>
+      {text('Second line column', 'detailColumn')}
+      <FormField label="Search from (characters)" id={`${p}-min`}>
+        {(ids) => <CommitNumber id={ids.input} integer value={spec.minSearchLength ?? 2} disabled={readOnly} onCommit={(v) => set({ minSearchLength: Math.max(0, Math.min(5, v ?? 2)) })} />}
+      </FormField>
+    </fieldset>
   )
 }
 

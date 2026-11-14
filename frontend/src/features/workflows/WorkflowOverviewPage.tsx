@@ -24,6 +24,8 @@ import { describeProblem } from '@/lib/problemMessages'
 import { VersionComparison } from './VersionComparison'
 import { PinWorkflowButton } from './PinnedWorkflows'
 import { ReleaseRollout } from './ReleaseRollout'
+import { GitSyncPanel } from '@/features/gitsync/GitSyncPanel'
+import { ReleaseBundlesPanel } from '@/features/gitsync/ReleaseBundlesPanel'
 import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 
 /** Workflow overview: draft status, releases, make active (rollback), export (docs/build/S7-frontend.md section 4). */
@@ -255,6 +257,8 @@ export function WorkflowOverviewPage() {
       </section>
 
       <ReleaseRollout workflowId={workflowId} releases={items} />
+      <ReleaseBundlesPanel workflowId={workflowId} draftRevision={wf.draftRevision} />
+      <GitSyncPanel workflowId={workflowId} workflowKey={wf.key} draftRevision={wf.draftRevision} />
 
       <ConfirmDialog
         open={target !== null}

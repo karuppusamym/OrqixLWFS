@@ -61,7 +61,12 @@ public class EffectJournal {
         /** Same effect key with a different request body: a defect. */
         HASH_MISMATCH,
         /** Binding missing/disabled or egress denied at dispatch: marked permanentFailure. */
-        POLICY_DENIED
+        POLICY_DENIED,
+        /**
+         * idempotentByLookup (CG-C02): a previous attempt ended without an outcome. The lease is taken; the caller
+         * must run the lookup before anything is sent again.
+         */
+        RECONCILE_FIRST
     }
 
     public record BeginResult(BeginAction action, Effect effect) {
@@ -119,7 +124,14 @@ public class EffectJournal {
                 if (effect.leaseUntil() != null && effect.leaseUntil().isAfter(now)) {
                     return new BeginResult(BeginAction.BUSY, effect);
                 }
-                if ("nonIdempotent".equals(effect.effectClass())) {
+                boolean byLookup = "idempotentByLookup".equals(effect.effectClass());
+                if (byLookup && effect.requestHash().equals(request.requestHash()) && policyDenial == null) {
+                    // The send may have happened: look it up before sending again (S130).
+                    lease(effect, request.workspaceId(), leaseOwner, leaseDuration, now);
+                    return new BeginResult(BeginAction.RECONCILE_FIRST,
+                            find(request.workspaceId(), effect.id()).orElseThrow());
+                }
+                if ("nonIdempotent".equals(effect.effectClass()) || byLookup) {
                     // A previous attempt crashed after possibly sending: never resend blindly.
                     Effect updated = update(effect.id(), request.workspaceId(), UNKNOWN, null, "LEASE_EXPIRED",
                             "A previous attempt ended without a recorded outcome", null, null, now);
@@ -139,15 +151,43 @@ public class EffectJournal {
                     "CONNECTION_UNAVAILABLE", policyDenial, null, null, now);
             return new BeginResult(BeginAction.POLICY_DENIED, updated);
         }
+        lease(effect, request.workspaceId(), leaseOwner, leaseDuration, now);
+        return new BeginResult(BeginAction.PROCEED, find(request.workspaceId(), effect.id()).orElseThrow());
+    }
+
+    private void lease(Effect effect, java.util.UUID workspaceId, String leaseOwner, Duration leaseDuration,
+            Instant now) {
         jdbc.sql("""
                 UPDATE effect_journal SET state = 'inFlight', lease_owner = :owner, lease_until = :until,
-                       attempts = attempts + 1, updated_at = :now
+                       attempts = attempts + 1, updated_at = :now, trace_id = COALESCE(:trace, trace_id)
                 WHERE workspace_id = :ws AND id = :id
                 """)
+                // CG-P06 (S150): the trace of this attempt (the engine job or poll check that sends the call).
+                .param("trace", com.orqix.shared.tracing.TraceIds.current())
                 .param("owner", leaseOwner).param("until", Sql.ts(now.plus(leaseDuration))).param("now", Sql.ts(now))
-                .param("ws", request.workspaceId()).param("id", effect.id())
+                .param("ws", workspaceId).param("id", effect.id())
                 .update();
-        return new BeginResult(BeginAction.PROCEED, find(request.workspaceId(), effect.id()).orElseThrow());
+    }
+
+    /**
+     * Transaction B for an automatic lookup reconciliation (CG-C02): the effect succeeded through an earlier attempt;
+     * the found record is the result and {@code resolution} says how it was decided.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Effect finishReconciled(UUID workspaceId, UUID effectId, Integer httpStatus, String detail, JsonNode result,
+            String remoteReference, JsonNode resolution) {
+        jdbc.sql("""
+                UPDATE effect_journal SET state = 'succeeded', lease_owner = NULL, lease_until = NULL,
+                       last_http_status = :status, last_error_code = NULL, last_error_detail = :detail,
+                       result = CAST(:result AS jsonb), remote_reference = :ref,
+                       resolution = CAST(:resolution AS jsonb), updated_at = :now
+                WHERE workspace_id = :ws AND id = :id
+                """)
+                .param("status", httpStatus).param("detail", detail).param("result", json.write(result))
+                .param("ref", remoteReference).param("resolution", json.write(resolution))
+                .param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("id", effectId)
+                .update();
+        return find(workspaceId, effectId).orElseThrow();
     }
 
     /**

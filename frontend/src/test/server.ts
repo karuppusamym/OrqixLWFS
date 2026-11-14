@@ -9,11 +9,21 @@ import { createCaseHandlers } from '@/mocks/cases'
 import { createPromotionHandlers } from '@/mocks/promotion'
 import { createInsightsHandlers } from '@/mocks/insights'
 import { createAdapterHandlers } from '@/mocks/adapters'
+import { createConnectionHealthHandlers } from '@/mocks/connectionHealth'
 import { createCallbackHandlers } from '@/mocks/callbacks'
+import { createGuestFormHandlers } from '@/mocks/guestForms'
+import { createPackageHandlers } from '@/mocks/connectorPackages'
 import { createFeatureHandlers } from '@/mocks/features'
+import { createMcpServerHandlers } from '@/mocks/mcpServer'
+import { createAlertsRetentionHandlers } from '@/mocks/alertsRetention'
+import { createGitBundleHandlers } from '@/mocks/gitBundles'
+import { createSecurityHandlers } from '@/mocks/security'
+import { createTaskActionHandlers } from '@/mocks/taskActions'
+import { createBulkHandlers } from '@/mocks/bulk'
 import { createAgentWriteHandlers } from '@/mocks/agentWrites'
+import { createAgentToolHandlers } from '@/mocks/agentTools'
 import { createDocumentLibraryHandlers } from '@/mocks/documentLibrary'
 import { createSharedAssetHandlers } from '@/mocks/sharedAssets'
 
 /** The same handlers as browser mock mode, served to Vitest. Tests reseed with seedDb() and pick a persona. */
-export const server = setupServer(...createFeatureHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCallbackHandlers(), ...createAgentWriteHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers())
+export const server = setupServer(...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createBulkHandlers(getCurrentUser), ...createAlertsRetentionHandlers(getCurrentUser), ...createGitBundleHandlers(getCurrentUser), ...createSecurityHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers())

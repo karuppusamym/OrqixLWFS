@@ -1,7 +1,7 @@
 # Orqix CI - reference implementation of docs/build/S1-engineering-baseline.md section 7, stages 1-5.
 # The stages and gates are tool-neutral; decision D15 may move them to Jenkins or OpenShift Pipelines.
 #
-#   stage 1 contracts            -> job `contracts` (+ `deploy-manifests`, `procurement-stub`: owned tooling)
+#   stage 1 contracts            -> job `contracts` (+ `sdks`, `deploy-manifests`, `procurement-stub`: owned tooling)
 #   stage 2 backend              -> job `backend`
 #   stage 3 frontend             -> job `frontend`
 #   stage 4 image + SBOM + scans -> jobs `image` (build, SBOM, vulnerability scan) and `secret-scan`
@@ -29,6 +29,7 @@ env:
   JAVA_VERSION: "21"
   NODE_VERSION: "24"
   PYTHON_VERSION: "3.13"
+  DOTNET_VERSION: "8.0.x"
   REDOCLY_CLI_VERSION: "2.60.0"
   CYCLONEDX_NPM_VERSION: "6.0.1"
   CYCLONEDX_MAVEN_PLUGIN_VERSION: "2.9.3"
@@ -56,8 +57,11 @@ jobs:
       - name: Install contract-check dependencies
         run: pip install -r tools/contract-check/requirements.txt
 
-      - name: Schemas, examples, compiler fixtures and OpenAPI structure
+      - name: Schemas, examples, compiler fixtures, OpenAPI structure and API compatibility against the baseline
         run: python tools/contract-check/contract_check.py
+
+      - name: API compatibility rules (contract_diff.py unit tests, docs/api-compatibility.md)
+        run: python -m unittest discover -s tools/contract-check -p "test_*.py"
 
       - name: Migration equivalence comparator and evidence pack (offline, standard library only)
         run: python -m unittest discover -s tools/migration-equivalence -p "test_*.py"
@@ -71,6 +75,60 @@ jobs:
 
       - name: Redocly lint
         run: npx --yes @redocly/cli@${{ env.REDOCLY_CLI_VERSION }} lint --config .github/redocly.yaml contracts/openapi.yaml
+
+  # --------------------------------------------------------------------------------------------------------------------
+  # SDKs (CG-K02, docs/build/S149): generated code matches the contract, then each SDK's tests against a scripted
+  # loopback server (no stack). The Python worker SDK is tested in `contracts`.
+  # --------------------------------------------------------------------------------------------------------------------
+  sdks:
+    name: "1 SDKs (Java, TypeScript, .NET)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tools/contract-check/requirements.txt
+      - run: pip install -r tools/contract-check/requirements.txt
+      - name: Generated SDK models and operation tables match contracts/openapi.yaml
+        run: python sdks/codegen/generate.py --check
+
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: sdks/java/**/pom.xml
+      - name: Java SDK and Spring Boot starter
+        working-directory: sdks/java
+        run: sh ./mvnw -B -ntp verify
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: sdks/typescript/package-lock.json
+      - name: TypeScript SDK
+        working-directory: sdks/typescript
+        run: |
+          npm ci
+          npm run api:check
+          npm run build
+          npm test
+
+      # Pinned to the July 2026 release; v6.1.0 (2026-11-03) was too recent when this job was added.
+      - uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: .NET SDK
+        working-directory: sdks/dotnet
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+        run: dotnet test Orqix.sln
 
   # --------------------------------------------------------------------------------------------------------------------
   # Owned tooling and deployment artifacts: the stub's own tests and the OpenShift manifests.

@@ -64,6 +64,10 @@ public class DecisionTaskDelegate implements JavaDelegate {
         if (table == null) {
             throw new IllegalStateException("Decision table " + decisionKey + " not in release");
         }
+        if (DecisionTables.usesExpressions(json.write(table))) {
+            executeWithExpressions(execution, element, decision, decisionKey, Integer.valueOf(version), run, table);
+            return;
+        }
         Map<String,Object> values=new LinkedHashMap<>();
         Map<String,Object> variables=new LinkedHashMap<>();
         java.util.Set<String> referenced=new java.util.TreeSet<>();
@@ -100,6 +104,158 @@ public class DecisionTaskDelegate implements JavaDelegate {
         data.put("outputs", outputs);
         data.put("evidence", evidenceValues(table, values, result.matched(), asOf));
         events.append(workspaceId, runId, "DECISION_EVALUATED", element.getId(), null, data);
+    }
+
+    /**
+     * A table with Orqix expression entries (S146 part A). The canonical evaluator runs first with the types the
+     * compiler pinned in the BPMN ({@code typesBase64}) and the engine clock for {@code today()}; the pinned DMN then
+     * receives the expression results as variables ({@code x<k>}, {@code y<k>}) and must select the same rows. The
+     * stored results are the canonical exact values, after checking the engine returned the same ones. A problem (two
+     * rows under UNIQUE, a result without a value, an exceeded bound) fails the job, so the request needs attention.
+     */
+    private void executeWithExpressions(DelegateExecution execution, FlowElement element, ExtensionElement decision,
+            String decisionKey, int version, RunStore.RunRow run, JsonNode table) {
+        String tableJson = json.write(table);
+        String typesBase64 = OrqixModel.attribute(decision, "typesBase64");
+        if (typesBase64 == null) {
+            throw new IllegalStateException("Generated BPMN without expression settings for " + decisionKey);
+        }
+        String types = new String(java.util.Base64.getDecoder().decode(typesBase64), java.nio.charset.StandardCharsets.UTF_8);
+        java.time.LocalDate asOf = null;
+        for (JsonNode row : table.path("rows")) if (row.has("effective")) asOf = run.createdAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (String field : DecisionTables.fields(tableJson)) {
+            values.put(field, Json.scalar(ProcessData.resolve(execution, json, field)));
+        }
+        Map<String, Object> canonicalValues = new LinkedHashMap<>(values);
+        if (asOf != null) canonicalValues.put("$asOf", asOf);
+        canonicalValues.put("$now", CommandContextUtil.getProcessEngineConfiguration().getClock().getCurrentTime().toInstant());
+        DecisionEvaluator.Result canonical;
+        try {
+            canonical = DecisionTables.evaluate(tableJson, canonicalValues, types);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("DECISION_EXPRESSION: " + decisionKey + ": " + e.getMessage(), e);
+        }
+        Map<String, Object> variables = new LinkedHashMap<>(DecisionTables.engineVariables(tableJson, values, canonical));
+        if (asOf != null) variables.put("asOf", asOf.getYear() * 10000 + asOf.getMonthValue() * 100 + asOf.getDayOfMonth());
+        boolean collect = "COLLECT".equals(table.path("hitPolicy").asString(""));
+        Result result = evaluatePinnedVariables(execution.getProcessDefinitionId(), execution.getTenantId(), decisionKey,
+                variables, DecisionTables.ruleOwners(tableJson), collect);
+        if (!canonical.matchedRows().equals(result.rows())) {
+            throw new IllegalStateException("Pinned decision " + decisionKey + " selected rows " + result.rows()
+                    + " but the canonical evaluation selects " + canonical.matchedRows());
+        }
+        ObjectNode outputs = json.object();
+        canonical.output().forEach((name, value) -> {
+            JsonNode engine = result.outputs().get(name);
+            boolean same = value instanceof BigDecimal exact
+                    ? engine != null && engine.isNumber() && engine.decimalValue().subtract(exact).abs()
+                            .compareTo(exact.abs().multiply(new BigDecimal("1E-12")).max(new BigDecimal("1E-9"))) <= 0
+                    : engine != null && java.util.Objects.equals(Json.scalar(engine), value);
+            if (!same) {
+                throw new IllegalStateException("Pinned decision " + decisionKey + " gave " + engine + " for " + name
+                        + " but the canonical evaluation gives " + value);
+            }
+            outputs.set(name, json.fromScalar(value));
+        });
+        execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(outputs));
+
+        ObjectNode evidence = evidenceValues(table, scalarInputs(values), result.matched(), asOf, canonical);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("decisionKey", decisionKey);
+        data.put("version", version);
+        data.put("matched", result.matched());
+        data.put("outputs", outputs);
+        data.put("evidence", evidence);
+        events.append(ProcessData.workspaceId(execution), ProcessData.runId(execution), "DECISION_EVALUATED",
+                element.getId(), null, data);
+    }
+
+    /** Evidence lists the fields that have a value; a missing optional field is left out. */
+    private static Map<String, Object> scalarInputs(Map<String, Object> values) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        values.forEach((k, v) -> { if (v != null) out.put(k, v); });
+        return out;
+    }
+
+    /**
+     * Evidence of a table with expression entries: the S21 shape, each candidate's {@code expressions} (every test
+     * written as an expression with its result: true, false or null) and, on matching rows, {@code outputExpressions}
+     * (the computed results). Match and selection come from the canonical evaluation, which the pinned DMN confirmed.
+     */
+    ObjectNode evidenceValues(JsonNode table, Map<String, Object> values, String selected, java.time.LocalDate asOf,
+            DecisionEvaluator.Result canonical) {
+        JsonNode rows = table.path("rows");
+        if (!rows.isArray() || rows.size() < 1 || rows.size() > 50)
+            throw new IllegalStateException("Decision evidence requires 1..50 canonical rows");
+        ObjectNode evidence = json.object();
+        if (asOf != null) evidence.put("asOf", asOf.toString());
+        var inputs = evidence.putArray("inputs");
+        values.forEach((field, value) -> inputs.add(json.objectOf(Map.of("fieldRef", field, "value", value))));
+        var candidates = evidence.putArray("rows");
+        java.util.Set<String> selectedIds = "default".equals(selected) ? java.util.Set.of() : java.util.Set.of(selected.split(","));
+        String policy = table.path("hitPolicy").asString("UNIQUE");
+        for (int i = 0; i < rows.size(); i++) {
+            final int index = i;
+            JsonNode condition = rows.get(i).path("when");
+            boolean any = condition.has("any");
+            var terms = condition.has("all") ? condition.path("all") : any ? condition.path("any") : json.object().putArray("terms").add(condition);
+            boolean matched = !any;
+            var tests = json.object().putArray("expressions");
+            for (int t = 0; t < terms.size(); t++) {
+                JsonNode term = terms.get(t);
+                boolean hit;
+                if (term.has("expression")) {
+                    final int at = t;
+                    Object value = canonical.expressions().stream().filter(e -> e.row() == index && e.term() == at)
+                            .map(DecisionEvaluator.Entry::value).findFirst().orElse(null);
+                    hit = Boolean.TRUE.equals(value);
+                    ObjectNode entry = tests.addObject();
+                    entry.put("term", t).put("fieldRef", term.path("fieldRef").asString())
+                            .put("expression", term.path("expression").asString());
+                    if (value == null) entry.putNull("result"); else entry.put("result", (Boolean) value);
+                } else {
+                    String ref = term.path("fieldRef").asString();
+                    if (!values.containsKey(ref)) throw new IllegalStateException("Decision evidence input missing");
+                    String operator = term.path("operator").asString();
+                    hit = ConditionMatcher.matches(operator, values.get(ref), ConditionMatcher.operand(operator, term.path("value")));
+                }
+                matched = any ? matched | hit : matched & hit;
+            }
+            String id = "r" + (i + 1);
+            JsonNode window = rows.get(i).path("effective");
+            boolean inWindow = true;
+            if (window.isObject()) {
+                inWindow = (!window.has("from") || !asOf.isBefore(java.time.LocalDate.parse(window.path("from").asString())))
+                        && (!window.has("to") || !asOf.isAfter(java.time.LocalDate.parse(window.path("to").asString())));
+                matched &= inWindow;
+            }
+            if (selectedIds.contains(id) && !matched) {
+                throw new IllegalStateException("Pinned decision result differs from canonical evidence");
+            }
+            ObjectNode row = json.object();
+            row.put("rowId", id).put("matched", matched).put("selected", selectedIds.contains(id));
+            if (window.isObject()) {
+                row.put("inWindow", inWindow);
+                row.set("effective", window.deepCopy());
+            }
+            row.set("condition", condition.deepCopy());
+            if (!tests.isEmpty()) row.set("expressions", tests);
+            var computed = json.object().putArray("outputExpressions");
+            for (DecisionEvaluator.Entry e : canonical.expressions()) {
+                if (e.row() == index && e.term() < 0) {
+                    ObjectNode o = computed.addObject();
+                    o.put("output", e.target()).put("expression", e.expression());
+                    o.set("value", e.value() == null ? tools.jackson.databind.node.NullNode.getInstance() : json.fromScalar(e.value()));
+                }
+            }
+            if (!computed.isEmpty()) row.set("outputExpressions", computed);
+            candidates.add(row);
+        }
+        evidence.put("hitPolicy", policy);
+        if (table.has("aggregation")) evidence.put("aggregation", table.path("aggregation").asString());
+        evidence.put("defaultSelected", "default".equals(selected));
+        return evidence;
     }
 
     /**

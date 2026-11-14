@@ -10,6 +10,8 @@ export type PathNode = S['PathNode']
 export type PathTransition = S['PathTransition']
 export type PathVisit = S['PathVisit']
 export type PathCurrent = S['PathCurrent']
+export type PathLoop = S['PathLoop']
+export type PathForEach = S['PathForEach']
 
 /** getRunPath: the pinned release's graph, the steps passed and the current steps (docs/build/S7-frontend.md section 4). */
 export const getRunPath = (ws: string, runId: string) =>

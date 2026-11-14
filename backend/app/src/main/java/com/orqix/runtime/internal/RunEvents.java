@@ -52,11 +52,14 @@ public class RunEvents {
                 .query(Long.class).optional()
                 .orElseThrow(() -> new IllegalStateException("Run " + runId + " not found for event " + type));
         jdbc.sql("""
-                INSERT INTO run_event (run_id, seq, workspace_id, type, node_id, actor_subject_id, occurred_at, data)
-                VALUES (:run, :seq, :ws, :type, :node, :actor, :at, CAST(:data AS jsonb))
+                INSERT INTO run_event (run_id, seq, workspace_id, type, node_id, actor_subject_id, occurred_at, data,
+                                       trace_id)
+                VALUES (:run, :seq, :ws, :type, :node, :actor, :at, CAST(:data AS jsonb), :trace)
                 """)
                 .param("run", runId).param("seq", seq).param("ws", workspaceId).param("type", type)
                 .param("node", nodeId).param("actor", actor).param("at", Sql.ts(now))
+                // CG-P06 (S150): the trace of the HTTP request, engine job or scheduler run that wrote the event.
+                .param("trace", com.orqix.shared.tracing.TraceIds.current())
                 .param("data", json.write(data == null ? Map.of() : data))
                 .update();
         publisher.publishEvent(new Appended(workspaceId, runId, seq, type, nodeId, data == null ? Map.of() : data));

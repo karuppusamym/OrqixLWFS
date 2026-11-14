@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/workflow-test-suite-v1.schema.json",
+  "title": "Orqix workflow test suite, version 1 (CG-Q01, docs/build/S148)",
+  "description": "One file format for the Studio Test tab (export and import), the shared publication suite and CI (orqix test run). Every case is a dry run of the workflow: nothing is started, called or stored. The server reads input, scenario, expect and assertions; studio holds the Test tab's editing state and is ignored by the server and by CI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cases"],
+  "properties": {
+    "schemaVersion": { "const": "orqix.workflow-tests/v1" },
+    "workflowKey": {
+      "description": "The workflow these cases test. When present, a run against another workflow is refused.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "description": { "type": "string", "maxLength": 1000 },
+    "coverageMinimum": { "$ref": "#/$defs/coverageMinimum" },
+    "cases": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "coverageMinimum": {
+      "description": "Least share (percent) of each item kind the cases must cover together. A missing kind has no minimum.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "steps": { "$ref": "#/$defs/percent" },
+        "routes": { "$ref": "#/$defs/percent" },
+        "rules": { "$ref": "#/$defs/percent" },
+        "formRules": { "$ref": "#/$defs/percent" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "input", "expect"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "input": {
+          "description": "The request form answers, validated like a real request.",
+          "type": "object"
+        },
+        "scenario": {
+          "description": "Step settings and mocks of the dry run (approvals, calls, workers, adapters, messages, children, ai), as SimulationScenario in contracts/openapi.yaml.",
+          "type": "object"
+        },
+        "expect": {
+          "description": "The expected business outcome, or __needsAttention__.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "assertions": {
+          "description": "Further checks, as SimulationAssertions in contracts/openapi.yaml (outputs, path, rules, approvals).",
+          "type": "object"
+        },
+        "studio": {
+          "description": "The Test tab's editing state of this case (answers as typed, step settings). Ignored by the server and by CI.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

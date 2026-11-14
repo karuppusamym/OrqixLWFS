@@ -276,11 +276,119 @@ def check_split(docs: list[dict], secret_refs: dict[str, set[str]], report: Repo
     report.check(namespaces == {"orqix-prod"}, "all resources in namespace orqix-prod", f"{name}: namespaces {namespaces}")
 
 
+def hardened(container: dict, pod: dict) -> bool:
+    sc = container.get("securityContext", {})
+    psc = pod.get("securityContext", {})
+    return (psc.get("runAsNonRoot") is True and psc.get("seccompProfile", {}).get("type") == "RuntimeDefault"
+            and "runAsUser" not in psc and sc.get("allowPrivilegeEscalation") is False
+            and sc.get("readOnlyRootFilesystem") is True and sc.get("capabilities", {}).get("drop") == ["ALL"]
+            and sc.get("runAsNonRoot") is True)
+
+
+def check_backup(docs: list[dict], report: Report) -> None:
+    """CG-P03 (docs/build/S150): deploy/backup renders the backup and drill CronJobs, their PVC and script ConfigMap."""
+    print("\n== backup (deploy/backup)")
+    kinds = sorted(d["kind"] for d in docs)
+    report.check(kinds == ["ConfigMap", "CronJob", "CronJob", "PersistentVolumeClaim"], "backup resource set rendered",
+                 f"backup: kinds {kinds}")
+    report.check(not by_kind(docs, "Secret"), "no Secret rendered (references only)", "backup: a Secret is rendered")
+    scripts = one(docs, "ConfigMap")
+    keys = set(scripts.get("data", {}))
+    report.check(keys == {"orqix-backup.sh", "orqix-restore-drill.sh", "verify-queries.sh"},
+                 "script ConfigMap holds the backup, drill and verification scripts", f"backup: ConfigMap keys {keys}")
+    pvc = one(docs, "PersistentVolumeClaim")
+    for job in by_kind(docs, "CronJob"):
+        name = job["metadata"]["name"]
+        spec = job["spec"]
+        pod = spec["jobTemplate"]["spec"]["template"]["spec"]
+        container = pod["containers"][0]
+        labels = spec["jobTemplate"]["spec"]["template"]["metadata"]["labels"]
+        report.check(spec.get("concurrencyPolicy") == "Forbid" and spec.get("timeZone") == "Etc/UTC",
+                     f"{name}: one run at a time, schedule in UTC", f"backup {name}: concurrencyPolicy/timeZone")
+        report.check(labels.get("app.kubernetes.io/part-of") == "orqix",
+                     f"{name}: pods labelled part-of=orqix (DNS and PostgreSQL egress from the base NetworkPolicies)",
+                     f"backup {name}: pod labels {labels}")
+        report.check(hardened(container, pod) and pod.get("automountServiceAccountToken") is False,
+                     f"{name}: non-root, read-only root, drop ALL, seccomp, no service account token",
+                     f"backup {name}: security context")
+        report.check("limits" in container.get("resources", {}), f"{name}: resource limits set", f"backup {name}: resources")
+        claims = [v["persistentVolumeClaim"]["claimName"] for v in pod["volumes"] if "persistentVolumeClaim" in v]
+        maps = [v["configMap"]["name"] for v in pod["volumes"] if "configMap" in v]
+        report.check(claims == [pvc["metadata"]["name"]] and maps == [scripts["metadata"]["name"]],
+                     f"{name}: mounts the backup PVC and the generated script ConfigMap", f"backup {name}: volumes {pod['volumes']}")
+        env = {e["name"]: e for e in container.get("env", [])}
+        report.check(all("value" not in env.get(k, {}) for k in ("PGPASSWORD", "PGUSER", "PGHOST"))
+                     and any("secretRef" in e for e in container.get("envFrom", [])),
+                     f"{name}: credentials come from a Secret reference", f"backup {name}: credentials inline")
+
+
+def check_observability(repo: Path, report: Report) -> None:
+    """CG-P06 (docs/build/S150): dashboards parse, rules are well-formed and the OpenShift PrometheusRule matches."""
+    import json
+    import re
+    print("\n== observability (deploy/observability)")
+    obs = repo / "deploy" / "observability"
+    rules = yaml.safe_load((obs / "prometheus" / "orqix-alerts.yaml").read_text(encoding="utf-8"))
+    groups = rules.get("groups", [])
+    alerts = [r for g in groups for r in g.get("rules", []) if "alert" in r]
+    records = [r for g in groups for r in g.get("rules", []) if "record" in r]
+    report.check(len(alerts) >= 10 and len(records) >= 5, f"{len(alerts)} alerts and {len(records)} recording rules",
+                 f"observability: only {len(alerts)} alerts / {len(records)} records")
+    report.check(all(r.get("expr") and r.get("labels", {}).get("severity") and r.get("annotations", {}).get("summary")
+                     for r in alerts), "every alert has an expression, a severity and a summary",
+                 "observability: an alert lacks expr, severity or summary")
+    names = [r["alert"] for r in alerts]
+    report.check(len(names) == len(set(names)), "alert names are unique", f"observability: duplicate alert names {names}")
+    target = repo / "deploy" / "openshift" / "optional" / "prometheusrule.yaml"
+    rendered = [d for d in yaml.safe_load_all(target.read_text(encoding="utf-8")) if d]
+    cr = rendered[0] if rendered else {}
+    report.check(cr.get("kind") == "PrometheusRule" and cr.get("spec", {}).get("groups") == groups,
+                 "optional/prometheusrule.yaml carries exactly the rule file's groups",
+                 "observability: optional/prometheusrule.yaml differs from orqix-alerts.yaml (run with --write-prometheusrule)")
+    code = "\n".join(p.read_text(encoding="utf-8") for p in (repo / "backend" / "app" / "src" / "main" / "java").rglob("*.java"))
+    known = set(re.findall(r'"(orqix_[a-z_]+)"', code)) | {n.replace(".", "_") for n in re.findall(r'"(orqix\.[a-z.]+)"', code)}
+    exprs = [r["expr"] for r in alerts + records]
+    dashboards = sorted((obs / "grafana" / "dashboards").glob("*.json"))
+    report.check(len(dashboards) >= 3, f"{len(dashboards)} Grafana dashboards", "observability: dashboards missing")
+    for path in dashboards:
+        board = json.loads(path.read_text(encoding="utf-8"))
+        panels = [p for p in board.get("panels", []) if p.get("type") != "row"]
+        ids = [p.get("id") for p in board.get("panels", [])]
+        report.check(bool(panels) and len(ids) == len(set(ids)) and board.get("uid") == path.stem,
+                     f"{path.name}: {len(panels)} panels, unique ids, uid = file name", f"observability: {path.name} structure")
+        exprs += [t["expr"] for p in panels for t in p.get("targets", [])]
+    unknown = set()
+    for expr in exprs:
+        for metric in re.findall(r"\b(orqix_[a-z_]+)", expr):
+            base = re.sub(r"_(total|seconds_count|seconds_sum|seconds_bucket|seconds_max|seconds)$", "", metric)
+            if metric not in known and base not in known and base + "_seconds" not in known:
+                unknown.add(metric)
+    report.check(not unknown, "every orqix_* metric in rules and dashboards is registered in the backend",
+                 f"observability: metrics not found in backend code: {sorted(unknown)}")
+
+
+def write_prometheusrule(repo: Path) -> None:
+    rules = yaml.safe_load((repo / "deploy" / "observability" / "prometheus" / "orqix-alerts.yaml").read_text(encoding="utf-8"))
+    target = repo / "deploy" / "openshift" / "optional" / "prometheusrule.yaml"
+    header = "".join(line for line in target.read_text(encoding="utf-8").splitlines(keepends=True) if line.startswith("#"))
+    doc = {"apiVersion": "monitoring.coreos.com/v1", "kind": "PrometheusRule",
+           "metadata": {"name": "orqix", "labels": {"app.kubernetes.io/name": "orqix", "app.kubernetes.io/part-of": "orqix"}},
+           "spec": {"groups": rules["groups"]}}
+    target.write_bytes((header + yaml.safe_dump(doc, sort_keys=False, width=120, allow_unicode=True)).encode("utf-8"))
+    print(f"wrote {target}")
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[2] / "deploy" / "openshift"
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=root, help="deploy/openshift directory")
+    parser.add_argument("--write-prometheusrule", action="store_true",
+                        help="regenerate optional/prometheusrule.yaml from deploy/observability and exit")
     args = parser.parse_args()
+    repo = args.root.resolve().parents[1]
+    if args.write_prometheusrule:
+        write_prometheusrule(repo)
+        return 0
 
     secrets: dict[str, set[str]] = {}
     for doc in yaml.safe_load_all((args.root / "base" / "secrets.example.yaml").read_text(encoding="utf-8")):
@@ -291,11 +399,13 @@ def main() -> int:
     for overlay in OVERLAYS:
         check_overlay(overlay, render(args.root / "overlays" / overlay), secrets, report)
     check_split(render(args.root / "overlays" / SPLIT_OVERLAY), secrets, report)
+    check_backup(render(repo / "deploy" / "backup"), report)
+    check_observability(repo, report)
     print()
     if report.failures:
         print(f"RESULT: FAIL - {len(report.failures)} of {report.count} checks failed")
         return 1
-    print(f"RESULT: PASS - {report.count} checks across {len(OVERLAYS) + 1} overlays")
+    print(f"RESULT: PASS - {report.count} checks across {len(OVERLAYS) + 1} overlays, backups and observability")
     return 0
 
 

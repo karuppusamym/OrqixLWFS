@@ -4,6 +4,8 @@ import { useStudioContext } from './StudioContext'
 import { LABEL_MAX_WIDTH, nodeSize } from './model/layout'
 import type { Notation } from './model/notation'
 import type { NodeKind, RouteKind } from './model/types'
+import { RouteHeatLabel, useRouteHeat } from '@/features/analytics/HeatmapOverlay'
+import { ROUTE_WIDTH } from '@/features/analytics/heatmap'
 
 export interface RouteEdgeData extends Record<string, unknown> {
   on: RouteKind
@@ -113,6 +115,12 @@ const TEXT_CLASS: Record<RouteKind, string> = {
   condition: 'text-edge-condition',
   default: 'text-foreground',
   next: 'text-foreground',
+  aiLabel: 'text-edge-condition',
+  branch: 'text-edge-condition',
+  lowConfidence: 'text-edge-condition',
+  needsReview: 'text-edge-condition',
+  aiUnavailable: 'text-edge-rejected',
+  limitReached: 'text-edge-rejected',
 }
 
 /**
@@ -139,9 +147,11 @@ export function RouteEdge({ id, source, target, sourceX, sourceY, targetX, targe
   const laneShift = ([...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 3) * 22
   const geometry = routeGeometry({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, others, width, laneShift)
   const showLabel = text !== '' && (on !== 'approved' && on !== 'rejected' ? true : data?.notation === 'bpmn' || geometry.detour || !!selected)
+  const heat = useRouteHeat(id)
   return (
     <>
-      <BaseEdge id={id} path={geometry.path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+      <BaseEdge id={id} path={geometry.path} markerEnd={markerEnd} style={heat ? { ...style, strokeWidth: ROUTE_WIDTH[heat.level] } : style} interactionWidth={interactionWidth} />
+      {heat ? <EdgeLabelRenderer><RouteHeatLabel transitionId={id} x={geometry.label.x} y={geometry.label.y} /></EdgeLabelRenderer> : null}
       {showLabel ? (
         <EdgeLabelRenderer>
           <button

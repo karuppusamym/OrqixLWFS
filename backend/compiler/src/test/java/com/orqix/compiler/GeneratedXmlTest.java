@@ -37,10 +37,19 @@ class GeneratedXmlTest {
     private static final Pattern ALLOWED = Pattern.compile(
             "\\$\\{orqixRoute\\.(approved|rejected|condition)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}"
-                    + "|\\$\\{orqixChildTask\\}|\\$\\{orqixCompensationTask\\}"
+                    + "|\\$\\{orqixChildTask\\}|\\$\\{orqixCompensationTask\\}|\\$\\{orqixExternalTask\\}"
                     + "|\\$\\{orqixRoute\\.(exited|markExit)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}',"
                     + " '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
-                    + "|\\$\\{orqixWait\\.until\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}");
+                    + "|\\$\\{orqixWait\\.until\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
+                    // S137: Calculate steps.
+                    + "|\\$\\{orqixCalculate\\}"
+                    // S134: AI tasks and the routes out of them.
+                    + "|\\$\\{orqixAiTask\\}|\\$\\{orqixRoute\\.ai\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}',"
+                    + " '(next|lowConfidence|needsReview|aiUnavailable|label:[a-z][A-Za-z0-9]{0,39})'\\)\\}"
+                    // S138: bounded loops (counters and the guard condition) and for-each steps.
+                    + "|\\$\\{orqixLoop\\.(entered|traversed|limitReached)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
+                    + "|\\$\\{orqixLoop\\.again\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}', ([1-9]|10)\\)\\}"
+                    + "|\\$\\{orqixForEach\\.(items|batches|done|collect)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}");
 
     static String everythingJson() throws IOException {
         try (InputStream in = GeneratedXmlTest.class.getResourceAsStream("/workflows/everything.json")) {

@@ -8,6 +8,7 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type Definition, type SubprocessDef, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+import { MessageTriggerFields } from './WaitsAndStartsFields'
 
 /** Signal names follow the workflow schema (docs/build/S59). */
 export const SIGNAL_PATTERN = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
@@ -15,7 +16,7 @@ export const SIGNAL_PATTERN = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
 export const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,39}$/
 
 /** Steps a section or handler can hold (the compiler checks the rest: WF_SUBPROCESS_STEP_KIND). */
-const SECTION_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'])
+const SECTION_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate', 'externalTask'])
 const HANDLER_KINDS = new Set(['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'wait', 'sendSignal', 'compensate', 'end'])
 
 export function SignalInspector({ node }: { node: WorkflowNode }) {
@@ -172,6 +173,8 @@ export function CallFailureErrorFields({ node }: { node: WorkflowNode }) {
   const caught = !on || (section?.onError && (!section.onError.errorCode || section.onError.errorCode === code))
   const target = section?.onError ? def.nodes.find((n) => n.id === section.onError?.to) : undefined
   const id = `call-raise-${node.id}`
+  // S132: work by an external worker raises the error when the worker reports a business error.
+  const worker = node.type === 'externalTask'
   return (
     <InspectorSection title="When it fails">
       <div className="flex items-start gap-3">
@@ -182,10 +185,12 @@ export function CallFailureErrorFields({ node }: { node: WorkflowNode }) {
           onCheckedChange={(v) => store.getState().apply((d) => setRaiseOnFailure(d, node.id, v === true ? (section?.onError?.errorCode ?? DEFAULT_CALL_ERROR) : undefined))}
         />
         <div>
-          <Label htmlFor={id}>Raise an error for the section&apos;s error route when this call fails for good</Label>
+          <Label htmlFor={id}>{worker ? "Raise an error for the section's error route when the worker reports a business error" : "Raise an error for the section's error route when this call fails for good"}</Label>
           <p className="text-xs text-muted-foreground">
             {section && target ? `The section ${section.label} then stops and the request continues at ${target.label}. ` : ''}
-            Only when the system rejects the request, or a read returns an unusable answer. If the system does not answer, or nobody knows whether the call was done, the request still needs attention. Turning this on removes the call&apos;s Failed route.
+            {worker
+              ? "Only when the worker reports a business error code (the work was done and the answer is no). A worker that stops responding or reports a temporary failure is retried, and then the request needs attention. Turning this on removes the step's Failed route."
+              : "Only when the system rejects the request, or a read returns an unusable answer. If the system does not answer, or nobody knows whether the call was done, the request still needs attention. Turning this on removes the call's Failed route."}
           </p>
         </div>
       </div>
@@ -270,12 +275,13 @@ export function SubprocessesInspector() {
               <>
                 <FormField id={`scope-trigger-${s.id}`} label="Starts on">
                   {(ids) => <Select id={ids.input} value={s.trigger?.type ?? 'signal'} disabled={readOnly} onChange={(e) => {
-                    const type = e.target.value as 'error' | 'signal' | 'timer'
-                    patch(s.id, { trigger: type === 'signal' ? { type, signal: 'signal-name' } : type === 'timer' ? { type, after: 'P1D' } : { type } })
-                  }}><option value="signal">A signal of this request</option><option value="timer">A time after the request started</option><option value="error">An error raised in the request</option></Select>}
+                    const type = e.target.value as 'error' | 'signal' | 'timer' | 'message'
+                    patch(s.id, { trigger: type === 'signal' ? { type, signal: 'signal-name' } : type === 'timer' ? { type, after: 'P1D' } : type === 'message' ? { type, message: 'customer-cancelled', correlationField: '' } : { type } })
+                  }}><option value="signal">A signal of this request</option><option value="message">A message for this request</option><option value="timer">A time after the request started</option><option value="error">An error raised in the request</option></Select>}
                 </FormField>
                 {s.trigger?.type === 'signal' ? <FormField id={`scope-signal-${s.id}`} label="Signal" required>{(ids) => <CommitInput id={ids.input} value={s.trigger?.signal ?? ''} disabled={readOnly} onCommit={(v) => patch(s.id, { trigger: { type: 'signal', signal: v.trim() } })} />}</FormField> : null}
                 {s.trigger?.type === 'timer' ? <FormField id={`scope-after-${s.id}`} label="After" required description="For example P3D.">{(ids) => <CommitInput id={ids.input} value={s.trigger?.after ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => patch(s.id, { trigger: { type: 'timer', after: v.trim() } })} />}</FormField> : null}
+                {s.trigger?.type === 'message' ? <MessageTriggerFields scope={s} patch={(p) => patch(s.id, p)} /> : null}
                 {s.trigger?.type === 'error' ? <FormField id={`scope-code-${s.id}`} label="Only for the error code" optionalText>{(ids) => <CommitInput id={ids.input} value={s.trigger?.errorCode ?? ''} disabled={readOnly} onCommit={(v) => patch(s.id, { trigger: { type: 'error', ...(v.trim() ? { errorCode: v.trim().toUpperCase() } : {}) } })} />}</FormField> : null}
                 <div className="flex items-center gap-2">
                   <Checkbox id={`scope-interrupting-${s.id}`} checked={s.interrupting === true} disabled={readOnly || s.trigger?.type === 'error'} onCheckedChange={(v) => patch(s.id, { interrupting: v === true })} />

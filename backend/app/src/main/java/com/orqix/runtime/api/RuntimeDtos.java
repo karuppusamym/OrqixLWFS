@@ -131,7 +131,9 @@ public final class RuntimeDtos {
             Instant startedAt, Instant endedAt, int iteration) {
     }
 
-    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since) {
+    /** {@code errorCode} (S142): the error code of the failed step when it reported one; omitted otherwise. */
+    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String errorCode) {
     }
 
     public record ActionAvailability(boolean allowed, String reasonCode) {
@@ -169,7 +171,22 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode input, Map<String, String> inputLabels,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
             List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
-            List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension) {
+            List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension,
+            List<String> protectedFields) {
+
+        /** Without CG-I05 protected fields (S151). */
+        public RunDetail(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey,
+                String requestTitle, SubjectRef initiator, String lifecycle, String outcome, String outcomeKind,
+                List<CurrentStep> currentSteps, Attention attention, Instant createdAt, Instant updatedAt,
+                Instant endedAt, boolean isTest, int version, JsonNode input, Map<String, String> inputLabels,
+                JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
+                List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
+                List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension) {
+            this(id, reference, workflow, release, businessKey, requestTitle, initiator, lifecycle, outcome,
+                    outcomeKind, currentSteps, attention, createdAt, updatedAt, endedAt, isTest, version, input,
+                    inputLabels, output, tasks, effects, completedEffectsNotReversed, allowedActions, parentRun,
+                    children, stage, stages, suspension, List.of());
+        }
     }
 
     /**

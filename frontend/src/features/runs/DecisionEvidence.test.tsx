@@ -36,6 +36,29 @@ describe('automated decision evidence', () => {
     expect(within(rules).getAllByText('Yes')).toHaveLength(4)
     expect(screen.getByText(/Combined as the sum/)).toBeInTheDocument()
   })
+  it('shows formula tests with what they gave and the computed results of the selected row (docs/build/S146)', async () => {
+    const formulas={hitPolicy:'FIRST',inputs:[{fieldRef:'/input/amount',value:150},{fieldRef:'/input/limit',value:100}],rows:[
+      {rowId:'r1',condition:{all:[{fieldRef:'/input/region',operator:'eq',value:'EU'},{fieldRef:'/input/amount',expression:'input.amount > input.limit'}]},matched:true,selected:true,
+        expressions:[{term:1,fieldRef:'/input/amount',expression:'input.amount > input.limit',result:true}],outputExpressions:[{output:'fee',expression:'round(input.amount * 0.025, 2)',value:3.75}]},
+      {rowId:'r2',condition:{fieldRef:'/input/amount',expression:'input.amount > input.cap'},matched:false,selected:false,expressions:[{term:0,fieldRef:'/input/amount',expression:'input.amount > input.cap',result:null}]}],defaultSelected:false}
+    render(<DecisionEvidence event={event({evidence:formulas})} />)
+    await userEvent.setup().click(screen.getByText('Decision evidence'))
+    const rules=screen.getByRole('table',{name:'Evaluated candidate rules'})
+    expect(within(rules).getByText('Region equals EU and Amount: formula input.amount > input.limit gave true')).toBeInTheDocument()
+    expect(within(rules).getByText('Amount: formula input.amount > input.cap gave no value')).toBeInTheDocument()
+    expect(within(within(rules).getByRole('list',{name:'Computed results of r1'})).getByText('Fee: formula round(input.amount * 0.025, 2) gave 3.75')).toBeInTheDocument()
+  })
+  it('refuses malformed formula evidence', () => {
+    const row={rowId:'r1',condition:{fieldRef:'/input/amount',expression:'input.amount > 1'},matched:true,selected:true}
+    const {rerender}=render(<DecisionEvidence event={event({evidence:{inputs:[],rows:[{...row,expressions:[{term:0,fieldRef:'/input/amount',expression:'input.amount > 2',result:true}]}],defaultSelected:false}})} />)
+    expect(screen.queryByText('Decision evidence')).not.toBeInTheDocument()
+    rerender(<DecisionEvidence event={event({evidence:{inputs:[],rows:[{...row,condition:{fieldRef:'/input/amount',expression:'x',operator:'eq'}}],defaultSelected:false}})} />)
+    expect(screen.queryByText('Decision evidence')).not.toBeInTheDocument()
+    rerender(<DecisionEvidence event={event({evidence:{inputs:[],rows:[{...row,outputExpressions:[{output:'fee',expression:'1',value:{secret:1}}]}],defaultSelected:false}})} />)
+    expect(screen.queryByText('Decision evidence')).not.toBeInTheDocument()
+    rerender(<DecisionEvidence event={event({evidence:{inputs:[],rows:[row],defaultSelected:false}})} />)
+    expect(screen.getByText('Decision evidence')).toBeInTheDocument()
+  })
   it('shows fallback selection and safely handles restricted, legacy and malformed events', () => {
     const {rerender}=render(<DecisionEvidence event={event({evidence:{...evidence,defaultSelected:true}})} />)
     expect(screen.getByText('Default rule selected.')).toBeInTheDocument()

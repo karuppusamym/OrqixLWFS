@@ -109,8 +109,25 @@ public class ConnectionService {
 
     @Transactional(readOnly = true)
     public Set<String> enabledBindings(UUID workspaceId) {
-        return Set.copyOf(jdbc.sql("SELECT connection_key FROM connection_binding WHERE workspace_id = :ws AND enabled")
+        java.util.Set<String> keys = new java.util.HashSet<>(jdbc.sql(
+                "SELECT connection_key FROM connection_binding WHERE workspace_id = :ws AND enabled")
                 .param("ws", workspaceId).query(String.class).list());
+        // S135: an agent whose tools all live on registered tool servers needs no binding of its own (each server's
+        // binding is checked when the agent connects), so publishing does not ask for one.
+        Map<String, Boolean> serverOnly = new java.util.HashMap<>();
+        for (DefinitionRecord record : definitions(workspaceId)) {
+            if (record.definition().isAgent()) {
+                boolean none = record.definition().operations().values().stream()
+                        .allMatch(op -> op.agent() != null && !op.agent().usesOwnBinding());
+                serverOnly.merge(record.key(), none, Boolean::logicalAnd);
+            }
+        }
+        serverOnly.forEach((key, none) -> {
+            if (none) {
+                keys.add(key);
+            }
+        });
+        return Set.copyOf(keys);
     }
 
     private DefinitionRecord toRecord(String key, int version, String definition, String hash, Instant createdAt,

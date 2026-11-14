@@ -13,7 +13,11 @@ import { targetLabel } from '../model/summary'
 import type { Condition, Transition, WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, InspectorSection } from './controls'
 import { ConditionEditor, defaultLiteral } from './ConditionEditor'
+import { ExpressionEditor } from './ExpressionEditor'
 import { StepIdField } from './SimpleInspectors'
+import { conditionToExpression } from '../model/conditionText'
+import { studioScope } from '../model/expressionScope'
+import { isExpressionCondition } from '../model/types'
 
 /**
  * Choose a path: routes with a condition and exactly one Otherwise route
@@ -23,6 +27,7 @@ export function BranchInspector({ node }: { node: WorkflowNode }) {
   const { store, readOnly, connections } = useStudioContext()
   const def = useStudio((s) => s.definition)
   const fields = useMemo(() => availableFields(def, node.id, connections), [def, node.id, connections])
+  const formulaContext = useMemo(() => studioScope(def, node.id, connections), [def, node.id, connections])
   const routes = outgoing(def, node.id)
   const ordered = [...routes.filter((t) => t.on === 'condition'), ...routes.filter((t) => t.on !== 'condition')]
   const otherwise = routes.find((t) => t.on === 'default')
@@ -81,8 +86,24 @@ export function BranchInspector({ node }: { node: WorkflowNode }) {
                   </Button>
                 ) : null}
               </div>
-              {t.on === 'condition' && t.condition ? (
+              {t.on === 'condition' && t.condition && isExpressionCondition(t.condition) ? (
+                <ExpressionEditor id={`route-${t.id}-expr`} label="Formula" dataField={`route.${t.id}.condition.expression`} value={t.condition.expression}
+                  context={formulaContext} expected="boolean" disabled={readOnly} onCommit={(expression) => updateCondition(t, { expression })}
+                  description="The path is taken when the formula gives true, for example input.endDate > addWorkingDays(input.startDate, 5)." />
+              ) : null}
+              {t.on === 'condition' && t.condition && !isExpressionCondition(t.condition) ? (
                 <ConditionEditor idBase={`route-${t.id}`} dataFieldBase={`route.${t.id}.condition`} condition={t.condition} fields={fields} disabled={readOnly} onChange={(c) => updateCondition(t, c)} />
+              ) : null}
+              {t.on === 'condition' && t.condition && !readOnly ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => {
+                  const c = t.condition!
+                  if (isExpressionCondition(c)) {
+                    const first = fields.find((f) => f.type === 'number') ?? fields[0]
+                    updateCondition(t, { fieldRef: first?.ref ?? '', operator: 'eq', value: defaultLiteral(first?.type, first?.enumValues) })
+                  } else updateCondition(t, { expression: conditionToExpression(c) })
+                }}>
+                  {isExpressionCondition(t.condition) ? 'Use a simple comparison instead' : 'Write a formula instead (dates, calculations)'}
+                </Button>
               ) : null}
               <FormField label="Label on the canvas" optionalText id={`route-${t.id}-label`} description="For example: USD 5,000 or more.">
                 {(ids) => (

@@ -110,6 +110,13 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
     for (const type of ['EFFECT_FAILED', 'EFFECT_UNKNOWN', 'RUN_NEEDS_ATTENTION']) expect(eventTone(event(type))).toBe('danger')
   })
 
+  it('EFFECT_DEFERRED says the call waited without using an attempt (CG-W04, S131)', () => {
+    const deferred = (reason: string) => event('EFFECT_DEFERRED', { nodeId: 'procure', data: { reason, connectionKey: 'procurement', until: '2026-10-08T10:15:00Z' } })
+    expect(describeEvent(deferred('CIRCUIT_OPEN'), ctx)).toMatch(/^Create purchase order is waiting because calls to the system are paused after repeated failures\. No attempt was used; it tries again at .+\.$/)
+    expect(describeEvent(deferred('RATE_LIMITED'), ctx)).toMatch(/^Create purchase order is waiting because the connection request limit was reached\. No attempt was used/)
+    expect(eventTone(deferred('CIRCUIT_OPEN'))).toBe('waiting')
+  })
+
   it('operator actions, completion and cancellation', () => {
     const actor = { id: 'o', displayName: 'Olga Operator' }
     expect(describeEvent(event('OPERATOR_RETRY', { nodeId: 'procure', actor }), ctx)).toBe('Olga Operator retried Create purchase order')
@@ -117,6 +124,9 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
     expect(describeEvent(event('RUN_COMPLETED', { data: { outcome: 'Fulfilled' } }), ctx)).toBe('Finished: Fulfilled')
     expect(describeEvent(event('RUN_CANCELLED', { actor, data: { reason: 'Duplicate request' } }), ctx)).toBe('Olga Operator cancelled the request: Duplicate request')
     expect(describeEvent(event('TASK_DISPATCHED', { nodeId: 'manager', data: { assignee: 'Mani Manager', rule: 'Fewest open tasks among 2 eligible people.' } }), ctx)).toContain('Mani Manager was assigned')
+    expect(describeEvent(event('TASK_ESCALATED', { nodeId: 'manager', data: { level: 2, action: 'reassign', group: 'finance-approvers', afterHours: 8, workingTime: true, outcome: 'reassigned', recipients: 1 } }), ctx)).toBe('Escalation level 2: after 8 working hours, Review request moved to Finance approvers')
+    expect(describeEvent(event('TASK_ESCALATED', { nodeId: 'manager', data: { level: 1, action: 'notify', group: 'managers', afterHours: 1, workingTime: false, outcome: 'notified', recipients: 2 } }), ctx)).toContain('after 1 hour, 2 people in')
+    expect(describeEvent(event('TASK_ESCALATED', { nodeId: 'manager', data: { level: 3, action: 'reassign', group: 'finance-approvers', afterHours: 4, workingTime: false, outcome: 'noEligiblePerson', recipients: 0 } }), ctx)).toContain('stayed in its queue')
     expect(eventTone(event('EXTERNAL_JOB_CALLBACK_REGISTERED'))).toBe('waiting')
     expect(describeEvent(event('EXTERNAL_JOB_CALLBACK_REGISTERED', { nodeId: 'check' }), ctx)).toContain('waiting for an asynchronous result')
     expect(describeEvent(event('EXTERNAL_JOB_PUBLISHED', { nodeId: 'check', data: { topic: 'address-check' } }), ctx)).toContain('waiting for an outside worker (address-check)')

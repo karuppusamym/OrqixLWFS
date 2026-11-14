@@ -64,12 +64,19 @@ public class RunService {
     private final RunStages stages;
     private final RunSuspensions suspensions;
     private final RunQuota quota;
+    private final FormLookups lookups;
+    private final RunSearchIndex searchIndex;
+    private final AdmissionControl admission;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
-            RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota) {
+            RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota,
+            FormLookups lookups, RunSearchIndex searchIndex, AdmissionControl admission) {
+        this.admission = admission;
+        this.searchIndex = searchIndex;
+        this.lookups = lookups;
         this.quota = quota;
         this.suspensions = suspensions;
         this.attachments = attachments;
@@ -103,7 +110,7 @@ public class RunService {
         ReleaseQueries.WorkflowRef workflow = releases.workflow(workspaceId, request.workflowId())
                 .orElseThrow(ApiException::notFound);
         if (!access.canStart(workflow.id())) {
-            if (!access.has(Permission.WORKFLOW_READ)) {
+            if (!access.hasOnWorkflow(Permission.WORKFLOW_READ, workflow.id())) {
                 throw ApiException.notFound();
             }
             throw policy.deny(workspaceId, caller.subjectId(), "workflow.start", "startRun", false,
@@ -116,11 +123,22 @@ public class RunService {
             throw ApiException.malformed("input is nested too deeply.");
         }
         String hash = idempotency.requestHash("startRun", Map.of("workspaceId", workspaceId.toString()), request);
+        // S140: lookup answers of a valid form are checked with the connected system before any lock is taken, so a
+        // slow system never holds the workflow row; the check after the lock below is then answered from the cache.
+        if (workflow.activeReleaseId() != null) {
+            ReleaseQueries.ReleaseView active = releases.require(workspaceId, workflow.activeReleaseId());
+            if (FormLookups.hasLookups(active) && formValidator.validate(json.write(active.inputSchema()),
+                    json.write(request.input()), json.write(active.inputUi())).isEmpty()) {
+                lookups.verify(workspaceId, active, request.input());
+            }
+        }
         IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "startRun", key, hash);
         if (claim.isReplay()) {
             RunStore.RunRow run = runs.find(workspaceId, UUID.fromString(claim.replay().resourceId())).orElseThrow();
             return new Started(summary(run, access), true);
         }
+        // CG-P05 (S150): the workspace's start limit, before any lock; a replay above is always answered.
+        admission.admitStart(workspaceId, caller.subjectId());
 
         workflow = releases.lockWorkflow(workspaceId, workflow.id()).orElseThrow(ApiException::notFound);
         if (workflow.activeReleaseId() == null) {
@@ -144,11 +162,20 @@ public class RunService {
                                 + "\" for you, and you are not allowed to start that workflow."));
             }
         }
+        // CG-F04 (S137): computed fields are recomputed here with the browser's engine; what was sent is replaced.
+        JsonNode input = com.orqix.compiler.FormComputation.apply(release.inputSchema(), release.inputUi(), request.input(),
+                java.time.Instant.now());
         List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
-                json.write(release.inputSchema()), json.write(request.input()),json.write(release.inputUi())));
+                json.write(release.inputSchema()), json.write(input),json.write(release.inputUi())));
         if (errors.isEmpty()) {
             // A "wait until a date" step cannot wait further than its horizon (S12 section 10).
-            errors.addAll(WaitDates.check(release.definition(), request.input(), WaitDates.today()));
+            errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
+        }
+        if (errors.isEmpty() && FormLookups.hasLookups(release)) {
+            // S140: every lookup answer must still be an option of the connected system (server-side, authoritative).
+            for (ApiException.FieldError e : lookups.verify(workspaceId, release, request.input())) {
+                errors.add(new FormValidator.FieldError(e.pointer(), e.code(), e.message()));
+            }
         }
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(
@@ -156,7 +183,7 @@ public class RunService {
                             .toList());
         }
         // Files chosen on the form (fields of format attachment): must be the caller's own and fit the field (S17).
-        RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), request.input());
+        RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), input);
         // Open-request limit (S101, S103): exact near the limit, without making far-off starts wait (RunQuota).
         if (!quota.hasRoom(workspaceId, workflow.id(), release.maxConcurrentRuns())) {
             throw new ApiException(ProblemCode.QUOTA_EXCEEDED, "Too many requests of this workflow are in progress.")
@@ -164,7 +191,7 @@ public class RunService {
         }
 
         runs.insert(runId, workspaceId, workflow.id(), release.id(), request.businessKey(), caller.subjectId(),
-                request.input());
+                input);
         Map<String, Object> started = new LinkedHashMap<>();
         started.put("releaseNumber", release.releaseNumber());
         started.put("businessKey", request.businessKey());
@@ -175,7 +202,7 @@ public class RunService {
         variables.put(ProcessData.RUN_ID, runId.toString());
         variables.put(ProcessData.WORKSPACE_ID, workspaceId.toString());
         variables.put(ProcessData.INITIATOR, caller.subjectId().toString());
-        variables.put(ProcessData.INPUT, json.write(request.input()));
+        variables.put(ProcessData.INPUT, runs.engineInput(workspaceId, release.id(), input));
         String processInstanceId;
         try {
             processInstanceId = engine.startProcess(release.processDefinitionId(), access.workspace().engineTenantId(),
@@ -195,14 +222,90 @@ public class RunService {
         return new Started(summary(runs.find(workspaceId, runId).orElseThrow(), access), false);
     }
 
+    /**
+     * CG-M04 (S136): the checks of {@link #start} that need no write (visibility, workflow.start, active release, form
+     * validation, wait-date horizon), so an assistant can show a valid summary before the person confirms. The start
+     * itself checks everything again.
+     *
+     * @return the field errors, empty when the input would be accepted now
+     */
+    @Transactional(readOnly = true)
+    public List<ApiException.FieldError> checkStart(Caller caller, UUID workspaceId, UUID workflowId, JsonNode input) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        ReleaseQueries.WorkflowRef workflow = releases.workflow(workspaceId, workflowId).orElseThrow(ApiException::notFound);
+        if (!access.canStart(workflow.id())) {
+            if (!access.hasOnWorkflow(Permission.WORKFLOW_READ, workflow.id())) {
+                throw ApiException.notFound();
+            }
+            throw new ApiException(ProblemCode.FORBIDDEN);
+        }
+        if (input == null || !input.isObject()) {
+            throw ApiException.malformed("input must be a JSON object.");
+        }
+        if (Json.depth(input) > properties.limits().jsonMaxDepth()) {
+            throw ApiException.malformed("input is nested too deeply.");
+        }
+        if (workflow.activeReleaseId() == null) {
+            throw new ApiException(ProblemCode.NO_ACTIVE_RELEASE, "This workflow has not been published yet.");
+        }
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, workflow.activeReleaseId());
+        input = com.orqix.compiler.FormComputation.apply(release.inputSchema(), release.inputUi(), input, java.time.Instant.now());
+        List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
+                json.write(release.inputSchema()), json.write(input), json.write(release.inputUi())));
+        if (errors.isEmpty()) {
+            errors.addAll(WaitDates.check(release.definition(), input, WaitDates.today()));
+        }
+        if (errors.isEmpty() && FormLookups.hasLookups(release)) {
+            for (ApiException.FieldError e : lookups.verify(workspaceId, release, input)) {
+                errors.add(new FormValidator.FieldError(e.pointer(), e.code(), e.message()));
+            }
+        }
+        return errors.stream().map(e -> new ApiException.FieldError("/input" + e.pointer(), e.code(), e.message()))
+                .toList();
+    }
+
     // ---------------------------------------------------------------- lists
 
     @Transactional(readOnly = true)
     public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter, String cursor,
             Integer limit) {
+        return listRuns(caller, workspaceId, filter, List.of(), cursor, limit);
+    }
+
+    /**
+     * The run list (run.read). Conditions on searchable request fields (CG-O04, S142) read request data and so also
+     * need run.read-data; they are checked against the workflow's searchable fields after the workspace check.
+     */
+    @Transactional(readOnly = true)
+    public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter,
+            List<String> fieldConditions, String cursor, Integer limit) {
         WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
-        policy.require(access, Permission.RUN_READ, "listRuns", false);
-        return page(access, filter, cursor, limit, "listRuns");
+        // CG-I01 (S151): run.read on some workflows only (folder or workflow grants) lists those workflows' runs.
+        java.util.Set<UUID> scoped = access.workflowsWith(Permission.RUN_READ);
+        if (scoped != null && (scoped.isEmpty() || (filter.workflowId() != null && !scoped.contains(filter.workflowId())))) {
+            policy.require(access, Permission.RUN_READ, "listRuns", false);
+        }
+        if (fieldConditions != null && !fieldConditions.isEmpty()) {
+            policy.require(access, Permission.RUN_READ_DATA, "listRuns", false);
+            filter = withFields(filter, searchIndex.parse(workspaceId, filter.workflowId(), fieldConditions));
+        }
+        return page(access, filter, scoped, cursor, limit, "listRuns");
+    }
+
+    static RunQueries.Filter withFields(RunQueries.Filter f, List<RunSearchIndex.Condition> fields) {
+        return new RunQueries.Filter(f.workflowId(), f.lifecycle(), f.outcomeKind(), f.businessKey(), f.createdFrom(),
+                f.createdTo(), f.initiator(), f.overdue(), fields, f.attentionReason(), f.errorCode());
+    }
+
+    /** CG-O04: the searchable request fields of a workflow, for filter forms (run.read). */
+    @Transactional(readOnly = true)
+    public List<RunSearchIndex.Field> searchableFields(Caller caller, UUID workspaceId, UUID workflowId) {
+        WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
+        if (releases.workflow(workspaceId, workflowId).isEmpty()) {
+            throw ApiException.notFound();
+        }
+        policy.require(access.onWorkflow(workflowId), Permission.RUN_READ, "listSearchableFields", false);
+        return searchIndex.forWorkflow(workspaceId, workflowId);
     }
 
     @Transactional(readOnly = true)
@@ -215,10 +318,15 @@ public class RunService {
 
     private RuntimeDtos.RunPage page(WorkspaceAccess access, RunQueries.Filter filter, String cursor, Integer limit,
             String operation) {
+        return page(access, filter, null, cursor, limit, operation);
+    }
+
+    private RuntimeDtos.RunPage page(WorkspaceAccess access, RunQueries.Filter filter, java.util.Set<UUID> onlyWorkflows,
+            String cursor, Integer limit, String operation) {
         int size = Limits.of(limit);
-        String filterKey = operation + "|" + access.workspaceId() + "|" + filter;
-        List<RunStore.RunRow> rows = runQueries.list(access.workspaceId(), filter, cursors.decode(cursor, filterKey),
-                size + 1);
+        String filterKey = operation + "|" + access.workspaceId() + "|" + filter + (onlyWorkflows == null ? "" : "|scoped");
+        List<RunStore.RunRow> rows = runQueries.list(access.workspaceId(), filter, onlyWorkflows,
+                cursors.decode(cursor, filterKey), size + 1);
         Page.Result<RunStore.RunRow> page = Page.of(rows, size,
                 r -> new CursorCodec.Position(r.createdAt(), r.id().toString()), cursors, filterKey);
         Map<UUID, String> names = views.names(page.items(), List.of(), List.of());
@@ -324,6 +432,12 @@ public class RunService {
             redacted.put("detailsRedacted", true);
             return redacted;
         }
+        // Calculated outputs (S137) are request data: a reader without it sees only that the step calculated.
+        if (!dataVisible && "STEP_CALCULATED".equals(row.type())) {
+            ObjectNode redacted = json.object();
+            redacted.put("detailsRedacted", true);
+            return redacted;
+        }
         if (dataVisible || !"DECISION_EVALUATED".equals(row.type())) return row.data();
         ObjectNode metadata = json.object();
         JsonNode data = row.data();
@@ -363,13 +477,15 @@ public class RunService {
                 summary.requestTitle(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
-                summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
+                summary.version(), data ? com.orqix.compiler.FieldClassification.mask(run.input(), release.inputSchema()) : null,
+                RuntimeViews.inputLabels(release),
                 data ? run.output() : null, taskViews, effectViews, reversedViews,
                 allowedActions(run, operate, effects, suspended != null, suspendBlocker), summary.parentRun(),
                 views.children(run), stageProgress == null ? null : stageProgress.current(),
                 stageProgress == null ? List.of() : stageProgress.stages(),
                 suspended == null ? null : new RuntimeDtos.Suspension(suspended.suspendedAt(),
-                        operate ? suspended.reason() : null));
+                        operate ? suspended.reason() : null),
+                data ? List.copyOf(com.orqix.compiler.FieldClassification.protectedFields(release.inputSchema()).keySet()) : List.of());
     }
 
     static RuntimeDtos.AllowedRunActions allowedActions(RunStore.RunRow run, boolean operate,

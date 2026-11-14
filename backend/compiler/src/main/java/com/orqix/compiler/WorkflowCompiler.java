@@ -18,4 +18,15 @@ public interface WorkflowCompiler {
      * @throws CompilationException when the definition has at least one blocker
      */
     CompiledWorkflow compile(String definitionJson, CompileContext context) throws CompilationException;
+
+    /**
+     * The pinned types (docs/build/S137 notation) of the expression entries of one decision table of a definition
+     * (S146), as the generated BPMN would carry them; for the draft "Test this rule" evaluation.
+     *
+     * @return canonical JSON, or null when the table does not exist, uses no expressions or the definition cannot be
+     *         analysed (structural errors)
+     */
+    default String decisionTypes(String definitionJson, CompileContext context, String decisionKey) {
+        return null;
+    }
 }

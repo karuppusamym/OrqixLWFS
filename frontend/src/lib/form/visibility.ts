@@ -1,6 +1,7 @@
-import { conditionTerms, isAtomicCondition, type Condition } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, isExpressionCondition, type Condition } from '@/features/studio/model/types'
 import { MONEY_PATTERN } from '../money'
-import type { FieldDef } from './schema'
+import { expressionHolds } from './computed'
+import type { FieldDef, FormSchema } from './schema'
 import type { RawValues } from './values'
 
 /** Conditions see the same scalar values submission converts. Empty or malformed controllers never match. */
@@ -29,7 +30,10 @@ export function fieldsForInput(fields: FieldDef[], input: Record<string, unknown
     if (field.schema.type === 'string') return typeof value === 'string' ? value : undefined
     return typeof value === 'number' && Number.isFinite(value) && (field.schema.type !== 'integer' || Number.isInteger(value)) ? value : undefined
   }
+  const schema: FormSchema = { type: 'object', additionalProperties: false, required: [], properties: Object.fromEntries(fields.map(f => [f.key, f.schema])) }
   const matches = (condition: Condition): boolean => {
+    // S137: an expression condition sees the same answers and holds only when it gives true.
+    if (isExpressionCondition(condition)) return expressionHolds(schema, condition.expression, input)
     if (!isAtomicCondition(condition)) return 'all' in condition ? conditionTerms(condition).every(matches) : conditionTerms(condition).some(matches)
     const value = actual(condition.fieldRef), expected = condition.value
     if (value === undefined || typeof value !== typeof expected) return false

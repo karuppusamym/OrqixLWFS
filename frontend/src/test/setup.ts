@@ -5,6 +5,14 @@ import { resetLoginRedirectGuard } from '@/api/auth'
 import { draftSaverTestTuning } from '@/stores/draftSaver'
 import { db } from '@/mocks/state'
 import { clearMockConversations } from '@/features/ai/mocks'
+import { resetMcpMock } from '@/mocks/mcpServer'
+import { resetWaitsAndStartsMock } from '@/mocks/waitsAndStarts'
+import { resetTaskActionsMock } from '@/mocks/taskActions'
+import { resetBulkMock } from '@/mocks/bulk'
+import { bulkOperators } from '@/mocks/state'
+import { resetAlertsRetentionMock } from '@/mocks/alertsRetention'
+import { resetGitBundlesMock } from '@/mocks/gitBundles'
+import { resetSecurityMock } from '@/mocks/security'
 import { server } from './server'
 
 // Lazy routes (studio, React Flow) are slow to load the first time in a cold test worker.
@@ -71,6 +79,14 @@ afterEach(async () => {
   resetLoginRedirectGuard()
   db.latencyMs = 0
   clearMockConversations()
+  resetMcpMock()
+  resetWaitsAndStartsMock()
+  resetTaskActionsMock()
+  resetBulkMock()
+  bulkOperators.clear()
+  resetAlertsRetentionMock()
+  resetGitBundlesMock()
+  resetSecurityMock()
   window.localStorage.clear()
 })
 

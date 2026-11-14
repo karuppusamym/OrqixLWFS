@@ -51,6 +51,13 @@ public class TaskStore {
         insert(taskId, workspaceId, runId, nodeId, label, candidateGroup, dueAt, createdAt, null, null, null, null);
     }
 
+    /** S138: the visit of the approval step this task belongs to, for tasks of a step inside a bounded loop. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void occurrence(String taskId, int occurrence) {
+        jdbc.sql("UPDATE task_context SET occurrence = :occ WHERE engine_task_id = :task")
+                .param("occ", occurrence).param("task", taskId).update();
+    }
+
     /**
      * As {@link #insert(String, UUID, UUID, String, String, String, Instant, Instant)}, for a task that decides one
      * item of a list-driven approval (S88): {@code itemIndex} is its 0-based list position, {@code itemLabel} what it
@@ -216,6 +223,21 @@ public class TaskStore {
                 .update() == 1;
     }
 
+    /**
+     * CG-T04 (S141): moves an open task to another group's queue (no assignee). Compare-and-set on the version; the due
+     * date is unchanged.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean moveToGroup(UUID workspaceId, String taskId, int expectedVersion, String groupKey) {
+        return jdbc.sql("""
+                UPDATE task_context SET candidate_group_key = :grp, assignee_subject_id = NULL, claimed_at = NULL,
+                       version = version + 1
+                WHERE workspace_id = :ws AND engine_task_id = :task AND version = :version AND status = 'open'
+                """)
+                .param("grp", groupKey).param("ws", workspaceId).param("task", taskId).param("version", expectedVersion)
+                .update() == 1;
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean setPriority(UUID workspaceId, String taskId, int expectedVersion, int priority) {
         return jdbc.sql("UPDATE task_context SET priority=:priority, version=version+1 WHERE workspace_id=:ws AND engine_task_id=:task AND version=:version AND status='open'")
@@ -260,6 +282,17 @@ public class TaskStore {
                 WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
                 """)
                 .param("label", label).param("ws", workspaceId).param("run", runId).param("node", nodeId).update();
+    }
+
+    /** S143: the open task of a step continues as another step of the target release (a mapped migration). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int renameOpenForNode(UUID workspaceId, UUID runId, String nodeId, String newNodeId, String label) {
+        return jdbc.sql("""
+                UPDATE task_context SET node_id = :to, label = :label, version = version + 1
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
+                """)
+                .param("to", newNodeId).param("label", label).param("ws", workspaceId).param("run", runId)
+                .param("node", nodeId).update();
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

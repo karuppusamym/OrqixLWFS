@@ -77,7 +77,8 @@ public class ReleaseQueries {
                     return node;
                 }
             }
-            return null;
+            // S139: a branch of "Wait for the first" (<step>__<branch>) or a message handler, seen as a message wait.
+            return WaitsAndStartsNodes.node(definition, nodeId);
         }
 
         public JsonNode decisionTable(String key) {

@@ -68,6 +68,13 @@ final class Conditions {
                     + " decision table.");
             return null;
         }
+        if (type.kind() == FieldKind.TIME || type.kind() == FieldKind.DATETIME) {
+            // S140: comparing times needs a time zone rule the condition language does not have yet (CG-X01).
+            rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, c.fieldRef()
+                    + " is " + type.kind().description() + ". Times can be passed to other steps and shown, but"
+                    + " not (yet) used to choose a path or in a decision table.");
+            return null;
+        }
         if (Disjointness.ordering(c.operator()) && !type.kind().numeric()) {
             rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, "The comparison "
                     + q(c.operator().phrase()) + " works only on numbers, but " + c.fieldRef() + " is "
@@ -141,7 +148,7 @@ final class Conditions {
             case BOOLEAN -> literal instanceof Literal.Bool;
             case NUMBER -> literal instanceof Literal.Num;
             case INTEGER -> literal instanceof Literal.Num n && n.integral();
-            case ARRAY, DATE, ATTACHMENT, OBJECT -> false;
+            case ARRAY, DATE, TIME, DATETIME, ATTACHMENT, OBJECT -> false;
         };
     }
 
@@ -173,6 +180,16 @@ final class Conditions {
                     + " can also be reached when it does not. Use it only on the path after the message.");
             return;
         }
+        if (producer instanceof Node.WaitForFirst w && !Node.WaitForFirst.BRANCH_OUTPUT.equals(r.key())
+                && w.declaring(r.key()) != null && w.declaring(r.key()).field(r.key()).required()
+                && WaitsAndStartsRules.reachableWithoutBranch(rc, w, w.declaring(r.key()).id(), usedAt)) {
+            // S139: a branch's values exist only when that branch wins.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when " + q(w.declaring(r.key()).label()) + " happens first,"
+                    + " and " + q(usedAt) + " can also be reached when another branch wins. Use it only on that"
+                    + " branch's path.");
+            return;
+        }
         if (producer instanceof Node.Approval a && a.capture() != null && a.capture().properties().containsKey(r.key())
                 && !FieldTypes.APPROVAL_OUTPUTS.contains(r.key())
                 && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.APPROVED, usedAt)) {
@@ -182,8 +199,24 @@ final class Conditions {
                     + " can also be reached when it is not. Use it only on the path after the approval.");
             return;
         }
+        if (producer instanceof Node.AiTask ai && AiTaskRules.answerOutput(r.key())
+                && AiTaskRules.reachableThroughUnavailable(rc, ai, usedAt)) {
+            // S134: the AI answer exists only when AI answered; the aiUnavailable path has the status only.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when AI answers, and " + q(usedAt) + " can also be"
+                    + " reached when AI is unavailable. Use it only on the paths after an answer, or use its status.");
+            return;
+        }
+        if (producer instanceof Node.Http polled && polled.polls() && !FailureRules.isFailureOutput(r.key())
+                && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.NEXT, usedAt)) {
+            // S129: the mapped results are outputs only when the checks found the work done.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when the checks find the work done, and " + q(usedAt)
+                    + " can also be reached when they do not. Use it only on the path after the work is done.");
+            return;
+        }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
-            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            boolean failureFact = FailureRules.isFailureOutput(producer, r.key());
             if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,
                     usedAt)) {
                 rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
@@ -216,6 +249,13 @@ final class Conditions {
         }
         if (producer instanceof Node.WaitForMessage) {
             return "is not required, so a message may arrive without it";
+        }
+        if (producer instanceof Node.AiTask ai) {
+            return ai.shadow() ? "comes from a shadow-mode AI task, which must not change the request"
+                    : "is an optional field of the AI extraction";
+        }
+        if (producer instanceof Node.Http) {
+            return "is marked as possibly missing in the answer of the checks";
         }
         return "is only recorded when the approver enters one";
     }

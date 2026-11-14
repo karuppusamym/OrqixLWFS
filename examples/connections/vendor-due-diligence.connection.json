@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "agent",
+  "key": "vendor-due-diligence",
+  "version": 1,
+  "name": "Vendor due diligence agent",
+  "description": "A durable agent (docs/build/S135): it checks a vendor in the registered vendor registry, may ask a compliance reviewer one question, and needs an approval before it reads financials. Each model turn is its own engine job; its state between turns is encrypted.",
+  "operations": {
+    "assessVendor": {
+      "label": "Assess vendor risk",
+      "description": "Looks the vendor up in the vendor registry and returns the registry's risk assessment.",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "vendorName",
+          "country",
+          "annualSpend"
+        ],
+        "properties": {
+          "vendorName": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Legal name of the vendor, as the requester wrote it."
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Country where the vendor is registered."
+          },
+          "annualSpend": {
+            "type": "number",
+            "description": "Expected annual spend with the vendor in USD."
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "riskScore",
+          "riskBand",
+          "sanctionsHit",
+          "registryId"
+        ],
+        "properties": {
+          "riskScore": {
+            "type": "integer",
+            "description": "Registry risk score, 0 (no risk) to 100 (highest risk)."
+          },
+          "riskBand": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Registry risk band for the score."
+          },
+          "sanctionsHit": {
+            "type": "boolean",
+            "description": "True when the vendor is on a sanctions list."
+          },
+          "registryId": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The vendor's id in the registry."
+          }
+        },
+        "additionalProperties": false
+      },
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true,
+      "agent": {
+        "instructions": "You are the vendor due diligence agent. Look the vendor up with vendor-registry vendor_risk_lookup. If the risk band is medium, ask the compliance reviewer whether the vendor is on the preferred supplier list. Answer with the registry values exactly as returned; never estimate or invent values.",
+        "modelProfile": "economy",
+        "tools": [
+          {
+            "name": "vendor-registry.vendor_risk_lookup",
+            "label": "Vendor registry"
+          },
+          {
+            "name": "vendor-registry.vendor_financials",
+            "label": "Vendor financials",
+            "requiresApproval": {
+              "group": "compliance-reviewers"
+            }
+          },
+          {
+            "name": "ask_reviewer",
+            "label": "Compliance reviewer",
+            "description": "Asks a compliance reviewer one short question about the vendor.",
+            "source": {
+              "askPerson": {
+                "group": "compliance-reviewers",
+                "answerSchema": {
+                  "type": "object",
+                  "required": [
+                    "note"
+                  ],
+                  "properties": {
+                    "note": {
+                      "type": "string",
+                      "maxLength": 500,
+                      "description": "Your answer"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        ],
+        "maxToolCalls": 3,
+        "summary": "checked '{vendorName}' using {tools}: risk {riskScore} ({riskBand})",
+        "resources": [
+          "vendor-registry.policy"
+        ],
+        "loop": {
+          "maxTurns": 8,
+          "maxToolCalls": 6,
+          "maxDuration": "P2D",
+          "budgetUsd": 0.5
+        },
+        "inputDataClasses": {
+          "vendorName": "internal",
+          "annualSpend": "confidential"
+        }
+      }
+    }
+  }
+}

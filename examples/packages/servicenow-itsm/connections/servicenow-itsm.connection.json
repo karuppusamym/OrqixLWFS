@@ -1,0 +1,645 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "http",
+  "key": "servicenow-itsm",
+  "version": 1,
+  "name": "ServiceNow ITSM (Table and Attachment API)",
+  "description": "Table and Attachment API operations of the ServiceNow ITSM connector package (docs/build/S133, doc 29 section 6.14). Field names and state values follow the default ServiceNow data model (1 New, 2 In Progress, 3 On Hold, 6 Resolved, 7 Closed, 8 Canceled) and must be checked on the customer's release. createIncident has no idempotency key in ServiceNow: Orqix writes ORQ-<request>-<step>-<occurrence> into correlation_id and reconciles uncertain outcomes by looking that value up.",
+  "operations": {
+    "createIncident": {
+      "label": "Raise an incident",
+      "description": "Creates one incident. ServiceNow has no idempotency key; Orqix sets correlation_id and reconciles by lookup.",
+      "method": "POST",
+      "path": "/api/now/table/incident",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "shortDescription",
+          "urgency",
+          "impact"
+        ],
+        "properties": {
+          "shortDescription": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "assignmentGroup": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "correlationId": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_fields": {
+          "const": "sys_id,number,state,correlation_id"
+        }
+      },
+      "body": {
+        "short_description": {
+          "input": "shortDescription"
+        },
+        "description": {
+          "input": "description"
+        },
+        "urgency": {
+          "input": "urgency"
+        },
+        "impact": {
+          "input": "impact"
+        },
+        "assignment_group": {
+          "input": "assignmentGroup"
+        },
+        "correlation_id": {
+          "input": "correlationId"
+        },
+        "correlation_display": {
+          "const": "Orqix"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "object",
+            "required": [
+              "sys_id",
+              "number",
+              "correlation_id"
+            ],
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "state": {
+                "type": "string"
+              },
+              "correlation_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        201
+      ],
+      "errors": [
+        {
+          "status": 400,
+          "code": "INCIDENT_INVALID",
+          "bodyPointer": "/error/message"
+        }
+      ],
+      "effectClass": "idempotentByLookup",
+      "reconcile": {
+        "operation": "findIncidentByCorrelation",
+        "keyField": "correlationId",
+        "keyFrom": "request.reference",
+        "found": "/result/0",
+        "resultFrom": "found",
+        "foundAs": "/result",
+        "lookupSettleSeconds": 30
+      },
+      "maxTimeoutSeconds": 30,
+      "testable": false
+    },
+    "getIncident": {
+      "label": "Get an incident",
+      "description": "Reads one incident by its sys_id with a fixed field list.",
+      "method": "GET",
+      "path": "/api/now/table/incident/{sysId}",
+      "pathParams": {
+        "sysId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$",
+          "description": "The incident's 32-character sys_id."
+        }
+      },
+      "query": {
+        "sysparm_fields": {
+          "const": "sys_id,number,state,short_description,close_code,close_notes,correlation_id,sys_updated_on"
+        },
+        "sysparm_exclude_reference_link": {
+          "const": "true"
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "object",
+            "required": [
+              "sys_id",
+              "number",
+              "state"
+            ],
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "number": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "1",
+                  "2",
+                  "3",
+                  "6",
+                  "7",
+                  "8"
+                ]
+              },
+              "short_description": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "close_code": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "close_notes": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "correlation_id": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "sys_updated_on": {
+                "type": "string",
+                "maxLength": 19
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "errors": [
+        {
+          "status": 404,
+          "code": "INCIDENT_NOT_FOUND",
+          "bodyPointer": "/error/message",
+          "message": "The incident does not exist in ServiceNow."
+        }
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    },
+    "findIncidentByCorrelation": {
+      "label": "Find an incident by Orqix reference",
+      "description": "Lookup used to reconcile createIncident: at most one incident whose correlation_id is the Orqix key.",
+      "method": "GET",
+      "path": "/api/now/table/incident",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "correlationId"
+        ],
+        "properties": {
+          "correlationId": {
+            "type": "string",
+            "pattern": "^ORQ-[0-9]{4,}-[A-Za-z][A-Za-z0-9_-]{0,63}-[0-9]{1,6}$",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_query": {
+          "template": "correlation_id={correlationId}",
+          "encoder": "servicenowEncodedQuery"
+        },
+        "sysparm_fields": {
+          "const": "sys_id,number,state,correlation_id"
+        },
+        "sysparm_limit": {
+          "const": 1
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sys_id": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "correlation_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    },
+    "updateIncidentFields": {
+      "label": "Update incident fields",
+      "description": "Sets state, assignment group and urgency to fixed values; repeating the same values gives the same result.",
+      "method": "PATCH",
+      "path": "/api/now/table/incident/{sysId}",
+      "pathParams": {
+        "sysId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7",
+              "8"
+            ]
+          },
+          "assignmentGroup": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "body": {
+        "state": {
+          "input": "state"
+        },
+        "assignment_group": {
+          "input": "assignmentGroup"
+        },
+        "urgency": {
+          "input": "urgency"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object",
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "errors": [
+        {
+          "status": 404,
+          "code": "INCIDENT_NOT_FOUND"
+        }
+      ],
+      "effectClass": "idempotentNatural",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    },
+    "addWorkNote": {
+      "label": "Add a work note",
+      "description": "Appends a work note. Work notes append, so a repeat would add a second note: nonIdempotent.",
+      "method": "PATCH",
+      "path": "/api/now/table/incident/{sysId}",
+      "pathParams": {
+        "sysId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "additionalProperties": false
+      },
+      "body": {
+        "work_notes": {
+          "input": "note"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "nonIdempotent",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    },
+    "attachFile": {
+      "label": "Attach a file to an incident",
+      "description": "Uploads one file of the request (an attachment or a generated document) to an incident.",
+      "method": "POST",
+      "path": "/api/now/attachment/file",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "sysId",
+          "fileName",
+          "document"
+        ],
+        "properties": {
+          "sysId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "fileName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._ -]{1,120}$"
+          },
+          "document": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "table_name": {
+          "const": "incident"
+        },
+        "table_sys_id": {
+          "input": "sysId"
+        },
+        "file_name": {
+          "input": "fileName"
+        }
+      },
+      "contentType": "binary",
+      "binaryInput": "document",
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object",
+            "properties": {
+              "sys_id": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        201
+      ],
+      "effectClass": "nonIdempotent",
+      "maxTimeoutSeconds": 60,
+      "long": true,
+      "testable": false
+    },
+    "lookupUser": {
+      "label": "Look up a user by email",
+      "description": "Reads at most one active user by email address, for dynamic form options and assignment.",
+      "method": "GET",
+      "path": "/api/now/table/sys_user",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,180}\\.[A-Za-z]{2,24}$",
+            "maxLength": 254
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_query": {
+          "template": "active=true^email={email}",
+          "encoder": "servicenowEncodedQuery"
+        },
+        "sysparm_fields": {
+          "const": "sys_id,user_name,name,email"
+        },
+        "sysparm_limit": {
+          "const": 1
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sys_id": {
+                  "type": "string"
+                },
+                "user_name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "email": {
+                  "type": "string",
+                  "maxLength": 254
+                }
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    },
+    "listChangedIncidents": {
+      "label": "List incidents Orqix raised that changed",
+      "description": "Incidents with an Orqix correlation_id that reached Resolved, Closed or Canceled after a time, oldest change first, at most 100. Used by the incident-changes polling trigger.",
+      "method": "GET",
+      "path": "/api/now/table/incident",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "since"
+        ],
+        "properties": {
+          "since": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_query": {
+          "template": "sys_updated_on>{since}^correlation_idSTARTSWITHORQ-^stateIN6,7,8^ORDERBYsys_updated_on",
+          "encoder": "servicenowEncodedQuery"
+        },
+        "sysparm_fields": {
+          "const": "sys_id,number,state,close_code,correlation_id,sys_updated_on,sys_mod_count"
+        },
+        "sysparm_limit": {
+          "const": 100
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sys_id": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "state": {
+                  "type": "string"
+                },
+                "close_code": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "correlation_id": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "sys_updated_on": {
+                  "type": "string",
+                  "maxLength": 19
+                },
+                "sys_mod_count": {
+                  "type": "string",
+                  "maxLength": 12
+                }
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 20,
+      "testable": true
+    }
+  }
+}

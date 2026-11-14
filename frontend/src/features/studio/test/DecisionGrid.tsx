@@ -6,7 +6,9 @@ import { ProblemAlert } from '@/components/common/ProblemAlert'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { conditionTerms, type Condition, type Definition, type DecisionTable } from '../model/types'
+import { decisionFields } from '@/lib/expr/decision'
+import { fieldInfo } from '../model/fieldRefs'
+import { comparisonTerms, type Definition, type DecisionTable } from '../model/types'
 
 /** Columns of a decision table's test grid: its input fields (with the value kind) and its results. */
 export interface GridColumns {
@@ -24,12 +26,19 @@ const BOM = new RegExp('^' + String.fromCharCode(0xfeff))
 
 const kindOf = (v: unknown): 'text' | 'number' | 'boolean' => (typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'text')
 
-export function gridColumns(table: DecisionTable): GridColumns {
+/** The value kind of a field named only inside formulas (S146): from its field type; dates are entered as YYYY-MM-DD text. */
+const kindOfField = (def: Definition | undefined, ref: string): 'text' | 'number' | 'boolean' => {
+  const type = def ? fieldInfo(def, ref)?.type : undefined
+  return type === 'number' || type === 'integer' ? 'number' : type === 'boolean' ? 'boolean' : 'text'
+}
+
+/** Every field the table reads, also the fields named inside formulas (S146). */
+export function gridColumns(table: DecisionTable, def?: Definition): GridColumns {
   const inputs: GridColumns['inputs'] = []
-  const add = (c: Condition) => {
-    for (const t of conditionTerms(c)) if (!inputs.some((i) => i.ref === t.fieldRef)) inputs.push({ ref: t.fieldRef, type: kindOf(t.value) })
+  for (const r of table.rows) {
+    for (const t of comparisonTerms(r.when)) if (!inputs.some((i) => i.ref === t.fieldRef)) inputs.push({ ref: t.fieldRef, type: kindOf(t.value) })
   }
-  table.rows.forEach((r) => add(r.when))
+  for (const ref of decisionFields(table)) if (!inputs.some((i) => i.ref === ref)) inputs.push({ ref, type: kindOfField(def, ref) })
   return { inputs, outputs: Object.entries(table.default).map(([name, v]) => ({ name, type: kindOf(v) })) }
 }
 
@@ -119,7 +128,7 @@ export function DecisionGrid({ def, wsId, workflowId, revision, flush }: { def: 
   const tables = def.decisions
   const [key, setKey] = useState(tables[0]?.key ?? '')
   const table = tables.find((t) => t.key === key)
-  const columns = useMemo(() => (table ? gridColumns(table) : { inputs: [], outputs: [] }), [table])
+  const columns = useMemo(() => (table ? gridColumns(table, def) : { inputs: [], outputs: [] }), [table, def])
   const [rows, setRows] = useState<GridRow[]>([{ inputs: {}, expected: {} }])
   const [results, setResults] = useState<RowResult[] | null>(null)
   const [busy, setBusy] = useState(false)

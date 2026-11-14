@@ -1,0 +1,99 @@
+{
+  "description": "CG-Q03 (docs/build/S148): coverage of several dry runs together. Replayed by SuiteCoverageTest (Java) and suiteCoverage.test.ts (TypeScript); both must give exactly 'expected'.",
+  "cases": [
+    {
+      "name": "two runs, overlapping misses, three form rules",
+      "definition": {
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "amount": { "type": "number", "title": "Amount" },
+            "kind": { "type": "string", "title": "Kind", "enum": ["Laptop", "Other"] },
+            "note": { "type": "string", "title": "Description" },
+            "reason": { "type": "string", "title": "Justification" },
+            "tag": { "type": "string", "title": "Asset tag" }
+          }
+        },
+        "inputUi": {
+          "visibleWhen": { "note": { "fieldRef": "/input/kind", "operator": "eq", "value": "Other" } },
+          "requiredWhen": { "reason": { "fieldRef": "/input/amount", "operator": "gte", "value": 1000 } },
+          "layout": {
+            "sections": [
+              { "id": "replacement", "title": "Replacement", "fields": ["tag"],
+                "visibleWhen": { "fieldRef": "/input/amount", "operator": "gt", "value": 99999 } }
+            ]
+          }
+        }
+      },
+      "runs": [
+        {
+          "input": { "amount": 1500, "kind": "Laptop", "reason": "Old one broke" },
+          "coverage": {
+            "steps": { "visited": 3, "total": 5, "notVisited": [ { "id": "finance", "label": "Finance review" }, { "id": "reject", "label": "Rejected" } ] },
+            "routes": { "taken": 1, "total": 3, "notTaken": [
+              { "transitionId": "t2", "from": "amountPolicy", "to": "finance", "description": "when large" },
+              { "transitionId": "t3", "from": "manager", "to": "reject", "description": "when rejected" } ] },
+            "rules": { "matched": 1, "total": 2, "notMatched": [ { "decision": "amount-policy", "row": "Rule 1", "condition": "Amount is at least 5000" } ] },
+            "summary": "ignored"
+          }
+        },
+        {
+          "input": { "amount": 6000, "kind": "Other", "note": "Monitor", "reason": "New hire" },
+          "coverage": {
+            "steps": { "visited": 4, "total": 5, "notVisited": [ { "id": "reject", "label": "Rejected" } ] },
+            "routes": { "taken": 1, "total": 3, "notTaken": [
+              { "transitionId": "t1", "from": "amountPolicy", "to": "manager", "description": "otherwise" },
+              { "transitionId": "t3", "from": "manager", "to": "reject", "description": "when rejected" } ] },
+            "rules": { "matched": 1, "total": 2, "notMatched": [ { "decision": "amount-policy", "row": "Otherwise", "condition": null } ] },
+            "summary": "ignored"
+          }
+        }
+      ],
+      "expected": {
+        "cases": 2,
+        "steps": { "covered": 4, "total": 5, "percent": 80, "notCovered": [ { "id": "reject", "label": "Rejected" } ] },
+        "routes": { "covered": 2, "total": 3, "percent": 66, "notCovered": [
+          { "transitionId": "t3", "from": "manager", "to": "reject", "description": "when rejected" } ] },
+        "rules": { "covered": 2, "total": 2, "percent": 100, "notCovered": [] },
+        "formRules": { "covered": 1, "total": 3, "percent": 33, "notCovered": [
+          { "rule": "requiredWhen", "field": "reason", "label": "Justification", "missing": "fails" },
+          { "rule": "visibleWhen", "section": "replacement", "label": "Replacement", "missing": "holds" } ] },
+        "summary": "Together the cases cover 4 of 5 steps, 2 of 3 routes, 2 of 2 decision rules and 1 of 3 form rules."
+      },
+      "minimum": { "steps": 80, "routes": 70, "formRules": 30 },
+      "shortfalls": [ { "kind": "routes", "percent": 66, "minimum": 70 } ]
+    },
+    {
+      "name": "nothing to cover counts as complete",
+      "definition": { "inputSchema": { "type": "object", "properties": {} } },
+      "runs": [
+        {
+          "input": {},
+          "coverage": {
+            "steps": { "visited": 2, "total": 2, "notVisited": [] },
+            "routes": { "taken": 0, "total": 0, "notTaken": [] },
+            "rules": { "matched": 0, "total": 0, "notMatched": [] }
+          }
+        }
+      ],
+      "expected": {
+        "cases": 1,
+        "steps": { "covered": 2, "total": 2, "percent": 100, "notCovered": [] },
+        "routes": { "covered": 0, "total": 0, "percent": 100, "notCovered": [] },
+        "rules": { "covered": 0, "total": 0, "percent": 100, "notCovered": [] },
+        "formRules": { "covered": 0, "total": 0, "percent": 100, "notCovered": [] },
+        "summary": "Together the cases cover 2 of 2 steps, 0 of 0 routes, 0 of 0 decision rules and 0 of 0 form rules."
+      },
+      "minimum": { "steps": 100, "routes": 100, "rules": 100, "formRules": 100 },
+      "shortfalls": []
+    },
+    {
+      "name": "no case ran",
+      "definition": { "inputSchema": { "type": "object", "properties": {} } },
+      "runs": [],
+      "expected": null,
+      "minimum": { "steps": 1 },
+      "shortfalls": [ { "kind": "steps", "percent": 0, "minimum": 1 } ]
+    }
+  ]
+}

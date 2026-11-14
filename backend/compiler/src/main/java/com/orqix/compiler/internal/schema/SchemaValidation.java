@@ -15,6 +15,7 @@ import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SchemaRegistryConfig;
 import com.networknt.schema.SpecificationVersion;
 import com.networknt.schema.path.PathType;
+import com.orqix.compiler.ConnectionContracts;
 import com.orqix.compiler.internal.json.JsonPointers;
 import com.orqix.compiler.internal.json.StrictJson;
 import com.orqix.compiler.internal.model.Enums.NodeKind;
@@ -36,6 +37,7 @@ public final class SchemaValidation {
 
     static final String WORKFLOW_ID = "https://orqix.example/schemas/workflow-v0.schema.json";
     static final String CONNECTION_ID = "https://orqix.example/schemas/connection-definition-v0.schema.json";
+    static final String CONNECTION_V1_ID = "https://orqix.example/schemas/connection-definition-v1.schema.json";
     private static final String NODES_ONE_OF = "/properties/nodes/items/oneOf";
     private static final Pattern NODE_INSTANCE = Pattern.compile("^/nodes/(\\d+)(/.*)?$");
     private static final Pattern BRANCH_EVAL = Pattern.compile("^/properties/nodes/items/oneOf/(\\d+)(/.*)?$");
@@ -43,10 +45,12 @@ public final class SchemaValidation {
     private static final List<NodeKind> BRANCH_ORDER = List.of(NodeKind.START, NodeKind.APPROVAL,
             NodeKind.DECISION, NodeKind.BRANCH, NodeKind.HTTP, NodeKind.NOTIFICATION, NodeKind.PARALLEL_SPLIT,
             NodeKind.PARALLEL_JOIN, NodeKind.WAIT, NodeKind.START_WORKFLOW, NodeKind.WAIT_FOR_MESSAGE, NodeKind.END, NodeKind.GENERATE_DOCUMENT, NodeKind.EXTERNAL_TASK,
-            NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL, NodeKind.WAIT_FOR_SIGNAL, NodeKind.COMPENSATE, NodeKind.SEND_ADAPTER);
+            NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL, NodeKind.WAIT_FOR_SIGNAL, NodeKind.COMPENSATE, NodeKind.SEND_ADAPTER,
+            NodeKind.AI_TASK, NodeKind.CALCULATE);
 
     private final Schema workflowSchema;
     private final Schema connectionSchema;
+    private final Schema connectionV1Schema;
 
     public SchemaValidation() {
         SchemaRegistry registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12, builder -> builder
@@ -56,8 +60,11 @@ public final class SchemaValidation {
                 loadSchema("orqix/schemas/workflow-v0.schema.json"));
         this.connectionSchema = registry.getSchema(SchemaLocation.of(CONNECTION_ID),
                 loadSchema("orqix/schemas/connection-definition-v0.schema.json"));
+        this.connectionV1Schema = registry.getSchema(SchemaLocation.of(CONNECTION_V1_ID),
+                loadSchema("orqix/schemas/connection-definition-v1.schema.json"));
         this.workflowSchema.initializeValidators();
         this.connectionSchema.initializeValidators();
+        this.connectionV1Schema.initializeValidators();
     }
 
     private static JsonNode loadSchema(String resource) {
@@ -96,9 +103,15 @@ public final class SchemaValidation {
     /** @return human-readable problems in a connection definition; empty when valid */
     public List<String> validateConnection(JsonNode document) {
         List<String> problems = new ArrayList<>();
-        for (Error error : connectionSchema.validate(document)) {
+        boolean v1 = ConnectionContracts.isV1(document);
+        for (Error error : (v1 ? connectionV1Schema : connectionSchema).validate(document)) {
             String at = error.getInstanceLocation().toString();
             problems.add((at.isEmpty() ? "" : at + ": ") + error.getMessage());
+        }
+        if (v1 && problems.isEmpty()) {
+            for (ConnectionContracts.Problem p : ConnectionContracts.check(document)) {
+                problems.add(p.pointer() + ": " + p.message());
+            }
         }
         return problems;
     }

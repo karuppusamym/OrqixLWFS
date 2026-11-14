@@ -61,20 +61,32 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     assertThat(operation.has("x-orqix-audit") || "markNotificationRead".equals(operationId)
                             || "markAllNotificationsRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
+                            // S137: the expression preview computes and stores nothing.
+                            || "evaluateExpression".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
                             || "checkDraftBpmn".equals(operationId) || "convertDecisionDmn".equals(operationId)
                             // S126: the case type check reads the draft and writes nothing, like validateDraft.
                             || "checkCaseDefinitionDraft".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId)
                             // S124: the saved Ask AI conversation is text the editors wrote; it is never audited.
-                            || "saveAiConversation".equals(operationId))
+                            || "saveAiConversation".equals(operationId)
+                            // S139: previews compute times and change nothing.
+                            || "previewSchedule".equals(operationId) || "previewWorkingCalendar".equals(operationId)
+                            // S140: a lookup search reads; its text must never reach the audit log.
+                            || "searchLookupOptions".equals(operationId)
+                            // S143: dry runs of a migration, a migration batch and a move change nothing.
+                            || "planRunMigration".equals(operationId) || "previewMigrationBatch".equals(operationId)
+                            || "planRunMove".equals(operationId)
+                            // S147: the bundle promotion plan reads both workspaces and changes nothing.
+                            || "checkBundlePromotion".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
                 for (String user : FOREIGN_PRINCIPALS) {
                     int status = call(user, op.getKey(), template, operationId, ids);
                     calls++;
-                    int expected = template.startsWith("/workspaces/") ? 404
+                    // S141: a signed action link is its own credential; any link a foreign caller can make up is 404.
+                    int expected = template.startsWith("/workspaces/") || template.startsWith("/task-action-links/") ? 404
                             : template.startsWith("/admin/") ? 403 : 200;
                     if (status != expected) {
                         failures.add(operationId + " as " + user + " -> " + status + " (expected " + expected + ")");
@@ -101,6 +113,33 @@ class SecurityMatrixTest extends RuntimeTestBase {
         assertThat(put.path("x-orqix-audit").asString()).isEqualTo("workflow.draft.saved");
         // tSec01 above calls all three as foreign principals against the real purchasing workflow (decisionKey
         // amount-policy) and requires 404 and no state change.
+    }
+
+    @Test
+    void analyticsOperationsAreInTheMatrixWithTheirPermissions() {
+        JsonNode paths = OpenApiContract.get().document().path("paths");
+        Map<String, String[]> expected = new LinkedHashMap<>();
+        expected.put("/workspaces/{workspaceId}/analytics/heatmap|get", new String[] {"getAnalyticsHeatmap", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/human-work|get", new String[] {"getHumanWorkAnalytics", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/kpis|get", new String[] {"getKpiOverview", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/status|get", new String[] {"getAnalyticsStatus", "run.read"});
+        expected.put("/workspaces/{workspaceId}/analytics/backfill|post", new String[] {"startAnalyticsBackfill", "run.operate"});
+        expected.put("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets|get",
+                new String[] {"getWorkflowKpiTargets", "workflow.read"});
+        expected.put("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets|put",
+                new String[] {"setWorkflowKpiTargets", "workflow.edit"});
+        expected.forEach((key, value) -> {
+            String[] parts = key.split("[|]");
+            JsonNode op = paths.path(parts[0]).path(parts[1]);
+            assertThat(op.path("operationId").asString()).isEqualTo(value[0]);
+            assertThat(op.path("x-orqix-permission").asString()).as(value[0]).isEqualTo(value[1]);
+            assertThat(op.path("tags").get(0).asString()).isEqualTo("Analytics");
+        });
+        assertThat(paths.path("/workspaces/{workspaceId}/analytics/backfill").path("post").path("x-orqix-audit").asString())
+                .isEqualTo("analytics.backfill.requested");
+        assertThat(paths.path("/workspaces/{workspaceId}/workflows/{workflowId}/kpi-targets").path("put")
+                .path("x-orqix-audit").asString()).isEqualTo("analytics.kpi-targets.updated");
+        // tSec01 above calls all of them as foreign principals with real purchasing ids and requires 404 and no change.
     }
 
     @Test
@@ -357,11 +396,50 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("extensionId", UUID.randomUUID().toString());
         // S116: unknown send-backs and a well-formed but unsigned file path are 404 for foreign principals.
         ids.put("sendBackId", UUID.randomUUID().toString());
+        // S143: unknown moves and batches; the workspace is invisible to foreign principals.
+        ids.put("moveId", UUID.randomUUID().toString());
+        ids.put("batchId", UUID.randomUUID().toString());
         ids.put("token", "1." + "0".repeat(64));
         ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
+        // S133: package versions are organization assets; a foreign caller is refused on the workspace before any lookup.
+        ids.put("packageVersionId", UUID.randomUUID().toString());
+        ids.put("packageTriggerId", UUID.randomUUID().toString());
+        ids.put("templateKey", "it-access-request");
         ids.put("writeId", UUID.randomUUID().toString());
+        // S134: AI skills, suites, evaluations, promotions, candidates and decisions; the workspace is invisible to
+        // foreign principals, so well-formed unknown ids prove the 404 as well as real ones.
+        ids.put("skillKey", "matrix-skill");
+        ids.put("version", "1");
+        ids.put("suiteKey", "matrix-suite");
+        ids.put("evaluationId", UUID.randomUUID().toString());
+        ids.put("promotionId", UUID.randomUUID().toString());
+        ids.put("candidateId", UUID.randomUUID().toString());
+        ids.put("decisionId", UUID.randomUUID().toString());
+        // S146 part B: document extraction verification tasks (the workspace is invisible to foreign principals).
+        ids.put("verificationId", UUID.randomUUID().toString());
+        // S147: release bundles; the workspace is invisible to foreign principals, so an unknown id proves the 404.
+        ids.put("bundleId", UUID.randomUUID().toString());
+        // S139: a real working calendar, so a foreign call is refused by access, not by a missing resource; the
+        // workspace is invisible to foreign principals, so an unknown schedule id proves the 404 as well.
+        String calendarKey = "matrix-" + UUID.randomUUID().toString().substring(0, 8);
+        api("dana.designer").post(Map.of("key", calendarKey, "name", "Matrix " + calendarKey, "content",
+                Map.of("zone", "Europe/London", "weekdays", List.of(1, 2, 3, 4, 5), "start", "09:00", "end", "17:00")),
+                "/workspaces/{ws}/calendars", PURCHASING);
+        ids.put("calendarKey", calendarKey);
+        ids.put("scheduleId", UUID.randomUUID().toString());
+        // S142: a real dry run, so foreign principals address an existing bulk operation; the grant is removed again.
+        String olga = api("olga.operator").get("/me").body().path("subject").path("id").asString();
+        JsonNode bulkGrant = api("wade.admin").post(Map.of("permission", "run.bulk-operate", "principal",
+                Map.of("type", "subject", "value", olga)), "/workspaces/{ws}/access/grants", PURCHASING).body();
+        try {
+            ids.put("bulkOperationId", api("olga.operator").post(Map.of("action", "cancel", "filter",
+                    Map.of("workflowId", workflowId.toString(), "lifecycle", "waiting")),
+                    "/workspaces/{ws}/bulk-operations/preview", PURCHASING).body().path("id").asString());
+        } finally {
+            api("wade.admin").delete("/workspaces/{ws}/access/grants/{id}", PURCHASING, bulkGrant.path("id").asString());
+        }
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
         ids.put("grantId", access.path("grants").get(0).path("id").asString());
@@ -385,8 +463,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         if ("listSharedAssetOwnerCandidates".equals(operationId)) {
             path += "?kind=decision";
         }
-        if ("clearWorkflowCanary".equals(operationId)) {
+        if ("clearWorkflowCanary".equals(operationId) || "deleteGitConnection".equals(operationId)) {
             path += "?expectedVersion=1";
+        }
+        if ("previewGitImport".equals(operationId)) {
+            path += "?branch=main";
         }
         MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method.toUpperCase()),
                 "/api/v1" + path).with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf)
@@ -396,7 +477,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             builder.contentType(MediaType.APPLICATION_JSON).content(json.write(body));
         }
         org.springframework.test.web.servlet.RequestBuilder request = builder;
-        if (List.of("uploadAttachment", "addRunAttachment").contains(operationId)) {
+        if (List.of("uploadAttachment", "addRunAttachment", "uploadGuestFile").contains(operationId)) {
             // Multipart operations (docs/build/S17): a well-formed upload, so a 404 cannot be explained by a bad body.
             request = MockMvcRequestBuilders.multipart(HttpMethod.POST, "/api/v1" + path)
                     .file(new org.springframework.mock.web.MockMultipartFile("file", "note.txt", "text/plain",
@@ -420,11 +501,35 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
             case "assignWorklistView" -> Map.of("expectedRevision",0);
+            // S150: a well-formed admission limit, so the 403 cannot be explained by validation.
+            case "setWorkspaceAdmission" -> Map.of("startsPerMinute", 1);
+            // S142: well-formed bulk operation bodies, so a 404 cannot be explained by validation.
+            case "previewBulkOperation" -> Map.of("action", "cancel", "filter", Map.of("workflowId", ids.get("workflowId")));
+            case "executeBulkOperation" -> Map.of("confirmedCount", 0, "reason", "Foreign");
+            case "pauseBulkOperation", "resumeBulkOperation", "cancelBulkOperation" -> Map.of("expectedVersion", 1);
+            // S141: well-formed bodies, so a 404 cannot be explained by validation.
+            case "updateTaskActionSettings" -> Map.of("enabled", true, "linkHours", 24, "expectedVersion", 0,
+                    "channels", List.of());
+            case "linkChatIdentity" -> Map.of("platform", "slack", "platformUserId", "U-FOREIGN",
+                    "subjectId", UUID.randomUUID().toString());
+            case "useTaskActionLink" -> Map.of("action", "approve", "expectedVersion", 1, "confirm", true);
+            case "createStepTemplate" -> Map.of("key", "foreign-template", "name", "Foreign",
+                    "step", Map.of("type", "approval", "label", "Foreign", "config", Map.of()));
+            case "updateStepTemplate" -> Map.of("expectedVersion", 1, "name", "Foreign", "shared", false, "status", "active");
+            case "addStepTemplateVersion" -> Map.of("expectedVersion", 1,
+                    "step", Map.of("type", "approval", "label", "Foreign", "config", Map.of()));
             case "createWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
                     "secretRef", "webhook-foreign", "events", List.of("request.started"));
             case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
                     "secretRef", "webhook-foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
             case "resumeCallbackWait" -> Map.of("result", Map.of());
+            // S145: well-formed bodies, so a 404 cannot be explained by validation.
+            case "setWorkflowKpiTargets" -> Map.of("cycleP95Seconds", 3600, "expectedVersion", 0);
+            case "startAnalyticsBackfill" -> Map.of("since", "2026-01-01");
+            // S140: lookups and guest response forms.
+            case "searchLookupOptions" -> Map.of("search", "ab");
+            case "replaceGuestDomains" -> Map.of("domains", List.of("foreign.example"));
+            case "submitGuestResponse" -> Map.of("result", Map.of());
             case "createKafkaTrigger" -> Map.of("key", "foreign-feed", "name", "Foreign", "cluster", "main", "topic", "orders",
                     "action", "start", "workflowId", ids.get("workflowId"), "mapping", Map.of("title", "/title"));
             case "updateKafkaTrigger" -> Map.of("name", "Foreign", "mapping", Map.of("title", "/title"), "batchSize", 1,
@@ -470,6 +575,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "checkDraftBpmn" -> Map.of("revision", 1, "bpmn", "<definitions/>");
             case "applyDraftBpmn" -> Map.of("bpmn", "<definitions/>");
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
+            case "evaluateExpression" -> Map.of("expression", "1 + 1");
             case "simulateWorkflow" -> Map.of("revision", 1, "input", Map.of("amount", 1));
             case "simulateWorkflowCases" -> Map.of("revision", 1, "cases", List.of(Map.of("id", "c1",
                     "input", Map.of("amount", 1), "scenario", Map.of("calls", Map.of("procure",
@@ -499,6 +605,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "archiveWorkflow", "restoreWorkflow" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);
+            case "runWorkflowTests" -> Map.of("revision", 1, "suite", Map.of("schemaVersion", "orqix.workflow-tests/v1",
+                    "cases", List.of(Map.of("id", "c1", "name", "Foreign", "input", Map.of("amount", 1), "expect", "Fulfilled"))));
             case "correctRunInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("title", "Corrected"));
             case "publishDraft" -> Map.of("draftRevision", 1);
             case "setActiveRelease" -> Map.of("releaseId", ids.get("releaseId"), "expectedVersion", 1);
@@ -514,6 +622,18 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "correctTaskInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("amount", 1));
             case "migrateRun" -> Map.of("targetReleaseId", UUID.randomUUID().toString(), "reason", "Foreign attempt",
                     "expectedVersion", 1);
+            case "planRunMigration" -> Map.of("targetReleaseId", ids.get("releaseId"));
+            case "migrateRunWithMapping" -> Map.of("targetReleaseId", ids.get("releaseId"), "reason", "Foreign attempt",
+                    "expectedVersion", 1);
+            case "previewMigrationBatch" -> Map.of("sourceReleaseId", ids.get("releaseId"), "targetReleaseId",
+                    ids.get("releaseId"));
+            case "createMigrationBatch" -> Map.of("sourceReleaseId", ids.get("releaseId"), "targetReleaseId",
+                    ids.get("releaseId"), "runIds", List.of(ids.get("runId")), "reason", "Foreign attempt",
+                    "expectedCount", 1);
+            case "planRunMove" -> Map.of("kind", "skip", "fromStepId", "manager", "toStepId", "amountPolicy");
+            case "moveRun" -> Map.of("kind", "skip", "fromStepId", "manager", "toStepId", "amountPolicy", "reason",
+                    "Foreign attempt", "expectedVersion", 1);
+            case "approveRunMove", "rejectRunMove" -> Map.of("note", "Foreign attempt");
             case "cancelRun", "retryRun", "suspendRun", "resumeRun", "repairRun" -> Map.of("reason", "Foreign attempt", "expectedVersion", 1);
             case "sendRunSignal" -> Map.of("signal", "withdraw", "reason", "Foreign attempt", "expectedVersion", 1);
             case "reconcileEffect" -> Map.of("resolution", "confirmedNotApplied", "evidence",
@@ -533,6 +653,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     "enabled", true);
             case "finishConnectionOAuth" -> Map.of("state", "a".repeat(43), "code", "foreign-code");
             case "testConnection" -> Map.of("version", 1, "operation", "health");
+            // CG-W04 (S131): a valid request limit, so a 404 cannot be explained by the body.
+            case "putConnectionRateLimit" -> Map.of("maxRequestsPerMinute", 60);
             case "reviewOpenApiConnection" -> Map.of("source", "{}");
             case "createAdapter" -> Map.of("key", "foreign-adapter", "kind", "kafka", "name", "Foreign", "secretRef", "foreign-ref",
                     "config", Map.of("allowedTopics", List.of("foreign.topic")));
@@ -551,9 +673,21 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "revokeAgentWriteTool" -> Map.of("reason", "Foreign", "expectedVersion", 1);
             case "reconcileAgentWrite" -> Map.of("outcome", "notApplied", "reason", "Foreign", "expectedVersion", 1);
             case "setAgentWriteRetention" -> Map.of("retentionDays", 1, "expectedVersion", 0);
+            // S135 agent tools: well-formed bodies, so a 404 cannot be explained by validation.
+            case "setAgentKillSwitch" -> Map.of("active", true, "reason", "Foreign attempt");
+            case "setAgentTraceSettings" -> Map.of("enabled", true, "expectedVersion", 0);
+            case "saveAgentTestSuite" -> Map.of("suite", Map.of("operation", "assessVendor", "cases", List.of()),
+                    "expectedVersion", 0);
+            case "answerAgentRequest" -> Map.of("decision", "approve", "expectedVersion", 1);
             case "setWorkspaceFeature" -> Map.of("enabled", false);
+            // CG-M04 (S136): a well-formed switch, so a foreign 404 cannot be explained by the body.
+            case "setMcpServer" -> Map.of("enabled", true);
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
+            // S151: well-formed bodies, so a 404 cannot be explained by validation.
+            case "createResourceGrant" -> Map.of("resourceType", "workflow", "resourceId", ids.get("workflowId"),
+                    "permission", "workflow.read", "principal", principal);
+            case "revealRunData" -> Map.of("fields", List.of());
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
             case "assignAppPage" -> Map.of("expectedRevision", 0);
             case "runAppPageChain" -> Map.of("expectedRevision", 1);
@@ -565,6 +699,36 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",
                     Map.of("bindings", List.of(), "actions", List.of()), "height", 120);
             case "decideUiExtensionVersion" -> Map.of("decision", "approve", "note", "Foreign attempt", "expectedStatus", "pending");
+            case "importConnectorPackage" -> Map.of("archive", "UEsDBBQAAAAIAA==");
+            case "testConnectorPackageContract" -> Map.of("archive", "UEsDBBQAAAAIAA==");
+            case "decideConnectorPackage" -> Map.of("decision", "approve", "sha256", "0".repeat(64), "note", "Foreign",
+                    "expectedRevision", 1);
+            case "retireConnectorPackage" -> Map.of("reason", "Foreign attempt", "expectedRevision", 1);
+            case "createWorkflowFromPackageTemplate" -> Map.of("key", "foreign-package-wf", "name", "Foreign");
+            case "createPackageTrigger" -> Map.of("packageId", "com.orqix.servicenow-itsm", "triggerKey", "incident-updated",
+                    "secretRef", "foreign-hook");
+            case "updatePackageTrigger" -> Map.of("secretRef", "foreign-hook", "enabled", false, "expectedVersion", 1);
+            case "receivePackageTriggerEvent" -> Map.of("sys_id", "x");
+            // CG-O06/CG-O07 (S144): well-formed bodies, so a foreign 404 cannot be explained by validation.
+            case "createAlertDestination" -> Map.of("name", "Foreign", "kind", "slack", "secretRef", "foreign-hook");
+            case "updateAlertDestination" -> Map.of("name", "Foreign", "enabled", true, "expectedVersion", 1);
+            case "createAlertRule", "updateAlertRule" -> Map.of("name", "Foreign", "signal", "circuitOpen",
+                    "threshold", 1, "severity", "warning", "destinationIds", List.of(UUID.randomUUID().toString()),
+                    "expectedVersion", 1);
+            case "silenceAlertRule" -> Map.of("minutes", 10);
+            case "setRetentionPolicy" -> Map.of("keepDays", 30, "expectedVersion", 0);
+            case "placeLegalHold" -> Map.of("runId", UUID.randomUUID().toString(), "reason", "Foreign attempt");
+            case "releaseLegalHold" -> Map.of("reason", "Foreign attempt");
+            case "startRetentionSweep" -> Map.of("dryRun", true);
+            // S147 Git sync and release bundles: well-formed bodies, so a foreign 404 cannot be explained by validation.
+            case "saveGitConnection" -> Map.of("provider", "github", "repository", "foreign/repo", "credentialRef",
+                    "foreign-git-token", "expectedVersion", 0);
+            case "pushWorkflowToGit" -> Map.of("draftRevision", 1);
+            case "importWorkflowFromGit" -> Map.of("branch", "orqix/foreign", "commit", "a".repeat(40),
+                    "expectedDraftRevision", 1);
+            case "publishFromGit" -> Map.of("draftRevision", 1, "commit", "a".repeat(40), "pullRequest", "1");
+            case "publishReleaseBundle" -> Map.of("draftRevision", 1);
+            case "checkBundlePromotion", "promoteReleaseBundle" -> Map.of("targetWorkspaceId", SANDBOX.toString());
             default -> null;
         };
     }
@@ -583,7 +747,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "workspace_feature", "mcp_workspace_setting", "mcp_confirmation", "agent_write_tool_approval", "agent_write_call", "connector_package_version", "connector_package_install", "connector_package_connection", "package_trigger", "package_trigger_record", "ai_skill", "ai_skill_version", "ai_skill_promotion", "ai_eval_suite", "ai_eval_run", "ai_workspace_policy", "ai_task_job", "ai_decision_record", "ai_eval_candidate", "step_item_result", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release", "task_escalation", "task_action_setting", "task_action_channel", "chat_identity", "task_action_message", "task_action_link", "task_action_confirmation", "step_template", "step_template_version", "bulk_operation", "bulk_operation_item", "run_search_value", "external_worker_seen", "alert_destination", "alert_rule", "alert_rule_destination", "alert_incident", "alert_delivery", "retention_policy", "legal_hold", "retention_sweep", "run_archive", "analytics_kpi_target", "analytics_kpi_state", "ai_ocr_setting", "ai_document_verification",
+                "git_connection", "git_sync_event", "release_bundle", "release_bundle_promotion", "resource_grant", "audit_chain_check",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

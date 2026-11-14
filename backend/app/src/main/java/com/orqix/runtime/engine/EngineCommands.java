@@ -15,6 +15,7 @@ import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.bpmn.model.FlowElement;
 import org.flowable.job.api.Job;
 import org.flowable.task.api.TaskInfo;
 import org.springframework.stereotype.Component;
@@ -56,7 +57,9 @@ public class EngineCommands {
                     .processDefinitionId(processDefinitionId)
                     .tenantId(tenantId)
                     .businessKey(businessKey)
-                    .variables(variables)
+                    // CG-P06 (S150): the start's traceparent, so the run's engine jobs join the trace of its start.
+                    // Set once at the start only: later updates from parallel branches would conflict on the row.
+                    .variables(com.orqix.shared.tracing.TraceIds.withTraceparent(variables))
                     .start();
             return instance.getId();
         });
@@ -156,7 +159,12 @@ public class EngineCommands {
     /** Resume a pinned child step in a durable job after the child's transaction commits. */
     public void resumeChild(String processInstanceId, String nodeId, Map<String, Object> variables) {
         var executions = runtimeService.createExecutionQuery().processInstanceId(processInstanceId)
-                .activityId(nodeId).list();
+                .activityId(nodeId).list().stream()
+                // S138: a for-each step also has its multi-instance root (and batch) executions at the activity; only
+                // the item execution waits for the trigger (items of workers and AI tasks run one at a time).
+                .filter(e -> !(e instanceof org.flowable.engine.impl.persistence.entity.ExecutionEntity entity)
+                        || !entity.isMultiInstanceRoot())
+                .toList();
         if (executions.size() != 1) {
             throw new IllegalStateException("Expected one waiting child execution at " + nodeId);
         }
@@ -181,7 +189,35 @@ public class EngineCommands {
     }
 
     public void moveDeadLetterToExecutable(String jobId, int retries) {
-        wrap(() -> managementService.moveDeadLetterJobToExecutableJob(jobId, retries));
+        // A step with its own retry policy (CG-W04, S131) gets its own attempts back, not the workflow's.
+        int attempts = stepAttempts(jobId).orElse(retries);
+        wrap(() -> managementService.moveDeadLetterJobToExecutableJob(jobId, attempts));
+    }
+
+    private Optional<Integer> stepAttempts(String jobId) {
+        Job job = managementService.createDeadLetterJobQuery().jobId(jobId).singleResult();
+        if (job == null || job.getProcessDefinitionId() == null || job.getElementId() == null) {
+            return Optional.empty();
+        }
+        // Outside a Flowable command: read the deployed model through the repository service.
+        FlowElement element = repositoryService.getBpmnModel(job.getProcessDefinitionId()).getFlowElement(job.getElementId());
+        return element == null ? Optional.empty() : OrqixModel.extension(element, "retry")
+                .map(x -> OrqixModel.attribute(x, "maxAttempts")).filter(v -> v != null).map(Integer::parseInt);
+    }
+
+    /**
+     * CG-M03 (S135): makes the deferred job of a durable agent step due now (its wait was answered or its child request
+     * ended). Joins the caller's transaction; the job runs after the commit. Returns false when no timer job waits.
+     */
+    public boolean wakeTimer(String processInstanceId, String elementId) {
+        boolean moved = false;
+        for (Job timer : managementService.createTimerJobQuery().processInstanceId(processInstanceId).list()) {
+            if (elementId.equals(timer.getElementId())) {
+                managementService.moveTimerToExecutableJob(timer.getId());
+                moved = true;
+            }
+        }
+        return moved;
     }
 
     public boolean hasExecutableOrTimerJob(String processInstanceId) {
@@ -236,6 +272,109 @@ public class EngineCommands {
                     .migrateToProcessDefinition(targetProcessDefinitionId).migrate(processInstanceId);
             return null;
         });
+    }
+
+    /**
+     * S143 (CG-O02): the engine's verdict on a migration with explicit activity mappings ({@code from -> to}, only for
+     * activities whose id changes; the others map to themselves) and process variables to set on the way.
+     */
+    public List<String> migrationProblems(String processInstanceId, String targetProcessDefinitionId,
+            Map<String, String> activityMappings, Map<String, Object> variables) {
+        var validation = mappedMigration(targetProcessDefinitionId, activityMappings, variables)
+                .validateMigration(processInstanceId);
+        return validation.isMigrationValid() ? List.of() : validation.getValidationMessages();
+    }
+
+    /** S143 (CG-O02): re-points the instance with explicit activity mappings and sets the given process variables. */
+    public void migrateProcessInstance(String processInstanceId, String targetProcessDefinitionId,
+            Map<String, String> activityMappings, Map<String, Object> variables, UUID actor) {
+        as(actor, () -> {
+            mappedMigration(targetProcessDefinitionId, activityMappings, variables).migrate(processInstanceId);
+            return null;
+        });
+    }
+
+    private org.flowable.engine.migration.ProcessInstanceMigrationBuilder mappedMigration(String targetProcessDefinitionId,
+            Map<String, String> activityMappings, Map<String, Object> variables) {
+        var builder = migrationService.createProcessInstanceMigrationBuilder()
+                .migrateToProcessDefinition(targetProcessDefinitionId);
+        for (Map.Entry<String, String> mapping : activityMappings.entrySet()) {
+            builder.addActivityMigrationMapping(org.flowable.engine.migration.ActivityMigrationMapping
+                    .createMappingFor(mapping.getKey(), mapping.getValue()));
+        }
+        for (Map.Entry<String, Object> variable : variables.entrySet()) {
+            builder.withProcessInstanceVariable(variable.getKey(), variable.getValue());
+        }
+        return builder;
+    }
+
+    /**
+     * S143 (CG-O03): moves the tokens of step {@code nodeId} (its element, or its generated elements such as the
+     * catch events after an event-based gateway; attached boundary events go with their activity) to the element
+     * {@code toActivityId}. The left activities are cancelled by the engine (their tasks, timers, subscriptions and jobs
+     * go with them) and the target starts as if a token had just arrived. Joins the caller's transaction.
+     *
+     * @return the engine activities that were left; empty when the engine is not at the step (nothing was changed)
+     */
+    public List<String> moveStep(String processInstanceId, String nodeId, String toActivityId, UUID actor) {
+        var instance = runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult();
+        if (instance == null) {
+            return List.of();
+        }
+        var model = repositoryService.getBpmnModel(instance.getProcessDefinitionId());
+        // Executions by element, active or not: a call parked on a dead-letter job is not an "active" activity.
+        List<org.flowable.engine.runtime.Execution> executions = runtimeService.createExecutionQuery()
+                .processInstanceId(processInstanceId).list().stream()
+                .filter(e -> e.getActivityId() != null && !e.getId().equals(processInstanceId))
+                .filter(e -> e.getActivityId().equals(nodeId) || e.getActivityId().startsWith(nodeId + "__"))
+                .filter(e -> !(model.getFlowElement(e.getActivityId()) instanceof org.flowable.bpmn.model.BoundaryEvent))
+                .toList();
+        if (executions.isEmpty()) {
+            return List.of();
+        }
+        List<String> executionIds = executions.stream().map(org.flowable.engine.runtime.Execution::getId).toList();
+        as(actor, () -> {
+            runtimeService.createChangeActivityStateBuilder().processInstanceId(processInstanceId)
+                    .moveExecutionsToSingleActivityId(executionIds, toActivityId).changeState();
+            return null;
+        });
+        return executions.stream().map(org.flowable.engine.runtime.Execution::getActivityId).distinct().sorted()
+                .toList();
+    }
+
+    /** S143: the process-level variables of an instance whose names start with {@code prefix}, read-only. */
+    public Map<String, Object> variables(String processInstanceId, String prefix) {
+        var result = new java.util.TreeMap<String, Object>();
+        if (!processExists(processInstanceId)) {
+            return result;
+        }
+        runtimeService.getVariables(processInstanceId).forEach((name, value) -> {
+            if (name.startsWith(prefix)) {
+                result.put(name, value);
+            }
+        });
+        return result;
+    }
+
+    /** S143: the ids of the activities active in the instance (tokens and waiting executions), sorted. */
+    public List<String> activeActivityIds(String processInstanceId) {
+        if (!processExists(processInstanceId)) {
+            return List.of();
+        }
+        return List.copyOf(new java.util.TreeSet<>(runtimeService.getActiveActivityIds(processInstanceId)));
+    }
+
+    /** S143: whether the deployed definition has a flow node (activity, event or gateway) with this id. */
+    public boolean hasFlowNode(String processDefinitionId, String elementId) {
+        FlowElement element = repositoryService.getBpmnModel(processDefinitionId).getFlowElement(elementId);
+        return element instanceof org.flowable.bpmn.model.FlowNode;
+    }
+
+    /** S143: executable, timer and dead-letter jobs of the instance, for "nothing can move it" checks. */
+    public long jobCount(String processInstanceId) {
+        return managementService.createJobQuery().processInstanceId(processInstanceId).count()
+                + managementService.createTimerJobQuery().processInstanceId(processInstanceId).count()
+                + managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).count();
     }
 
     public boolean isSuspended(String processInstanceId) {

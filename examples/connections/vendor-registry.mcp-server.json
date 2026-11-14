@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "mcpServer",
+  "key": "vendor-registry",
+  "version": 1,
+  "name": "Vendor registry",
+  "description": "The procurement vendor registry as a registered MCP tool server (docs/build/S135). The binding is the MCP endpoint; agents reference its tools as vendor-registry.<tool>. Take a tool snapshot after binding it: only pinned tools are offered.",
+  "mcpServer": {
+    "tools": [
+      {
+        "name": "vendor_risk_lookup",
+        "label": "Vendor registry",
+        "description": "Looks a vendor up by its legal name in the vendor registry. Returns vendorName, registryId, riskScore (0 to 100), riskBand (low, medium or high) and sanctionsHit."
+      },
+      {
+        "name": "vendor_financials",
+        "label": "Vendor financials",
+        "description": "Returns the annual revenue in USD and the credit rating of a vendor, looked up by its legal name."
+      }
+    ],
+    "resources": [
+      {
+        "name": "policy",
+        "label": "Procurement policy",
+        "uri": "orqix://policy/procurement",
+        "maxChars": 2000
+      }
+    ]
+  }
+}

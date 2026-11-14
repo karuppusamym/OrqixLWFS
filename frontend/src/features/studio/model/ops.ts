@@ -4,7 +4,7 @@ import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
 import { renameCopiedQuestion } from './sharedForms'
-import type { AssetRef, Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
+import type { AssetRef, Condition, DataClassification, Definition, DecisionTable, FieldSchemaDoc, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
  * Pure document operations used by the studio store, the Steps tab and the tests.
@@ -237,9 +237,10 @@ export function removeNode(def: Definition, id: string): Definition {
 /** Which route kind a React Flow source handle stands for. */
 export function routeForHandle(node: WorkflowNode, handle: string | null | undefined): RouteKind {
   if (node.type === 'approval') return handle === 'timedOut' ? 'timedOut' : handle === 'rejected' ? 'rejected' : 'approved'
-  if (node.type === 'http') return handle === 'failed' ? 'failed' : 'next'
+  if (node.type === 'http' || node.type === 'externalTask') return handle === 'failed' ? 'failed' : 'next'
   if (node.type === 'waitForMessage') return handle === 'timedOut' ? 'timedOut' : 'next'
   if (node.type === 'branch') return 'condition'
+  if (node.type === 'waitForFirst') return 'branch'
   return 'next'
 }
 
@@ -277,6 +278,12 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       if (req.on === 'failed' && typeof from.config.raiseErrorOnFailure === 'string') return { ok: false, reason: 'This call raises an error for its section when it fails, so it has no Failed route. Turn that off first.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
       break
+    case 'externalTask':
+      // S132: the Failed route is taken when the worker reports a business error.
+      if (req.on !== 'next' && req.on !== 'failed') return { ok: false, reason: 'Choose Next or Failed for work by an external worker.' }
+      if (req.on === 'failed' && typeof from.config.raiseErrorOnFailure === 'string') return { ok: false, reason: 'This step raises an error for its section when the worker reports a business error, so it has no Failed route. Turn that off first.' }
+      if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
+      break
     case 'approval':
       if (req.on !== 'approved' && req.on !== 'rejected' && !(req.on === 'timedOut' && from.config.timeoutAfter)) return { ok: false, reason: 'Choose Approved, Rejected, or a configured time limit route.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'approved' ? 'Approved' : 'Rejected'} route.` }
@@ -295,6 +302,10 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       if (req.on !== 'next') return { ok: false, reason: 'Parallel branches use Next routes.' }
       if (others.some((t) => t.to === to.id)) return { ok: false, reason: 'There is already a branch to that step.' }
       break
+    case 'waitForFirst':
+      // S139: each branch has exactly one path, chosen in the step's settings ("Goes to").
+      if (!req.transitionId) return { ok: false, reason: 'Choose where each branch goes in the settings of this step.' }
+      break
     case 'branch':
       if (req.on !== 'condition' && req.on !== 'default') return { ok: false, reason: 'Paths of a choice are conditions or Otherwise.' }
       if (req.on === 'default' && others.some((t) => t.on === 'default')) return { ok: false, reason: 'A choice has exactly one Otherwise route.' }
@@ -304,7 +315,8 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       if (req.on !== 'next') return { ok: false, reason: 'This step has one route to the next step.' }
       if (others.length > 0) return { ok: false, reason: 'This step already leads somewhere. Remove that connection first.' }
   }
-  if (wouldCreateCycle(def, from.id, to.id)) return { ok: false, reason: 'That would make the workflow loop back on itself. Loops are not supported yet.' }
+  if (wouldCreateCycle(def, from.id, to.id))
+    return { ok: false, reason: 'That would make the workflow loop back on itself. To send the request back to an earlier step, select the connection and choose "Send back to an earlier step" with a limit.' }
   return { ok: true }
 }
 
@@ -353,6 +365,56 @@ export function updateTransition(def: Definition, id: string, patch: { label?: s
   }
   if (target.on !== 'condition') delete target.condition
   return sameJson(next.transitions, def.transitions) ? def : next
+}
+
+/**
+ * CG-E01 (S138): turn a path into a bounded "send back to" path: it leads to `toId` (an earlier step) at most
+ * `maxTraversals` times, and the step it leaves continues on a limitReached path to where the path led before. With
+ * `toId` null the path leads to the limitReached target again and the limit route is removed.
+ */
+export function setSendBack(def: Definition, transitionId: string, toId: string | null, maxTraversals = 2): OpResult {
+  const t = def.transitions.find((x) => x.id === transitionId)
+  if (!t) return { ok: false, reason: 'That connection does not exist.' }
+  const next = clone(def)
+  const target = next.transitions.find((x) => x.id === transitionId) as Transition
+  const limit = next.transitions.find((x) => x.from === t.from && x.on === 'limitReached')
+  if (toId === null) {
+    if (!t.maxTraversals) return { ok: true, def }
+    if (limit) target.to = limit.to
+    delete target.maxTraversals
+    next.transitions = next.transitions.filter((x) => x !== limit)
+    return { ok: true, def: next }
+  }
+  if (next.transitions.some((x) => x.from === t.from && x.maxTraversals && x.id !== t.id))
+    return { ok: false, reason: 'This step already sends the request back on another path.' }
+  if (!nodeById(def, toId) || nodeById(def, toId)?.type === 'start') return { ok: false, reason: 'Choose an earlier step to send the request back to.' }
+  const max = Math.min(10, Math.max(1, Math.round(maxTraversals)))
+  if (!limit) {
+    next.transitions.push({ id: nextTransitionId(next), from: t.from, to: t.maxTraversals ? t.to : t.to, on: 'limitReached' })
+  }
+  target.to = toId
+  target.maxTraversals = max
+  return sameJson(next.transitions, def.transitions) ? { ok: true, def } : { ok: true, def: next }
+}
+
+/** S138: change how many times a bounded path may send the request back (1-10). */
+export function setMaxTraversals(def: Definition, transitionId: string, maxTraversals: number): Definition {
+  const t = def.transitions.find((x) => x.id === transitionId)
+  if (!t || !t.maxTraversals) return def
+  const max = Math.min(10, Math.max(1, Math.round(maxTraversals)))
+  if (t.maxTraversals === max) return def
+  const next = clone(def)
+  ;(next.transitions.find((x) => x.id === transitionId) as Transition).maxTraversals = max
+  return next
+}
+
+/** S138: where the request continues once the step's send-back limit is reached. */
+export function setLimitTarget(def: Definition, fromId: string, toId: string): Definition {
+  const limit = def.transitions.find((x) => x.from === fromId && x.on === 'limitReached')
+  if (!limit || limit.to === toId) return def
+  const next = clone(def)
+  ;(next.transitions.find((x) => x.id === limit.id) as Transition).to = toId
+  return next
 }
 
 /**
@@ -485,7 +547,7 @@ export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 
 
 // Request form fields -----------------------------------------------------------------------------------------
 
-export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'yesNo' | 'choice' | 'collection' | 'file'
+export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'time' | 'dateTime' | 'yesNo' | 'choice' | 'checklist' | 'tags' | 'lookup' | 'collection' | 'file'
 
 export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
@@ -494,14 +556,31 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   money: 'Money (USD)',
   integer: 'Whole number',
   date: 'Date',
+  time: 'Time of day',
+  dateTime: 'Date and time',
+  checklist: 'Checklist (several choices)',
+  tags: 'Tag list',
+  lookup: 'Lookup (options from a system)',
   yesNo: 'Yes/No',
   choice: 'Choice',
   collection: 'Collection',
   file: 'File upload',
 }
 
+/** Kinds operators can search by (CG-O04, S142): not files, lists, times of day or date-times. */
+export const SEARCHABLE_KINDS: ReadonlySet<FieldKind> = new Set(['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'lookup'])
+
+/** Request questions that can carry a data classification (CG-I05, S151): single answers, not files or lists. */
+export const CLASSIFIABLE_KINDS: ReadonlySet<FieldKind> = new Set(['text', 'longText', 'number', 'money', 'integer', 'date', 'time', 'dateTime', 'yesNo', 'choice', 'lookup'])
+
+/** Personal and sensitive answers are masked; they cannot be searchable. */
+export const isProtectedClassification = (c: DataClassification | undefined) => c === 'personal' || c === 'sensitive'
+
 export interface FormFieldModel {
   incidentEditable?: boolean | undefined
+  searchable?: boolean | undefined
+  /** CG-I05 (S151): how protected the answer is; undefined = not classified. */
+  classification?: DataClassification | undefined
   key: string
   label: string
   kind: FieldKind
@@ -524,6 +603,10 @@ export interface FormFieldModel {
   /** File upload: accepted file types (empty = all allowed types) and the largest file in MB (empty = the platform limit). */
   fileTypes?: string[] | undefined
   maxFileMb?: number | undefined
+  /** Date and time: the IANA zone the form uses (empty = the person's browser). */
+  timeZone?: string | undefined
+  /** Lookup: the pinned read-only operation that gives the options (docs/build/S140). */
+  lookup?: FieldSchemaDoc['lookup'] | undefined
 }
 
 export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
@@ -534,9 +617,12 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
     const f = def.inputSchema.properties[key]!
     const widget = def.inputUi?.widgets?.[key]
     let kind: FieldKind = 'text'
-    if (f.type === 'array') kind = 'collection'
+    if (f.type === 'array') kind = widget === 'checklist' && f.items?.enum?.length ? 'checklist' : widget === 'tags' && f.items?.type === 'string' && !f.items.enum ? 'tags' : 'collection'
     else if (f.type === 'boolean') kind = 'yesNo'
     else if (f.type === 'string' && f.format === 'date') kind = 'date'
+    else if (f.type === 'string' && f.format === 'time') kind = 'time'
+    else if (f.type === 'string' && f.format === 'date-time') kind = 'dateTime'
+    else if (f.type === 'string' && f.lookup) kind = 'lookup'
     else if (f.type === 'string' && f.format === 'attachment') kind = 'file'
     else if (f.enum && f.enum.length > 0) kind = 'choice'
     else if (f.type === 'integer') kind = 'integer'
@@ -549,7 +635,9 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       required: (def.inputSchema.required ?? []).includes(key),
       help: f.description ?? '',
       incidentEditable: f.incidentEditable === true,
-      choices: f.enum ?? [],
+      searchable: f.searchable === true,
+      classification: f.classification,
+      choices: f.enum ?? (kind === 'checklist' ? f.items?.enum ?? [] : []),
       minimum: f.minimum,
       maximum: f.maximum,
       minLength: f.minLength,
@@ -558,6 +646,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       minDate: f.formatMinimum, maxDate: f.formatMaximum,
       itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
       fileTypes: f.acceptTypes, maxFileMb: f.maxFileBytes === undefined ? undefined : Math.round((f.maxFileBytes / 1048576) * 10) / 10,
+      timeZone: f.timeZone, lookup: f.lookup,
     }
   })
 }
@@ -571,6 +660,8 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
     const schema: Definition['inputSchema']['properties'][string] = { type: 'string', title: f.label || f.key }
     if (f.help.trim()) schema.description = f.help.trim()
     if (f.incidentEditable && f.kind !== 'file' && f.kind !== 'collection') schema.incidentEditable = true
+    if (f.searchable && SEARCHABLE_KINDS.has(f.kind) && !isProtectedClassification(f.classification)) schema.searchable = true
+    if (f.classification && CLASSIFIABLE_KINDS.has(f.kind)) schema.classification = f.classification
     switch (f.kind) {
       case 'collection':
         schema.type = 'array'
@@ -612,6 +703,37 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
         schema.format = 'date'
         if (f.minDate) schema.formatMinimum = f.minDate
         if (f.maxDate) schema.formatMaximum = f.maxDate
+        break
+      case 'time':
+        schema.format = 'time'
+        if (f.minDate && /^\d{2}:\d{2}(:\d{2})?$/.test(f.minDate)) schema.formatMinimum = f.minDate
+        if (f.maxDate && /^\d{2}:\d{2}(:\d{2})?$/.test(f.maxDate)) schema.formatMaximum = f.maxDate
+        break
+      case 'dateTime':
+        schema.format = 'date-time'
+        if (f.timeZone?.trim()) schema.timeZone = f.timeZone.trim()
+        break
+      case 'checklist': {
+        const choices = f.choices.filter((c) => c.trim() !== '')
+        schema.type = 'array'
+        schema.items = { type: 'string', title: 'Choice', enum: choices.length ? choices : ['Option 1'] }
+        schema.minItems = 1
+        schema.maxItems = Math.max(1, Math.min(25, choices.length || 1))
+        schema.uniqueItems = true
+        widgets[f.key] = 'checklist'
+        break
+      }
+      case 'tags':
+        schema.type = 'array'
+        schema.items = { type: 'string', title: 'Tag', minLength: 1, maxLength: 50 }
+        schema.minItems = 1
+        schema.maxItems = f.maxItems ?? 10
+        schema.uniqueItems = true
+        widgets[f.key] = 'tags'
+        break
+      case 'lookup':
+        schema.maxLength = f.maxLength ?? 254
+        schema.lookup = f.lookup ?? { connection: '', operation: '', searchInput: '', rows: '/result/[*]', valueColumn: '', labelColumn: '' }
         break
       case 'file':
         schema.format = 'attachment'
@@ -697,7 +819,9 @@ export function renameHttpResult(def: Definition, nodeId: string, oldName: strin
 
 /** Keep dependencies.connections in step with the connections the steps use. */
 export function syncConnectionDependencies(def: Definition, latestVersions: Record<string, number | undefined>): Definition {
-  const used = [...new Set(def.nodes.filter((n) => n.type === 'http').map((n) => n.config.connectionRef as string).filter(Boolean))]
+  // S129: a message wait's safety-net check uses a connection too.
+  const used = [...new Set(def.nodes.flatMap((n) => n.type === 'http' ? [n.config.connectionRef as string]
+    : n.type === 'waitForMessage' ? [(n.config.fallbackCheck as { connectionRef?: string } | undefined)?.connectionRef ?? ''] : []).filter(Boolean))]
   const current = def.dependencies.connections
   const wanted = used.map((key) => ({ key, definitionVersion: current.find((c) => c.key === key)?.definitionVersion ?? latestVersions[key] ?? 1 }))
   if (sameJson(wanted, current)) return def

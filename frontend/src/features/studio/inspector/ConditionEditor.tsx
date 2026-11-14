@@ -63,7 +63,7 @@ export function LiteralInput({
  * Condition = field + operator + value, shown with human field chips ("Request -> Amount (USD)").
  * The stored form is a structured reference, never an expression.
  */
-function AtomicConditionEditor({
+export function AtomicConditionEditor({
   idBase,
   condition,
   fields,

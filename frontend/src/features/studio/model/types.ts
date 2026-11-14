@@ -4,11 +4,11 @@
  */
 import type { ViewDefinition } from '@/features/views/model'
 
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'aiTask' | 'calculate' | 'waitForFirst' | 'end'
 /** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
 export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default' | 'aiLabel' | 'lowConfidence' | 'needsReview' | 'aiUnavailable' | 'limitReached' | 'branch'
 export type Literal = string | number | boolean
 
 /** Bounds of `between`; each bound is included unless it says false. */
@@ -24,6 +24,16 @@ export interface AtomicCondition {
   fieldRef: string
   operator: Operator
   value: ConditionValue
+  expression?: never
+}
+/** A condition written as an Orqix expression (CG-X01, docs/build/S137). */
+export interface ExpressionCondition {
+  expression: string
+  fieldRef?: never
+  operator?: never
+  value?: never
+  all?: never
+  any?: never
 }
 export function isRangeValue(v: unknown): v is RangeValue {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && typeof (v as RangeValue).from === 'number' && typeof (v as RangeValue).to === 'number'
@@ -31,11 +41,15 @@ export function isRangeValue(v: unknown): v is RangeValue {
 export function isSetOperator(op: Operator): op is 'in' | 'between' {
   return op === 'in' || op === 'between'
 }
-export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never }
+export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never; expression?: never } | ExpressionCondition
 export function isAtomicCondition(c: Condition): c is AtomicCondition {
   return typeof c.fieldRef === 'string' && typeof c.operator === 'string' && 'value' in c
 }
-export function conditionTerms(c: Condition): AtomicCondition[] { return 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
+export function isExpressionCondition(c: Condition | undefined | null): c is ExpressionCondition {
+  return !!c && typeof (c as ExpressionCondition).expression === 'string'
+}
+/** The comparisons of a condition; none for an expression condition (S137). */
+export function conditionTerms(c: Condition): AtomicCondition[] { return isExpressionCondition(c) ? [] : 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
 
 export interface WorkflowNode {
   id: string
@@ -51,6 +65,15 @@ export interface Transition {
   on: RouteKind
   label?: string
   condition?: Condition
+  /** AI task routes only (docs/build/S134): the skill label this path is for, when `on` is aiLabel. */
+  aiLabel?: string
+  /**
+   * CG-E01 (docs/build/S138): this path sends the request back to an earlier step at most this many times (1-10); the
+   * step it leaves then continues on its limitReached path.
+   */
+  maxTraversals?: number
+  /** Wait for the first only (docs/build/S139): the branch this path is for, when `on` is branch. */
+  branch?: string
 }
 
 /** Inclusive UTC date window (YYYY-MM-DD) in which a row applies, judged by the request's submission date (S41). */
@@ -59,9 +82,60 @@ export interface EffectiveWindow {
   to?: string
 }
 
+/**
+ * A decision-row test written as an Orqix expression (CG-D04, docs/build/S146): it belongs to the column `fieldRef`,
+ * must reference that field and matches when it gives true (false or no value does not match).
+ */
+export interface ExpressionTerm {
+  fieldRef: string
+  expression: string
+  operator?: never
+  value?: never
+  all?: never
+  any?: never
+}
+/** One test of a decision row: a comparison of its column or a formula (S146). */
+export type DecisionTerm = AtomicCondition | ExpressionTerm
+/** The condition of a decision row: one test, or tests that must all (all) or any (any) hold. */
+export type DecisionCondition = DecisionTerm | { all?: DecisionTerm[]; any?: DecisionTerm[]; fieldRef?: never; operator?: never; value?: never; expression?: never }
+/** A row result computed by an Orqix expression (S146); its type is the type of the default's literal. */
+export interface OutputExpression {
+  expression: string
+}
+export type OutputEntry = Literal | OutputExpression
+
+export function isExpressionTerm(t: unknown): t is ExpressionTerm {
+  return typeof t === 'object' && t !== null && typeof (t as ExpressionTerm).fieldRef === 'string' && typeof (t as ExpressionTerm).expression === 'string'
+}
+export function isOutputExpression(v: unknown): v is OutputExpression {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) && typeof (v as OutputExpression).expression === 'string'
+}
+/** The tests of a decision row in order (one for a single test). */
+export function decisionTerms(c: DecisionCondition): DecisionTerm[] {
+  return 'all' in c && c.all ? c.all : 'any' in c && c.any ? c.any : 'fieldRef' in c && typeof c.fieldRef === 'string' ? [c as DecisionTerm] : []
+}
+/** True when any test or result of the table is a formula (S146). */
+export function tableUsesExpressions(table: { rows: DecisionRow[] }): boolean {
+  return table.rows.some(r => decisionTerms(r.when).some(isExpressionTerm) || Object.values(r.then ?? {}).some(isOutputExpression))
+}
+/** The comparisons of a decision row; formula tests are left out. */
+export function comparisonTerms(c: DecisionCondition): AtomicCondition[] {
+  return decisionTerms(c).filter((t): t is AtomicCondition => !isExpressionTerm(t))
+}
+
+/**
+ * The comparisons of a decision row as an ordinary condition, for tools that only understand comparisons (case
+ * generation, path checks). Formula tests are left out, so the result may hold more often than the row.
+ */
+export function comparisonCondition(c: DecisionCondition): Condition {
+  if ('any' in c && c.any) return { any: comparisonTerms(c) }
+  if ('all' in c && c.all) return { all: comparisonTerms(c) }
+  return isExpressionTerm(c) ? { all: [] } : (c as AtomicCondition)
+}
+
 export interface DecisionRow {
-  when: Condition
-  then: Record<string, Literal>
+  when: DecisionCondition
+  then: Record<string, OutputEntry>
   effective?: EffectiveWindow
 }
 
@@ -71,7 +145,7 @@ export interface DecisionRow {
  * against the pinned version at validation and publish; a newer version is never used silently.
  */
 export interface AssetRef {
-  kind: 'decision' | 'documentTemplate' | 'form'
+  kind: 'decision' | 'documentTemplate' | 'form' | 'calendar'
   key: string
   version: number
   target: string
@@ -94,14 +168,26 @@ export interface DecisionTable {
   default: Record<string, Literal>
 }
 
+export type DataClassification = 'public' | 'internal' | 'personal' | 'sensitive'
+
 export interface FieldSchemaDoc {
   incidentEditable?: true
+  /** CG-O04 (S142): operators can filter requests by this request answer. */
+  searchable?: true
+  /** CG-I05 (S151): personal and sensitive answers are masked for everyone and revealed only with data.reveal. */
+  classification?: DataClassification
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
   title: string
   description?: string
   enum?: string[]
   /** `date` on a string field: a calendar date YYYY-MM-DD. `attachment`: a file chosen on the request form (docs/build/S17). */
-  format?: 'date' | 'attachment'
+  format?: 'date' | 'time' | 'date-time' | 'attachment'
+  /** Only with format date-time: the IANA time zone used to enter and show the value (docs/build/S140). */
+  timeZone?: string
+  /** Lists of single values: each value once (checklists and tag lists, S140). */
+  uniqueItems?: true
+  /** Options from a pinned read-only connection operation (CG-F02, S140). */
+  lookup?: { connection: string; operation: string; searchInput: string; valueInput?: string; rows: string; valueColumn: string; labelColumn: string; detailColumn?: string; minSearchLength?: number }
   /** Only with format attachment: the accepted file types (default: all allowed types) and the largest file in bytes. */
   acceptTypes?: string[]
   maxFileBytes?: number
@@ -140,6 +226,10 @@ export interface InputUiDoc {
   visibleWhen?: Record<string, Condition>
   requiredWhen?: Record<string, Condition>
   layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
+  /** CG-F04 (S137): fields an expression computes from the other answers. */
+  computed?: Record<string, string>
+  /** CG-F04 (S137): cross-field rules, broken when the check is false. */
+  rules?: Array<{ id: string; check: string; message: string; fields?: string[] }>
 }
 
 export interface Position {
@@ -161,6 +251,8 @@ export interface Definition {
   inputUi?: InputUiDoc
   outputSchema: FormSchemaDoc
   triggers: Array<'manual' | 'api'>
+  /** CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool; never changes execution. */
+  exposeAsTool?: boolean
   nodes: WorkflowNode[]
   transitions: Transition[]
   decisions: DecisionTable[]
@@ -184,7 +276,7 @@ export interface SubprocessDef {
   timeoutAfter?: string
   onTimeout?: string
   onError?: { to: string; errorCode?: string }
-  trigger?: { type: 'error' | 'signal' | 'timer'; errorCode?: string; signal?: string; after?: string }
+  trigger?: { type: 'error' | 'signal' | 'timer' | 'message'; errorCode?: string; signal?: string; after?: string; message?: string; correlationField?: string; payload?: Array<{ name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'date'; title?: string; required?: boolean }> }
   interrupting?: boolean
 }
 

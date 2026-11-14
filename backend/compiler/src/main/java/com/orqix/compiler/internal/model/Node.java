@@ -40,10 +40,12 @@ public sealed interface Node {
                     java.util.List<String> separateFrom, java.util.List<String> correctable,
                     Integer approvers, Integer dueAfterMinutes, PerItem perItem,
                     java.util.Map<String, String> fieldAccess,
-                    com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture) implements Node {
+                    com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture,
+                    /** CG-T04 (S141): the raw escalation policy, or null. */
+                    tools.jackson.databind.JsonNode escalationPolicy) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null,null);
         }
 
         /**
@@ -100,7 +102,14 @@ public sealed interface Node {
      */
     record Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
-                String compensates, boolean automaticUndo, String raiseOnFailure) implements Node {
+                String compensates, boolean automaticUndo, String raiseOnFailure, Poll poll) implements Node {
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates, boolean automaticUndo, String raiseOnFailure) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
+                    automaticUndo, raiseOnFailure, null);
+        }
+
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
             this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false,
@@ -126,6 +135,11 @@ public sealed interface Node {
             return automaticUndo && compensates != null;
         }
 
+        /** @return true when the step keeps checking until done (S129, {@code config.poll}) */
+        public boolean polls() {
+            return poll != null;
+        }
+
         /**
          * @return the business error code this call raises when it fails for good with a known failure (S71 opt-in,
          *         {@code config.raiseErrorOnFailure}), or null for the S32 behavior (failed path or needs attention)
@@ -149,7 +163,13 @@ public sealed interface Node {
      * receives (name to field reference, sorted by name) and {@code result} declares what it must return.
      */
     record ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
-                        java.util.List<PayloadField> result, int leaseSeconds) implements Node {
+                        java.util.List<PayloadField> result, int leaseSeconds, String raiseOnFailure) implements Node {
+
+        public ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
+                java.util.List<PayloadField> result, int leaseSeconds) {
+            this(index, id, label, topic, inputMapping, result, leaseSeconds, null);
+        }
+
         @Override
         public NodeKind kind() {
             return NodeKind.EXTERNAL_TASK;
@@ -174,6 +194,62 @@ public sealed interface Node {
         @Override
         public NodeKind kind() {
             return NodeKind.SEND_ADAPTER;
+        }
+    }
+
+    /**
+     * AI task (CG-A01, docs/build/S134): runs a pinned, approved AI skill on the mapped values. {@code skillVersion} is
+     * null when the designer leaves the pin to publishing (latest approved version). {@code mode} must equal the
+     * skill's mode; {@code autonomy} is {@code shadow}, {@code suggest}, {@code autoWithReview} or {@code auto}.
+     * Mapping maps are sorted by key.
+     */
+    record AiTask(int index, String id, String label, String skillRef, Integer skillVersion, String mode,
+                  Map<String, String> inputMapping, String autonomy, java.math.BigDecimal minConfidence,
+                  int reviewSamplePercent, Map<String, String> redaction) implements Node {
+
+        public static final String SHADOW = "shadow";
+        public static final String SUGGEST = "suggest";
+        public static final String AUTO_WITH_REVIEW = "autoWithReview";
+        public static final String AUTO = "auto";
+        public static final java.math.BigDecimal DEFAULT_MIN_CONFIDENCE = new java.math.BigDecimal("0.8");
+        public static final int DEFAULT_REVIEW_PERCENT = 10;
+
+        /** @return true for shadow mode: the step records a decision and always continues on next */
+        public boolean shadow() {
+            return SHADOW.equals(autonomy);
+        }
+
+        /** @return true when the AI result chooses the path (autoWithReview or auto) */
+        public boolean routes() {
+            return AUTO.equals(autonomy) || AUTO_WITH_REVIEW.equals(autonomy);
+        }
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.AI_TASK;
+        }
+    }
+
+    /**
+     * Calculate (CG-X01, S137): named outputs computed in order with Orqix expressions. {@code calendar} (may be null)
+     * is the working calendar of working-day functions and {@code today()}.
+     */
+    record Calculate(int index, String id, String label, java.util.List<Output> outputs,
+                     tools.jackson.databind.JsonNode calendar) implements Node {
+
+        /** One output: its declared type (number, integer, string, boolean, date) and, for numbers, rounding. */
+        public record Output(int index, String key, String expression, String type, Integer scale, String rounding,
+                             String description, boolean optional) {
+        }
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.CALCULATE;
+        }
+
+        /** @return the output with this key, or null */
+        public Output output(String key) {
+            return outputs.stream().filter(o -> o.key().equals(key)).findFirst().orElse(null);
         }
     }
 
@@ -297,11 +373,25 @@ public sealed interface Node {
      * the request; {@code timeoutAfter} (ISO-8601 duration, may be null) adds a {@code timedOut} route; {@code payload}
      * declares the values the message may carry (outputs of this step), in authored order.
      * {@code callbackTokenValidFor} (S98, may be null) marks a wait answered by an external system through a callback
-     * token valid for that ISO-8601 duration.
+     * token valid for that ISO-8601 duration. {@code guestResponse} (S140, may be null) is the guest response form
+     * option as authored JSON.
      */
     record WaitForMessage(int index, String id, String label, String message, String correlationField,
-                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor)
+                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
+                          FallbackCheck fallbackCheck, tools.jackson.databind.JsonNode guestResponse)
             implements Node {
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor,
+                FallbackCheck fallbackCheck) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, callbackTokenValidFor,
+                    fallbackCheck, null);
+        }
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, callbackTokenValidFor, null);
+        }
 
         public WaitForMessage(int index, String id, String label, String message, String correlationField,
                 String timeoutAfter, java.util.List<PayloadField> payload) {
@@ -315,6 +405,110 @@ public sealed interface Node {
         /** @return the declared payload field with this name, or null */
         public PayloadField field(String name) {
             return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+    }
+
+    /**
+     * Keep checking until done (S129, CG-W01). Durations are ISO-8601 texts with seconds allowed; {@code multiplier}
+     * is 1 without backoff; {@code maxInterval} equals {@code every} without backoff. {@code maxChecks} is null when
+     * the designer left it to the computed worst case. {@code failWhen} may be null.
+     */
+    record Poll(boolean firstCheckImmediate, String every, java.math.BigDecimal multiplier, String maxInterval,
+                int jitterPercent, WorkflowDefinition.Condition until, WorkflowDefinition.Condition failWhen,
+                String giveUpAfter, Integer maxChecks, int maxConsecutiveErrors, boolean errorsTimeOut,
+                boolean finalCheckAtDeadline, java.util.List<String> showWhileWaiting,
+                java.util.List<String> optionalResults, tools.jackson.databind.JsonNode json) {
+
+        /** @return true when this mapped result may be missing in an answer (it is then an optional output) */
+        public boolean optional(String key) {
+            return optionalResults.contains(key);
+        }
+    }
+
+    /**
+     * Safety-net check of a message wait (S129, CG-W03): the same call settings as a "Call a system" step and a slow
+     * interval; when {@code until} holds the mapped fields complete the wait as its payload.
+     */
+    record FallbackCheck(String connectionRef, String operation, Map<String, String> inputMapping,
+                         Map<String, String> resultMapping, int timeoutSeconds, String every, int jitterPercent,
+                         WorkflowDefinition.Condition until, Integer maxChecks, tools.jackson.databind.JsonNode json) { }
+
+    /**
+     * Wait for the first of several events (S139, CG-W07): 2 to 5 branches, each with its own route
+     * ({@code on: branch}); the first branch to fire wins and the others are cancelled. Outputs are {@code branch} (the
+     * id of the winning branch) and the declared values of the message, callback and check branches.
+     */
+    record WaitForFirst(int index, String id, String label, java.util.List<FirstBranch> branches) implements Node {
+
+        /** Output naming the branch that won. */
+        public static final String BRANCH_OUTPUT = "branch";
+
+        @Override
+        public NodeKind kind() {
+            return NodeKind.WAIT_FOR_FIRST;
+        }
+
+        /** @return the branch with this id, or null */
+        public FirstBranch branch(String branchId) {
+            return branches.stream().filter(b -> b.id().equals(branchId)).findFirst().orElse(null);
+        }
+
+        /** @return the branch declaring this value, or null */
+        public FirstBranch declaring(String field) {
+            return branches.stream().filter(b -> b.field(field) != null).findFirst().orElse(null);
+        }
+
+        /** BPMN id of the catch event of a branch (also the id its wait is shown and stored under). */
+        public static String elementId(String stepId, String branchId) {
+            return stepId + "__" + branchId;
+        }
+
+        /**
+         * Internal message name of a callback or check branch: they are delivered to their branch as a message
+         * correlated by the request id. Names start with {@code orqix-}, which the message API refuses from outside.
+         */
+        public static String internalMessage(String stepId, String branchId) {
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest((stepId + "/" + branchId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return "orqix-" + branchId + "-" + java.util.HexFormat.of().formatHex(digest).substring(0, 10);
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    /**
+     * One branch of {@link WaitForFirst}. {@code kind} is {@code message} ({@code message}, {@code correlationField},
+     * {@code payload}), {@code signal} ({@code signal}), {@code callback} ({@code tokenValidFor}, {@code payload}),
+     * {@code timer} (exactly one of {@code after}, {@code untilField} with {@code atTime}, or {@code workingDuration}
+     * with {@code calendarRef}) or {@code check} ({@code check} and the {@code payload} its mapped results fill).
+     */
+    record FirstBranch(int index, String id, String label, String kind, String message, String correlationField,
+            java.util.List<PayloadField> payload, String signal, String after, String untilField, String atTime,
+            String workingDuration, String calendarRef, String tokenValidFor, FallbackCheck check) {
+
+        public static final java.util.List<String> KINDS = java.util.List.of("message", "signal", "callback", "timer",
+                "check");
+
+        /** @return true for the branches delivered as a message (message, callback, check) */
+        public boolean messageLike() {
+            return kind.equals("message") || kind.equals("callback") || kind.equals("check");
+        }
+
+        /** @return the declared value with this name, or null */
+        public PayloadField field(String name) {
+            return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+
+        /** @return the name the engine waits for: the authored message, or the internal one */
+        public String messageName(String stepId) {
+            return kind.equals("message") ? message : WaitForFirst.internalMessage(stepId, id);
+        }
+
+        /** @return the JSON Pointer of this branch inside its step */
+        public String path(Node step) {
+            return step.configPath("branches") + "/" + index;
         }
     }
 

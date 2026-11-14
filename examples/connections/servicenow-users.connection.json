@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "http",
+  "key": "servicenow-users",
+  "version": 1,
+  "name": "ServiceNow users (lookup)",
+  "description": "Illustrative read-only connection for a lookup question (docs/build/S140, CG-F02): active users whose email starts with the typed text. The value of an option is the email address; when a request is submitted Orqix searches again with the chosen address and requires an exact match. Field names follow the default ServiceNow data model; the local WireMock stub (tests) implements this contract.",
+  "operations": {
+    "searchUsers": {
+      "label": "Search users by email",
+      "description": "At most 20 active users whose email starts with the text.",
+      "method": "GET",
+      "path": "/api/now/table/sys_user",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._%+@-]{2,100}$",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "query": {
+        "sysparm_query": {
+          "template": "active=true^emailSTARTSWITH{text}",
+          "encoder": "servicenowEncodedQuery"
+        },
+        "sysparm_fields": {
+          "const": "sys_id,user_name,name,email"
+        },
+        "sysparm_limit": {
+          "const": 20
+        }
+      },
+      "headers": {
+        "Accept": {
+          "const": "application/json"
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sys_id": {
+                  "type": "string"
+                },
+                "user_name": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "email": {
+                  "type": "string",
+                  "maxLength": 254
+                }
+              }
+            }
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 10,
+      "testable": true
+    }
+  }
+}

@@ -21,6 +21,7 @@ import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import com.orqix.audit.AuditWriter;
+import com.orqix.compiler.ConnectionContracts;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
@@ -64,12 +65,19 @@ public class ConnectionAdminService {
     private final Json json;
     private final Clock clock;
     private final Schema definitionSchema;
+    private final Schema definitionV1Schema;
     private final WorkspaceFeatures features;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.packages.ConnectorPackageService> packages;
+    private final com.orqix.integration.agenttools.AgentToolRules agentTools;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
             EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AgentExecutor agents, AuditWriter audit,
-            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features) {
+            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.integration.packages.ConnectorPackageService> packages,
+            com.orqix.integration.agenttools.AgentToolRules agentTools) {
+        this.packages = packages;
         this.features = features;
+        this.agentTools = agentTools;
         this.connections = connections;
         this.policy = policy;
         this.subjects = subjects;
@@ -83,6 +91,8 @@ public class ConnectionAdminService {
         this.clock = clock;
         this.definitionSchema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
                 .getSchema(SchemaLocation.of("classpath:orqix/schemas/connection-definition-v0.schema.json"));
+        this.definitionV1Schema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+                .getSchema(SchemaLocation.of("classpath:orqix/schemas/connection-definition-v1.schema.json"));
     }
 
     /** S127: binding or testing an agent connection needs the agents module on (x-orqix-feature-when kind agent). */
@@ -97,9 +107,14 @@ public class ConnectionAdminService {
     @Transactional(readOnly = true)
     public ConnectionDtos.ConnectionList list(Caller caller, UUID workspaceId) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
-        policy.require(access, Permission.CONNECTION_READ, "listConnections", false);
+        // CG-I01 (S151): connection.read on some connections only lists those connections.
+        if (!access.hasAnywhere(Permission.CONNECTION_READ)) {
+            policy.require(access, Permission.CONNECTION_READ, "listConnections", false);
+        }
         Map<String, List<ConnectionService.DefinitionRecord>> byKey = new LinkedHashMap<>();
-        connections.definitions(workspaceId).forEach(d -> byKey.computeIfAbsent(d.key(), k -> new ArrayList<>()).add(d));
+        connections.definitions(workspaceId).stream()
+                .filter(d -> access.hasOnConnection(Permission.CONNECTION_READ, d.key()))
+                .forEach(d -> byKey.computeIfAbsent(d.key(), k -> new ArrayList<>()).add(d));
         List<ConnectionDtos.ConnectionSummary> items = new ArrayList<>();
         byKey.forEach((key, versions) -> {
             ConnectionService.DefinitionRecord latest = versions.get(versions.size() - 1);
@@ -119,7 +134,7 @@ public class ConnectionAdminService {
 
     @Transactional(readOnly = true)
     public ConnectionDtos.ConnectionDetail get(Caller caller, UUID workspaceId, String key) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         List<ConnectionService.DefinitionRecord> versions = connections.definitions(workspaceId, key);
         if (versions.isEmpty()) {
             throw ApiException.notFound();
@@ -136,20 +151,32 @@ public class ConnectionAdminService {
 
     @Transactional
     public ConnectionDtos.DefinitionRecord register(Caller caller, UUID workspaceId, String key, JsonNode definition) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess workspaceAccess = policy.requireVisible(caller, workspaceId);
+        // CG-I01 (S151): a grant on a connection covers new versions of it; a new key needs workspace-wide manage.
+        WorkspaceAccess access = connections.definitions(workspaceId, key).isEmpty() ? workspaceAccess
+                : workspaceAccess.onConnection(key);
         policy.require(access, Permission.CONNECTION_MANAGE, "registerConnectionVersion", true);
         if (definition == null || !definition.isObject()) {
             throw ApiException.malformed("definition must be a JSON object.");
         }
-        if ("agent".equals(definition.path("kind").asString("http"))) {
+        if ("agent".equals(definition.path("kind").asString("http"))
+                || "mcpServer".equals(definition.path("kind").asString("http"))) {
             features.require(workspaceId, WorkspaceFeatures.Feature.AGENTS);
         }
-        List<Error> errors = definitionSchema.validate(definition);
+        // schemaVersion 1.0 is validated against the v1 schema plus its registration rules (S130); 0.1 as before.
+        boolean v1 = ConnectionContracts.isV1(definition);
+        List<Error> errors = (v1 ? definitionV1Schema : definitionSchema).validate(definition);
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
                     .withFieldErrors(errors.stream().limit(50).map(e -> new ApiException.FieldError(
                             "/definition" + pointer(e), e.getKeyword() == null ? "schema" : e.getKeyword(),
                             e.getMessage())).toList());
+        }
+        List<ConnectionContracts.Problem> rules = ConnectionContracts.check(definition);
+        if (!rules.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
+                    .withFieldErrors(rules.stream().limit(50).map(p -> new ApiException.FieldError(
+                            "/definition" + p.pointer(), p.code(), p.message())).toList());
         }
         if (!key.equals(definition.path("key").asString())) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "definition.key must equal the connection key.")
@@ -158,6 +185,9 @@ public class ConnectionAdminService {
         int version = definition.path("version").asInt();
         List<ConnectionService.DefinitionRecord> existing = connections.definitions(workspaceId, key);
         List<ApiException.FieldError> semantic = agentChecks(definition, existing);
+        if (semantic.isEmpty()) {
+            semantic = agentTools.check(workspaceId, definition);
+        }
         if (!semantic.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
                     .withFieldErrors(semantic);
@@ -197,7 +227,7 @@ public class ConnectionAdminService {
     @Transactional
     public ConnectionDtos.Binding putBinding(Caller caller, UUID workspaceId, String key, String ifMatch,
             ConnectionDtos.PutBindingRequest request) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }
@@ -209,6 +239,9 @@ public class ConnectionAdminService {
                 "/auth/secretRef", "reserved", "References starting with webhook- are reserved."));
         if ("oauth-token-keyring".equals(auth.secretRef())) errors.add(new ApiException.FieldError(
                 "/auth/secretRef", "reserved", "This reference is reserved for platform encryption."));
+        if (auth.secretRef() != null && !com.orqix.integration.secrets.SecretRef.valid(auth.secretRef())) errors.add(
+                new ApiException.FieldError("/auth/secretRef", "pattern", "Name a mounted secret, or a vault:, aws-sm:,"
+                        + " azure-kv: or gcp-sm: reference with a store path (no '..', '//' or trailing '/')."));
         if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isMicrosoftGraph())
                 && !"bearerToken".equals(auth.type()) && !"oauth2ClientCredentials".equals(auth.type()) && !"oauth2AuthorizationCode".equals(auth.type())) {
             errors.add(new ApiException.FieldError("/auth/type", "enum",
@@ -230,7 +263,8 @@ public class ConnectionAdminService {
                 if (auth.secretRef() == null || auth.headerName() == null) {
                     errors.add(new ApiException.FieldError("/auth", "required", "secretRef and headerName are required"));
                 }
-                if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
+                if (connections.definitions(workspaceId, key).stream()
+                        .anyMatch(d -> d.definition().isAgent() || d.definition().isMcpServer())) {
                     errors.add(new ApiException.FieldError("/auth/type", "enum",
                             "An agent connection supports none, bearerToken, oauth2ClientCredentials and oauth2AuthorizationCode"));
                 }
@@ -240,6 +274,17 @@ public class ConnectionAdminService {
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The credential reference is incomplete.")
                     .withFieldErrors(errors);
+        }
+        // S133: a connection installed from a connector package binds only to the package's declared hosts.
+        com.orqix.integration.packages.ConnectorPackageService packages = this.packages.getIfAvailable();
+        if (packages != null && request.baseUrl() != null && BASE_URL.matcher(request.baseUrl()).matches()) {
+            List<String> allowed = packages.refusedBindingHost(workspaceId, key, request.baseUrl());
+            if (allowed != null) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "The address is not one of the package's hosts.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/baseUrl", "PKG_HOST",
+                                "This connection comes from a connector package; its address must match "
+                                        + String.join(" or ", allowed) + ".")));
+            }
         }
         String host;
         try {
@@ -309,7 +354,7 @@ public class ConnectionAdminService {
 
     @Transactional
     public ConnectionDtos.TestResult test(Caller caller, UUID workspaceId, String key, ConnectionDtos.TestRequest request) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onConnection(key);
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }
@@ -326,9 +371,14 @@ public class ConnectionAdminService {
         if (!operation.testable() || operation.effectClass() != ConnectionDefinition.EffectClass.READ_ONLY) {
             throw new ApiException(ProblemCode.OPERATION_NOT_TESTABLE, "Only read-only, testable operations can be tested.");
         }
+        // S135: an agent whose tools all live on registered tool servers has no binding of its own.
+        boolean ownBinding = !record.definition().isAgent() || operation.agent() == null
+                || operation.agent().usesOwnBinding();
         ConnectionService.Binding binding = connections.binding(workspaceId, key).filter(ConnectionService.Binding::enabled)
-                .orElseThrow(() -> new ApiException(ProblemCode.CONNECTION_NOT_BOUND,
-                        "Configure and enable the binding first."));
+                .orElse(null);
+        if (binding == null && ownBinding) {
+            throw new ApiException(ProblemCode.CONNECTION_NOT_BOUND, "Configure and enable the binding first.");
+        }
         long started = System.nanoTime();
         ConnectionDtos.TestResult result = record.definition().isAgent()
                 ? testAgent(caller, workspaceId, record, operation, binding, request.input(), started)
@@ -366,7 +416,7 @@ public class ConnectionAdminService {
                 }
                 HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(binding.baseUrl(),
                         binding.authType(), binding.authHeaderName(), binding.secretRef(), binding.workspaceId()), record.definition(), operation,
-                        record.definition().isMicrosoftGraph() ? input : null, testMapping,
+                        record.definition().isMicrosoftGraph() || operation.v1() ? input : null, testMapping,
                         "connection-test-" + UUID.randomUUID(), operation.maxTimeoutSeconds(), secret);
                 boolean ok = call.outcome() == HttpExecutor.Outcome.SUCCEEDED;
                 result = new ConnectionDtos.TestResult(ok ? "succeeded" : "failed", call.httpStatus(), call.durationMs(),
@@ -387,13 +437,16 @@ public class ConnectionAdminService {
             throw new ApiException(ProblemCode.AI_NOT_CONFIGURED, unavailable);
         }
         ObjectNode sample = sampleInput(operation, input);
-        try {
-            egress.check(binding.baseUrl());
-        } catch (EgressPolicy.EgressDeniedException e) {
-            return new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED", e.getMessage());
+        if (binding != null) {
+            try {
+                egress.check(binding.baseUrl());
+            } catch (EgressPolicy.EgressDeniedException e) {
+                return new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED",
+                        e.getMessage());
+            }
         }
         String secret = null;
-        if (!"none".equals(binding.authType())) {
+        if (binding != null && !"none".equals(binding.authType())) {
             secret = secrets.credential(binding.authType(), binding.secretRef(), binding.workspaceId()).orElse(null);
             if (secret == null) {
                 return new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
@@ -401,8 +454,8 @@ public class ConnectionAdminService {
             }
         }
         AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(workspaceId, null, null,
-                caller.subjectId(), "test", 1, record.definition(), operation, sample, Map.of(), binding.baseUrl(),
-                secret, operation.maxTimeoutSeconds()));
+                caller.subjectId(), "test", 1, record.definition(), operation, sample, Map.of(),
+                binding == null ? null : binding.baseUrl(), secret, operation.maxTimeoutSeconds()));
         if (run.outcome() == HttpExecutor.Outcome.SUCCEEDED) {
             return new ConnectionDtos.TestResult("succeeded", null, elapsed(started), null, run.detail(), run.output(),
                     run.summary());

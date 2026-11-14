@@ -119,10 +119,28 @@ export function userById(id: string): MockUser | undefined {
 
 /** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S74). */
 export const promotionApprovers = new Set<string>()
+/** S144: `${wsId}:${userId}` holding the grant-only alert.manage permission in mock mode. */
+export const alertManagers = new Set<string>()
+
+/** S151: `${wsId}:${userId}` holding the grant-only data.reveal (CG-I05) or the audit.read grant (CG-I06) in mock mode. */
+export const dataRevealers = new Set<string>()
+export const auditReaders = new Set<string>()
+
+/** `${workspaceId}:${userId}` pairs that hold the grant-only run.bulk-operate (CG-O01, docs/build/S142). */
+export const bulkOperators = new Set<string>()
+
+/**
+ * Grant-only AI permissions of the demo personas (S134; S146 part D): Dana designs and runs evaluations, Paul approves
+ * skill versions and promotions (never his own), so the four-eyes flow of the AI skills Studio works in mock mode.
+ */
+const AI_GRANTS: Record<string, Permission[]> = {
+  'dana.designer': ['ai.evaluate'],
+  'paul.publisher': ['ai.approve-skill'],
+}
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(roles.length > 0 ? AI_GRANTS[user.username] ?? [] : []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(bulkOperators.has(`${wsId}:${user.id}`) ? ['run.bulk-operate' as const] : []), ...(alertManagers.has(`${wsId}:${user.id}`) ? ['alert.manage' as const] : []), ...(dataRevealers.has(`${wsId}:${user.id}`) ? ['data.reveal' as const] : []), ...(auditReaders.has(`${wsId}:${user.id}`) ? ['audit.read' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {
@@ -205,7 +223,7 @@ export interface MockWorkflow {
   /** PL01: the folder this workflow is filed in; a label only, never an access rule. */
   folderId?: string
   testSuite?: components['schemas']['WorkflowTestSuite']
-  testPass?: { version: number; revision: number; passed: boolean; dependencies: string; passedCases?: number; totalCases?: number; testedAt?: string }
+  testPass?: { version: number; revision: number; passed: boolean; dependencies: string; passedCases?: number; totalCases?: number; testedAt?: string; coverage?: Record<string, { covered: number; total: number }> }
 }
 
 /** A discussion comment on a step or connection (UI03, docs/build/S53). */

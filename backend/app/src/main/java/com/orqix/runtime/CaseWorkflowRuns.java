@@ -119,7 +119,8 @@ public class CaseWorkflowRuns {
                 .param("ws", workspaceId).query(String.class).single();
         String pid = engine.startProcess(release.processDefinitionId(), tenant, id.toString(), Map.of(
                 ProcessData.RUN_ID, id.toString(), ProcessData.WORKSPACE_ID, workspaceId.toString(),
-                ProcessData.INITIATOR, initiator.toString(), ProcessData.INPUT, json.write(input)), initiator);
+                ProcessData.INITIATOR, initiator.toString(), ProcessData.INPUT,
+                runs.engineInput(workspaceId, release.id(), input)), initiator);
         runs.setEngineProcessInstance(workspaceId, id, pid);
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.SYSTEM, null, "run.started", "run",
                 id.toString(), AuditWriter.Outcome.SUCCESS, Map.of("workflowKey", release.workflowKey(),

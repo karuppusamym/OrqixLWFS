@@ -1,6 +1,7 @@
 import { humanize } from '@/lib/text'
 import { guaranteedBefore, nodeById } from './graph'
-import { conditionTerms, type Definition, type Literal, type WorkflowNode } from './types'
+import { decisionFields } from '@/lib/expr/decision'
+import { conditionTerms, decisionTerms, isOutputExpression, type Definition, type Literal, type WorkflowNode } from './types'
 
 /** `date` is a string field with format date: a calendar date YYYY-MM-DD. */
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'
@@ -93,7 +94,7 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       if (!table) return []
       const outputs: Record<string, Literal[]> = {}
       for (const out of [...table.rows.map((r) => r.then), table.default]) {
-        for (const [k, v] of Object.entries(out ?? {})) (outputs[k] ??= []).push(v)
+        for (const [k, v] of Object.entries(out ?? {})) if (!isOutputExpression(v)) (outputs[k] ??= []).push(v)
       }
       return Object.entries(outputs).map(([k, values]) => {
         const type = literalType(values[0] as Literal)
@@ -115,9 +116,32 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       const payload = (Array.isArray(node.config.payload) ? node.config.payload : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return payload.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
     }
+    case 'waitForFirst': {
+      // S139: which branch won, and the values the branches declare (each exists only when its branch wins).
+      const branches = (Array.isArray(node.config.branches) ? node.config.branches : []) as Array<{ id?: string; payload?: Array<{ name?: string; type?: FieldType; title?: string }> }>
+      return [
+        base('branch', 'string', 'Branch that happened first', branches.map((b) => b.id ?? '').filter(Boolean)),
+        ...branches.flatMap((b) => (b.payload ?? []).filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))),
+      ]
+    }
     case 'externalTask': {
       const result = (Array.isArray(node.config.result) ? node.config.result : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return result.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
+    }
+    case 'aiTask': {
+      // S134: status and skill version always; the answer when AI answered (labels and fields come from the skill).
+      const mode = String(node.config.mode ?? 'classify')
+      const common = [base('status', 'string'), base('skillVersion', 'integer', 'Skill version'), base('confidence', 'number'), base('modelUsed', 'string', 'Model used')]
+      if (mode === 'classify') return [...common, base('label', 'string'), base('reasons', 'array')]
+      if (mode === 'score') return [...common, base('score', 'number'), base('reasons', 'array')]
+      if (mode === 'recommend') return [...common, base('recommendation', 'string'), base('rationale', 'string')]
+      if (mode === 'summarize') return [...common, base('summary', 'string')]
+      return common
+    }
+    case 'calculate': {
+      // S137: each output with its declared type (integer stays a whole number).
+      const outputs = (Array.isArray(node.config.outputs) ? node.config.outputs : []) as Array<{ key?: string; type?: FieldType; description?: string }>
+      return outputs.filter(o => o.key).map(o => base(o.key as string, o.type ?? 'string', humanize(o.key as string)))
     }
     case 'sendAdapter':
       // S73: how the adapter took the message; a database read also reports its row count.
@@ -202,11 +226,11 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
   for (const condition of [...Object.values(def.inputUi?.visibleWhen ?? {}), ...Object.values(def.inputUi?.requiredWhen ?? {}), ...(def.inputUi?.layout?.sections ?? []).flatMap(section => section.visibleWhen ? [section.visibleWhen] : [])]) for (const term of conditionTerms(condition)) term.fieldRef = map(term.fieldRef)
   for (const t of def.transitions) if (t.condition) for (const term of conditionTerms(t.condition)) term.fieldRef = map(term.fieldRef)
   for (const d of def.decisions) {
-    for (const r of d.rows) for (const term of conditionTerms(r.when)) term.fieldRef = map(term.fieldRef)
+    for (const r of d.rows) for (const term of decisionTerms(r.when)) term.fieldRef = map(term.fieldRef)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string') n.config.correlationField = map(n.config.correlationField)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter' || n.type === 'aiTask') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
       const each = n.config.forEach as { itemsRef: string } | undefined
@@ -223,11 +247,11 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
     if (t.condition && conditionTerms(t.condition).some(term => predicate(term.fieldRef))) places.push(`the path "${t.label ?? t.id}" from ${nodeById(def, t.from)?.label ?? t.from}`)
   }
   for (const d of def.decisions) {
-    if (d.rows.some((r) => conditionTerms(r.when).some(term => predicate(term.fieldRef)))) places.push(`the rule table "${d.key}"`)
+    if (decisionFields(d).some(predicate)) places.push(`the rule table "${d.key}"`)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string' && predicate(n.config.correlationField)) places.push(`the step "${n.label}"`)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter' || n.type === 'aiTask') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
       const each = n.config.forEach as { itemsRef: string } | undefined

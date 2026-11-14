@@ -9,7 +9,20 @@ import { compiledPattern } from './pattern'
 import type { Condition } from '@/features/studio/model/types'
 
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
-export type Widget = 'text' | 'date' | 'file' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
+export type Widget = 'text' | 'date' | 'time' | 'dateTime' | 'file' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection' | 'checklist' | 'tags' | 'lookup'
+
+/** Options from a pinned read-only connection operation (docs/build/S140, CG-F02); the server runs and re-checks it. */
+export interface LookupSpec {
+  connection: string
+  operation: string
+  searchInput: string
+  valueInput?: string
+  rows: string
+  valueColumn: string
+  labelColumn: string
+  detailColumn?: string
+  minSearchLength?: number
+}
 
 export interface FormFieldSchema {
   incidentEditable?: true
@@ -17,8 +30,16 @@ export interface FormFieldSchema {
   title: string
   description?: string
   enum?: string[]
-  /** `date`: a calendar date written YYYY-MM-DD, without time or time zone (type is string). */
-  format?: 'date' | 'attachment'
+  /**
+   * `date`: a calendar date written YYYY-MM-DD, without time or time zone (type is string). `time`: HH:MM[:SS].
+   * `date-time`: RFC 3339 with its offset (docs/build/S140).
+   */
+  format?: 'date' | 'time' | 'date-time' | 'attachment'
+  /** Only with format date-time: the IANA zone the form uses to enter and show the value. */
+  timeZone?: string
+  /** Lists only: each value at most once (checklists and tag lists). */
+  uniqueItems?: true
+  lookup?: LookupSpec
   /** Only with format attachment: accepted file types (keys of docs/build/S17 section 2) and the largest file in bytes. */
   acceptTypes?: string[]
   maxFileBytes?: number
@@ -57,10 +78,42 @@ export interface FormUi {
   visibleWhen?: Record<string, Condition>
   requiredWhen?: Record<string, Condition>
   layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
+  /** CG-F04 (S137): fields an expression computes from the other answers (read-only on the form). */
+  computed?: Record<string, string>
+  /** CG-F04 (S137): cross-field rules, broken when the check is false. */
+  rules?: FormRule[]
 }
 
+export interface FormRule { id: string; check: string; message: string; fields?: string[] }
+
 const FIELD_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'array']
-const WIDGETS: readonly string[] = ['text', 'textarea', 'number', 'money', 'select', 'radio', 'checkbox']
+const WIDGETS: readonly string[] = ['text', 'textarea', 'number', 'money', 'select', 'radio', 'checkbox', 'checklist', 'tags']
+const TIME = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/
+
+/** HH:MM or HH:MM:SS (24-hour, no zone). */
+export function isClockTime(value: unknown): value is string {
+  return typeof value === 'string' && TIME.test(value)
+}
+
+/** RFC 3339 date-time with an explicit offset that names a real day. */
+export function isZonedDateTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !DATE_TIME.test(value)) return false
+  return isCalendarDate(value.slice(0, 10))
+}
+
+function parseLookup(value: unknown): LookupSpec | undefined {
+  if (!isRecord(value)) return
+  const text = (k: string) => (typeof value[k] === 'string' && value[k] ? (value[k] as string) : undefined)
+  const connection = text('connection'), operation = text('operation'), searchInput = text('searchInput'), rows = text('rows'), valueColumn = text('valueColumn'), labelColumn = text('labelColumn')
+  if (!connection || !operation || !searchInput || !rows || !valueColumn || !labelColumn) return
+  const spec: LookupSpec = { connection, operation, searchInput, rows, valueColumn, labelColumn }
+  if (text('valueInput')) spec.valueInput = text('valueInput')
+  if (text('detailColumn')) spec.detailColumn = text('detailColumn')
+  const min = num(value.minSearchLength)
+  if (min !== undefined && Number.isInteger(min) && min >= 0 && min <= 5) spec.minSearchLength = min
+  return spec
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -86,6 +139,21 @@ export function parseFormSchema(raw: unknown): FormSchema {
       field.format = 'date'
       if (isCalendarDate(value.formatMinimum)) field.formatMinimum = value.formatMinimum
       if (isCalendarDate(value.formatMaximum)) field.formatMaximum = value.formatMaximum
+    }
+    if (field.type === 'string' && value.format === 'time') {
+      field.format = 'time'
+      if (isClockTime(value.formatMinimum)) field.formatMinimum = value.formatMinimum
+      if (isClockTime(value.formatMaximum)) field.formatMaximum = value.formatMaximum
+    }
+    if (field.type === 'string' && value.format === 'date-time') {
+      field.format = 'date-time'
+      if (isZonedDateTime(value.formatMinimum)) field.formatMinimum = value.formatMinimum
+      if (isZonedDateTime(value.formatMaximum)) field.formatMaximum = value.formatMaximum
+      if (typeof value.timeZone === 'string' && /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/.test(value.timeZone)) field.timeZone = value.timeZone
+    }
+    if (field.type === 'string' && !value.format && !Array.isArray(value.enum)) {
+      const lookup = parseLookup(value.lookup)
+      if (lookup) field.lookup = lookup
     }
     if (field.type === 'string' && value.format === 'attachment') {
       field.format = 'attachment'
@@ -117,6 +185,7 @@ export function parseFormSchema(raw: unknown): FormSchema {
       const min = num(value.minItems), max = num(value.maxItems)
       if (!item || min === undefined || max === undefined || !Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max > 25 || max < min) continue
       field.items = item; field.minItems = min; field.maxItems = max
+      if (value.uniqueItems === true && item.type !== 'object') field.uniqueItems = true
     }
     properties[key] = field
   }
@@ -159,11 +228,22 @@ export function parseFormUi(raw: unknown): FormUi {
     }
     ui.layout = { sections, helpText: raw.layout.helpText === 'above' ? 'above' : 'below' }
   }
+  if (isRecord(raw.computed)) {
+    const computed: Record<string, string> = {}
+    for (const [key, value] of Object.entries(raw.computed).slice(0, 30)) if (typeof value === 'string' && value.length <= 2000) computed[key] = value
+    ui.computed = computed
+  }
+  if (Array.isArray(raw.rules)) {
+    ui.rules = raw.rules.slice(0, 20).filter(isRecord).filter(r => typeof r.id === 'string' && typeof r.check === 'string' && typeof r.message === 'string')
+      .map(r => ({ id: r.id as string, check: r.check as string, message: r.message as string,
+        ...(Array.isArray(r.fields) ? { fields: r.fields.filter((f): f is string => typeof f === 'string') } : {}) }))
+  }
   return ui
 }
 
 function parseCondition(value: unknown): Condition | undefined {
   if (!isRecord(value)) return
+  if (typeof value.expression === 'string' && value.expression.length <= 2000) return { expression: value.expression }
   const group = 'all' in value ? 'all' : 'any' in value ? 'any' : undefined
   if (group) {
     if (!Array.isArray(value[group]) || value[group].length < 2 || value[group].length > 8) return
@@ -189,17 +269,25 @@ export interface FieldDef {
   requiredWhen?: Condition
   section?: { id: string; title: string; columns: 1 | 2 }
   helpAbove?: boolean
+  /** CG-F04 (S137): the expression that computes this field; it is then read-only. */
+  computed?: string
 }
 
 /** Pick the widget: explicit hint when compatible with the type, otherwise inferred from the schema. */
 export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Widget {
   switch (schema.type) {
-    case 'array': return 'collection'
+    case 'array':
+      if (schema.items?.type === 'string' && hint === 'checklist' && schema.items.enum?.length) return 'checklist'
+      if (schema.items?.type === 'string' && hint === 'tags' && !schema.items.enum) return 'tags'
+      return 'collection'
     case 'object': return 'collection'
     case 'boolean':
       return 'checkbox'
     case 'string':
       if (schema.format === 'date') return 'date'
+      if (schema.format === 'time') return 'time'
+      if (schema.format === 'date-time') return 'dateTime'
+      if (schema.lookup) return 'lookup'
       if (schema.format === 'attachment') return 'file'
       if (schema.enum && schema.enum.length > 0) return hint === 'radio' ? 'radio' : 'select'
       return hint === 'textarea' ? 'textarea' : 'text'
@@ -231,6 +319,7 @@ export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
       requiredWhen: ui.requiredWhen?.[key],
       section: section ? { id: section.id, title: section.title, columns: section.columns ?? 1 } : undefined,
       helpAbove: ui.layout ? ui.layout.helpText === 'above' : undefined,
+      ...(ui.computed?.[key] !== undefined ? { computed: ui.computed[key] } : {}),
     }
   })
 }

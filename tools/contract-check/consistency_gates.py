@@ -27,6 +27,8 @@ from typing import Any
 # /admin/* must be 403. Operations outside both families must be listed here with the reason.
 MATRIX_EXEMPT_OPERATIONS = {
     "getMe": "reachable by every signed-in user by design; returns only the caller's own profile",
+    "getTaskActionLink": "S141: no session; the signed link bound to one task and person is the credential (ActionableTasksTest covers tampered, foreign and expired links)",
+    "useTaskActionLink": "S141: no session; the signed link bound to one task and person is the credential, then the task service checks the person like the task API",
 }
 
 # Qualifiers in x-orqix-permission that are not Permission enum values: relationship or role checks.
@@ -35,7 +37,11 @@ PERMISSION_QUALIFIERS = {
     "currentAssignee", "assignee", "candidate", "recipient", "conversation.author", "requester",
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
     "callbackToken",  # EX10 (S98): possession of a one-wait callback token; no session
+    "guestToken",  # CG-F05 (S140): possession of a one-time guest response link token; no session
     "extensionFileToken",  # UI02 (S116): a short-lived signed file path minted by the frame endpoint; no session
+    "packageTriggerVerification",  # CG-C05 (S133): the package trigger's HMAC, JWT or basic scheme; no session
+    "chatSignature",  # CG-T01 (S141): Slack signing secret or Teams outgoing-webhook HMAC; no session
+    "taskActionLink",  # CG-T01 (S141): a signed, expiring link bound to one task and one person; no session
 }
 # Free-text fragments allowed inside an x-orqix-permission value.
 PERMISSION_PHRASES = ("underlying action permission", "underlying read permission")

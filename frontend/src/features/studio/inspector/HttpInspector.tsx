@@ -14,12 +14,16 @@ import { humanize } from '@/lib/text'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel, type FieldInfo } from '../model/fieldRefs'
 import { renameHttpResult, syncConnectionDependencies } from '../model/ops'
-import { connectionDefinition } from '../connectionSchema'
+import { connectionDefinition, operationInputs, resultCandidates, type V1Operation } from '../connectionSchema'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { CallFailureErrorFields, UndoFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
+import { ForEachFields } from './ForEachFields'
 import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
+import { PollFields } from './PollFields'
+import { Button } from '@/components/ui/button'
+import { asyncResultNames, callAndWait, type AsyncDeclaration, type AsyncOperation } from '../model/packageSteps'
 import { applyDocumentReference } from '../model/documentReference'
 import type { DocumentOperation } from '@/features/settings/DocumentVersionPicker'
 
@@ -27,9 +31,10 @@ interface ScalarSchema {
   type: 'string' | 'number' | 'integer' | 'boolean'
   description?: string
   enum?: string[]
+  format?: string
 }
 
-interface OperationDoc {
+interface OperationDoc extends V1Operation {
   testable?: boolean
   path?: string
   label: string
@@ -40,6 +45,8 @@ interface OperationDoc {
   maxTimeoutSeconds: number
   /** Present on operations of an agent connection (S13). */
   agent?: AgentSpec
+  /** CG-W02 (S133): the operation answers "accepted" and the work finishes later. */
+  async?: AsyncDeclaration
 }
 
 function compatible(source: FieldInfo['type'], target: ScalarSchema['type']): boolean {
@@ -94,15 +101,36 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
     patch({ inputMapping: next })
   }
 
-  const responseProps = Object.entries(operation?.responseSchema.properties ?? {})
+  // S130: nested values, lists of rows, lists of single values and response headers (flat v0 answers: top-level values).
+  const candidates = useMemo(() => [
+    ...resultCandidates(operation),
+    // CG-W02: the status reference of an accepted answer (a path parameter of the status operation).
+    ...(operation?.async ? asyncResultNames((operationDocs ?? {}) as Record<string, AsyncOperation>, operationName).map((name) => ({
+      pointer: `/@async/${name}`, label: `Status reference ${name}`, kind: 'value' as const, name, type: 'string' as const,
+    })) : []),
+  ], [operation, operationDocs, operationName])
+  const waitForCompletion = () => {
+    let added: string | undefined
+    store.getState().apply((d) => {
+      const result = callAndWait(d, node.id, (operationDocs ?? {}) as Record<string, AsyncOperation>)
+      if (!result.ok) return d
+      added = result.id
+      return result.def
+    })
+    if (added) store.getState().select({ type: 'node', id: added })
+  }
+  const inputs = useMemo(() => operationInputs(operation), [operation])
   const resultByPointer = new Map(Object.entries(resultMapping).map(([name, pointer]) => [pointer, name]))
+  const fileFields = useMemo(
+    () => new Set(Object.entries(def.inputSchema.properties).filter(([, f]) => (f as { format?: string }).format === 'attachment').map(([k]) => `/input/${k}`)),
+    [def.inputSchema.properties],
+  )
 
-  const toggleResult = (prop: string, keep: boolean) => {
+  const toggleResult = (pointer: string, suggested: string, keep: boolean) => {
     const next = { ...resultMapping }
-    const pointer = `/${prop}`
     if (keep) {
-      let name = prop
-      for (let i = 2; name in next; i++) name = `${prop}${i}`
+      let name = suggested
+      for (let i = 2; name in next; i++) name = `${suggested}${i}`
       next[name] = pointer
     } else {
       for (const [name, p] of Object.entries(next)) if (p === pointer) delete next[name]
@@ -185,19 +213,23 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
           }}
         /> : null}
 
-        {operation?.requestSchema ? (
+        {inputs.length > 0 ? (
           <fieldset className="space-y-3" data-field="config.inputMapping">
             <legend className="mb-1 text-sm font-semibold">What to send</legend>
-            {Object.entries(operation.requestSchema.properties).map(([target, schema]) => {
-              const required = (operation.requestSchema?.required ?? []).includes(target)
-              const options = available.filter((f) => compatible(f.type, schema.type))
+            {inputs.map(({ name: target, schema: rawSchema, required, place }) => {
+              const schema = rawSchema as ScalarSchema
+              const isFile = schema.format === 'attachment'
+              const options = available.filter((f) => (isFile ? fileFields.has(f.ref) : !fileFields.has(f.ref) && compatible(f.type, schema.type)))
               const current = inputMapping[target] ?? ''
               const currentKnown = !current || options.some((o) => o.ref === current)
               return (
                 <div key={target} className="space-y-1.5 rounded-control border border-border bg-surface-muted p-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Label htmlFor={`map-${node.id}-${target}`}>
-                      {humanize(target)} <span className="font-normal text-muted-foreground">({schema.type})</span>
+                      {humanize(target)}{' '}
+                      <span className="font-normal text-muted-foreground">
+                        ({isFile ? 'a file of the request' : schema.type}{place === 'address' ? ', in the address' : ''})
+                      </span>
                     </Label>
                     {required ? <Badge tone="warning">required</Badge> : <Badge>optional</Badge>}
                   </div>
@@ -222,26 +254,35 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
             })}
           </fieldset>
         ) : null}
+        {operation?.reconcile ? (
+          <p className="text-xs text-muted-foreground" data-testid="reconcile-note">
+            Orqix fills &ldquo;{humanize(operation.reconcile.keyField)}&rdquo; itself. If an answer is lost, it looks the record up
+            with &ldquo;{humanize(operation.reconcile.operation)}&rdquo; before sending again, so the record is never created twice.
+          </p>
+        ) : null}
 
-        {responseProps.length > 0 ? (
+        {candidates.length > 0 ? (
           <fieldset className="space-y-2" data-field="config.resultMapping">
             <legend className="mb-1 text-sm font-semibold">Result fields to keep</legend>
-            <p className="text-xs text-muted-foreground">Later steps and the workflow output can use the fields you keep.</p>
-            {responseProps.map(([prop]) => {
-              const pointer = `/${prop}`
+            <p className="text-xs text-muted-foreground">
+              Later steps and the workflow output can use the fields you keep. A list keeps at most 100 items.
+            </p>
+            {candidates.map((candidate, index) => {
+              const { pointer } = candidate
               const keptAs = resultByPointer.get(pointer)
               return (
-                <div key={prop} className="flex flex-wrap items-center gap-3 rounded-control border border-border bg-surface-muted p-2.5">
-                  <Checkbox id={`keep-${node.id}-${prop}`} checked={!!keptAs} disabled={readOnly} onCheckedChange={(v) => toggleResult(prop, v === true)} />
-                  <Label htmlFor={`keep-${node.id}-${prop}`} className="font-medium">
-                    Keep &ldquo;{prop}&rdquo;
+                <div key={pointer} className="flex flex-wrap items-center gap-3 rounded-control border border-border bg-surface-muted p-2.5">
+                  <Checkbox id={`keep-${node.id}-${index}`} checked={!!keptAs} disabled={readOnly} onCheckedChange={(v) => toggleResult(pointer, candidate.name, v === true)} />
+                  <Label htmlFor={`keep-${node.id}-${index}`} className="font-medium">
+                    Keep &ldquo;{candidate.label}&rdquo;
                   </Label>
+                  {candidate.kind === 'rows' ? <Badge>list of rows</Badge> : candidate.kind === 'list' ? <Badge>list</Badge> : candidate.kind === 'header' ? <Badge>header</Badge> : null}
                   {keptAs ? (
                     <div className="flex w-full items-center gap-2">
-                      <Label htmlFor={`keepname-${node.id}-${prop}`} className="shrink-0 font-normal">
+                      <Label htmlFor={`keepname-${node.id}-${index}`} className="shrink-0 font-normal">
                         as
                       </Label>
-                      <CommitInput id={`keepname-${node.id}-${prop}`} value={keptAs} disabled={readOnly} spellCheck={false} onCommit={(v) => renameResult(pointer, v.trim())} />
+                      <CommitInput id={`keepname-${node.id}-${index}`} value={keptAs} disabled={readOnly} spellCheck={false} onCommit={(v) => renameResult(pointer, v.trim())} />
                     </div>
                   ) : null}
                 </div>
@@ -251,8 +292,39 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
         ) : null}
       </InspectorSection>
 
+      {operation?.async && !readOnly ? (
+        <InspectorSection title="Finishes later">
+          <p className="text-sm text-muted-foreground">
+            {summary?.name ?? connectionKey} answers that it accepted the work and tells Orqix where to ask for the result. Orqix
+            only follows that address when it stays inside this connection&apos;s address.
+          </p>
+          <Button size="sm" data-testid="call-and-wait" onClick={waitForCompletion}>Call and wait for completion</Button>
+          <p className="text-xs text-muted-foreground">Adds a step after this one that keeps checking {operation.async.statusOperation} until the work is done. Then choose when it is done and draw its timed-out path.</p>
+        </InspectorSection>
+      ) : null}
+
+      {operation && !operation.agent ? (
+        <PollFields
+          node={node}
+          readOnlyOperation={operation.effectClass === 'readOnly'}
+          systemName={summary?.name ?? connectionKey}
+          before={available}
+          results={Object.entries(resultMapping).map(([name, pointer]) => {
+            const schema = operation.responseSchema.properties?.[pointer.slice(1)]
+            return {
+              ref: `/steps/${node.id}/${name}`,
+              label: humanize(name),
+              group: node.label,
+              type: schema?.type ?? 'string',
+              ...(schema?.enum ? { enumValues: schema.enum } : {}),
+            }
+          })}
+        />
+      ) : null}
+
       <UndoFields node={node} />
       <CallFailureErrorFields node={node} />
+      {cfg(node, 'poll') ? null : <ForEachFields node={node} results={Object.keys(resultMapping)} parallel />}
 
       <Advanced>
         <FormField label="Timeout (seconds)" id={`http-timeout-${node.id}`} description={operation ? `At most ${operation.maxTimeoutSeconds} seconds for this operation.` : undefined}>
@@ -264,7 +336,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
               value={cfg<number>(node, 'timeoutSeconds')}
               disabled={readOnly}
               aria-describedby={ids.describedBy}
-              onCommit={(v) => patch({ timeoutSeconds: v === undefined ? undefined : Math.max(1, Math.min(operation?.maxTimeoutSeconds ?? 30, v)) })}
+              onCommit={(v) => patch({ timeoutSeconds: v === undefined ? undefined : Math.max(1, Math.min(operation?.maxTimeoutSeconds ?? 30, v, 120)) })}
             />
           )}
         </FormField>

@@ -38,8 +38,9 @@ class CompilerCasesTest {
     }
 
     @Test
-    void fixtureHasTwentyFiveCases() {
-        assertThat(cases()).hasSize(25);
+    void fixtureHasThirtyFourCases() {
+        // 25 core cases plus 9 step retry cases (CG-W04, S131).
+        assertThat(cases()).hasSize(34);
     }
 
     @TestFactory

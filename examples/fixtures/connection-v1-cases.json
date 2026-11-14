@@ -1,0 +1,1205 @@
+{
+  "description": "Connection definition v1 fixtures (docs/build/S130-connection-definition-v1.md). registration: each case patches the ServiceNow example with RFC 6902 operations and expects the listed CONN_V1_* rule codes, SCHEMA for a JSON Schema failure, or nothing for a valid definition. workflows: each case first applies workflowSetup to examples/purchase-approval.json (the purchase order step becomes a ServiceNow call), then its own patch, and expects at least the listed compiler codes. Tests assert codes, not messages. v0 definitions are covered by compiler-cases.json and stay unchanged.",
+  "base": "examples/connections/servicenow-table.connection.json",
+  "registration": [
+    {
+      "name": "valid-servicenow-example",
+      "patch": [],
+      "expect": []
+    },
+    {
+      "name": "valid-without-optional-parts",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/getIncident/headers"
+        },
+        {
+          "op": "remove",
+          "path": "/operations/getIncident/errors"
+        },
+        {
+          "op": "remove",
+          "path": "/operations/listOpenIncidents/responseHeaders"
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "schema-version-unknown",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/schemaVersion",
+          "value": "1.1"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "agent-kind-not-in-v1",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/kind",
+          "value": "agent"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "path-placeholder-undeclared",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/getIncident/path",
+          "value": "/api/now/table/{table}/{sysId}"
+        }
+      ],
+      "expect": [
+        "CONN_V1_PATH_PARAMS"
+      ]
+    },
+    {
+      "name": "path-param-not-in-path",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/pathParams/table",
+          "value": {
+            "type": "string",
+            "const": "incident"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_PATH_PARAMS"
+      ]
+    },
+    {
+      "name": "valid-const-path-param",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/getIncident/path",
+          "value": "/api/now/table/{table}/{sysId}"
+        },
+        {
+          "op": "add",
+          "path": "/operations/getIncident/pathParams/table",
+          "value": {
+            "type": "string",
+            "const": "incident"
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "const-path-param-with-slash",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/getIncident/path",
+          "value": "/api/now/table/{table}/{sysId}"
+        },
+        {
+          "op": "add",
+          "path": "/operations/getIncident/pathParams/table",
+          "value": {
+            "type": "string",
+            "const": "../sys_user"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_PATH_PARAMS"
+      ]
+    },
+    {
+      "name": "text-path-param-without-pattern",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/getIncident/pathParams/sysId/pattern"
+        }
+      ],
+      "expect": [
+        "CONN_V1_PATH_PARAMS"
+      ]
+    },
+    {
+      "name": "path-template-with-query-string",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/getIncident/path",
+          "value": "/api/now/table/incident/{sysId}?x=1"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "path-param-clashes-with-request-field",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/addWorkNote/requestSchema/properties/sysId",
+          "value": {
+            "type": "string"
+          }
+        },
+        {
+          "op": "add",
+          "path": "/operations/addWorkNote/body/sys_id",
+          "value": {
+            "input": "sysId"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_INPUT_CLASH"
+      ]
+    },
+    {
+      "name": "encoded-query-input-without-pattern",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/findIncidentByCorrelation/requestSchema/properties/correlationId/pattern"
+        }
+      ],
+      "expect": [
+        "CONN_V1_TEMPLATE"
+      ]
+    },
+    {
+      "name": "template-placeholder-unknown",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/findIncidentByCorrelation/query/sysparm_query/template",
+          "value": "correlation_id={reference}"
+        }
+      ],
+      "expect": [
+        "CONN_V1_INPUT_UNKNOWN"
+      ]
+    },
+    {
+      "name": "unknown-encoder",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/findIncidentByCorrelation/query/sysparm_query/encoder",
+          "value": "javascript"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "authorization-header-forbidden",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/headers/Authorization",
+          "value": {
+            "const": "Basic abc"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_HEADER_FORBIDDEN"
+      ]
+    },
+    {
+      "name": "cookie-header-forbidden",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/headers/Cookie",
+          "value": {
+            "const": "a=b"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_HEADER_FORBIDDEN"
+      ]
+    },
+    {
+      "name": "set-cookie-response-header-forbidden",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/listOpenIncidents/responseHeaders/Set-Cookie",
+          "value": {
+            "type": "string"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_HEADER_FORBIDDEN"
+      ]
+    },
+    {
+      "name": "mapped-header-unknown-input",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/headers/X-Tenant",
+          "value": {
+            "input": "tenant"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_INPUT_UNKNOWN"
+      ]
+    },
+    {
+      "name": "body-template-unknown-input",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/createIncident/body/caller_id",
+          "value": {
+            "input": "caller"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_INPUT_UNKNOWN"
+      ]
+    },
+    {
+      "name": "declared-field-never-sent",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/createIncident/body/description"
+        }
+      ],
+      "expect": [
+        "CONN_V1_INPUT_UNUSED"
+      ]
+    },
+    {
+      "name": "body-nested-too-deep",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/createIncident/body/a",
+          "value": {
+            "object": {
+              "b": {
+                "object": {
+                  "c": {
+                    "object": {
+                      "d": {
+                        "object": {
+                          "e": {
+                            "object": {
+                              "f": {
+                                "const": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_BODY_SHAPE"
+      ]
+    },
+    {
+      "name": "valid-nested-body",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/createIncident/body/variables",
+          "value": {
+            "object": {
+              "requested_for": {
+                "object": {
+                  "group": {
+                    "input": "assignmentGroup"
+                  }
+                }
+              },
+              "tags": {
+                "array": [
+                  {
+                    "const": "orqix"
+                  },
+                  {
+                    "input": "urgency"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "file-input-in-json-body",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/addWorkNote/requestSchema/properties/evidence",
+          "value": {
+            "type": "string",
+            "format": "attachment"
+          }
+        },
+        {
+          "op": "add",
+          "path": "/operations/addWorkNote/body/evidence",
+          "value": {
+            "input": "evidence"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_BODY_SHAPE"
+      ]
+    },
+    {
+      "name": "binary-input-must-be-file",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/attachFile/binaryInput",
+          "value": "fileName"
+        }
+      ],
+      "expect": [
+        "CONN_V1_BODY_SHAPE"
+      ]
+    },
+    {
+      "name": "get-with-body",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/body",
+          "value": {
+            "x": {
+              "const": 1
+            }
+          }
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "delete-cannot-be-read-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/closeIncident/effectClass",
+          "value": "readOnly"
+        }
+      ],
+      "expect": [
+        "CONN_V1_EFFECT_CLASS"
+      ]
+    },
+    {
+      "name": "natural-post-refused",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/addWorkNote/method",
+          "value": "POST"
+        },
+        {
+          "op": "replace",
+          "path": "/operations/addWorkNote/effectClass",
+          "value": "idempotentNatural"
+        }
+      ],
+      "expect": [
+        "CONN_V1_EFFECT_CLASS"
+      ]
+    },
+    {
+      "name": "long-timeout-needs-long",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/attachFile/long"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "timeout-above-120",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/attachFile/maxTimeoutSeconds",
+          "value": 121
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "error-mapping-of-401-refused",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/errors/-",
+          "value": {
+            "status": 401,
+            "code": "NOT_SIGNED_IN"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ERROR_STATUS"
+      ]
+    },
+    {
+      "name": "error-mapping-of-5xx-refused",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/errors/-",
+          "value": {
+            "status": 503,
+            "code": "DOWN"
+          }
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "error-status-mapped-twice",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/getIncident/errors/-",
+          "value": {
+            "status": 404,
+            "code": "GONE"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ERROR_STATUS"
+      ]
+    },
+    {
+      "name": "pagination-items-not-a-list",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/listOpenIncidents/pagination/itemsPointer",
+          "value": "/result/0/number"
+        }
+      ],
+      "expect": [
+        "CONN_V1_PAGINATION"
+      ]
+    },
+    {
+      "name": "pagination-cap-above-hard-limit",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/listOpenIncidents/pagination/maxPages",
+          "value": 11
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "pagination-param-also-in-query",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/listOpenIncidents/query/sysparm_limit",
+          "value": {
+            "const": 5
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_PAGINATION"
+      ]
+    },
+    {
+      "name": "pagination-on-write-refused",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/createIncident/pagination",
+          "value": {
+            "style": "linkHeader",
+            "itemsPointer": "/result",
+            "maxPages": 2,
+            "maxItems": 10
+          }
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "reconcile-required-for-by-lookup",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/operations/createIncident/reconcile"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "reconcile-only-for-by-lookup",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/createIncident/effectClass",
+          "value": "nonIdempotent"
+        }
+      ],
+      "expect": [
+        "SCHEMA"
+      ]
+    },
+    {
+      "name": "reconcile-lookup-must-be-read-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/createIncident/reconcile/operation",
+          "value": "addWorkNote"
+        }
+      ],
+      "expect": [
+        "CONN_V1_RECONCILE"
+      ]
+    },
+    {
+      "name": "reconcile-lookup-unknown",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/createIncident/reconcile/operation",
+          "value": "findIt"
+        }
+      ],
+      "expect": [
+        "CONN_V1_RECONCILE"
+      ]
+    },
+    {
+      "name": "reconcile-key-field-unknown",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/createIncident/reconcile/keyField",
+          "value": "reference"
+        }
+      ],
+      "expect": [
+        "CONN_V1_RECONCILE"
+      ]
+    },
+    {
+      "name": "reconcile-found-outside-lookup-response",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/createIncident/reconcile/found",
+          "value": "/records/0"
+        }
+      ],
+      "expect": [
+        "CONN_V1_RECONCILE"
+      ]
+    },
+    {
+      "name": "async-status-operation-must-read",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "addWorkNote"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ASYNC"
+      ]
+    },
+    {
+      "name": "valid-async-declaration",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "getIncident",
+            "pollIntervalSeconds": 60
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "async-status-operation-needs-path-inputs-only",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "findIncidentByCorrelation"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ASYNC"
+      ]
+    },
+    {
+      "name": "async-status-operation-not-paginated",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Location"
+            },
+            "statusOperation": "listOpenIncidents"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_ASYNC"
+      ]
+    },
+    {
+      "name": "async-status-header-forbidden",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "header": "Set-Cookie"
+            },
+            "statusOperation": "getIncident"
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_HEADER_FORBIDDEN"
+      ]
+    },
+    {
+      "name": "valid-async-from-body-pointer",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/operations/attachFile/async",
+          "value": {
+            "acceptedStatuses": [
+              202
+            ],
+            "statusFrom": {
+              "bodyPointer": "/result/sys_id"
+            },
+            "statusOperation": "getIncident"
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "response-nested-too-deep",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/operations/addWorkNote/responseSchema",
+          "value": {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "object",
+                "properties": {
+                  "b": {
+                    "type": "object",
+                    "properties": {
+                      "c": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "d": {
+                              "type": "object",
+                              "properties": {
+                                "e": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": [
+        "CONN_V1_RESPONSE_DEPTH"
+      ]
+    }
+  ],
+  "workflowBase": "examples/purchase-approval.json",
+  "workflowContext": {
+    "workspaceIsTest": false,
+    "groups": [
+      "managers",
+      "finance-approvers"
+    ],
+    "connections": [
+      {
+        "key": "servicenow-table",
+        "definitionVersion": 1,
+        "definition": "examples/connections/servicenow-table.connection.json",
+        "bindingEnabled": true
+      }
+    ]
+  },
+  "workflowSetup": [
+    {
+      "op": "replace",
+      "path": "/dependencies/connections",
+      "value": [
+        {
+          "key": "servicenow-table",
+          "definitionVersion": 1
+        }
+      ]
+    },
+    {
+      "op": "add",
+      "path": "/inputSchema/properties/urgency",
+      "value": {
+        "type": "string",
+        "title": "Urgency",
+        "enum": [
+          "1",
+          "2",
+          "3"
+        ]
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/inputUi/order",
+      "value": [
+        "title",
+        "purpose",
+        "costCenter",
+        "amount",
+        "urgency"
+      ]
+    },
+    {
+      "op": "add",
+      "path": "/inputSchema/required/-",
+      "value": "urgency"
+    },
+    {
+      "op": "replace",
+      "path": "/nodes/5/config",
+      "value": {
+        "connectionRef": "servicenow-table",
+        "operation": "createIncident",
+        "inputMapping": {
+          "shortDescription": "/input/title",
+          "description": "/input/purpose",
+          "urgency": "/input/urgency",
+          "impact": "/input/urgency"
+        },
+        "resultMapping": {
+          "procurementId": "/result/number",
+          "incidentSysId": "/result/sys_id"
+        },
+        "timeoutSeconds": 20
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "valid-create-incident",
+      "patch": [],
+      "expectBlockers": []
+    },
+    {
+      "name": "reconcile-key-cannot-be-mapped",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/inputMapping/correlationId",
+          "value": "/input/title"
+        }
+      ],
+      "expectBlockers": [
+        "WF_MAPPING_RECONCILE_KEY"
+      ]
+    },
+    {
+      "name": "valid-get-by-path-param",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "getIncident",
+            "inputMapping": {
+              "sysId": "/input/title"
+            },
+            "resultMapping": {
+              "procurementId": "/result/number"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": []
+    },
+    {
+      "name": "path-param-is-required",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "getIncident",
+            "inputMapping": {},
+            "resultMapping": {
+              "procurementId": "/result/number"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_MAPPING_MISSING_REQUIRED"
+      ]
+    },
+    {
+      "name": "valid-rows-and-header-results",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "listOpenIncidents",
+            "inputMapping": {
+              "assignmentGroup": "/input/title"
+            },
+            "resultMapping": {
+              "incidents": "/result/[*]",
+              "numbers": "/result/[*]/number",
+              "total": "/@headers/X-Total-Count",
+              "procurementId": "/result/0/number"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": [],
+      "expectWarnings": [
+        "WF_RESULT_OPTIONAL"
+      ]
+    },
+    {
+      "name": "projection-of-unknown-column",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "listOpenIncidents",
+            "inputMapping": {
+              "assignmentGroup": "/input/title"
+            },
+            "resultMapping": {
+              "procurementId": "/result/0/number",
+              "numbers": "/result/[*]/priority"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RESULT_POINTER_UNKNOWN"
+      ]
+    },
+    {
+      "name": "undeclared-response-header",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "listOpenIncidents",
+            "inputMapping": {
+              "assignmentGroup": "/input/title"
+            },
+            "resultMapping": {
+              "procurementId": "/@headers/Link"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_RESULT_POINTER_UNKNOWN"
+      ]
+    },
+    {
+      "name": "list-is-not-a-single-value",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config/resultMapping/procurementId",
+          "value": "/result"
+        }
+      ],
+      "expectBlockers": [
+        "WF_RESULT_POINTER_UNKNOWN"
+      ]
+    },
+    {
+      "name": "file-input-needs-a-file",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "attachFile",
+            "inputMapping": {
+              "sysId": "/input/title",
+              "fileName": "/input/title",
+              "document": "/input/purpose"
+            },
+            "resultMapping": {
+              "procurementId": "/result/sys_id"
+            },
+            "timeoutSeconds": 60
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_MAPPING_TYPE"
+      ]
+    },
+    {
+      "name": "valid-long-timeout",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config",
+          "value": {
+            "connectionRef": "servicenow-table",
+            "operation": "updateIncidentFields",
+            "inputMapping": {
+              "sysId": "/input/title",
+              "urgency": "/input/urgency"
+            },
+            "resultMapping": {
+              "procurementId": "/result/sys_id"
+            },
+            "timeoutSeconds": 20
+          }
+        }
+      ],
+      "expectBlockers": [],
+      "expectWarnings": [
+        "WF_RESULT_OPTIONAL"
+      ]
+    },
+    {
+      "name": "timeout-above-operation-limit",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config/timeoutSeconds",
+          "value": 60
+        }
+      ],
+      "expectBlockers": [
+        "WF_TIMEOUT_EXCEEDS_OPERATION"
+      ]
+    },
+    {
+      "name": "timeout-above-120-is-a-schema-error",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config/timeoutSeconds",
+          "value": 121
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "valid-failure-code-on-failed-route",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/-",
+          "value": {
+            "id": "whyFailed",
+            "type": "branch",
+            "label": "Why did it fail?",
+            "config": {}
+          }
+        },
+        {
+          "op": "add",
+          "path": "/nodes/-",
+          "value": {
+            "id": "invalidIncident",
+            "type": "end",
+            "label": "Incident refused",
+            "config": {
+              "businessOutcome": "Incident refused",
+              "outcomeKind": "failed"
+            }
+          }
+        },
+        {
+          "op": "add",
+          "path": "/nodes/-",
+          "value": {
+            "id": "notRaised",
+            "type": "end",
+            "label": "Could not raise",
+            "config": {
+              "businessOutcome": "Could not raise",
+              "outcomeKind": "failed"
+            }
+          }
+        },
+        {
+          "op": "add",
+          "path": "/transitions/-",
+          "value": {
+            "id": "t12",
+            "from": "procure",
+            "to": "whyFailed",
+            "on": "failed"
+          }
+        },
+        {
+          "op": "add",
+          "path": "/transitions/-",
+          "value": {
+            "id": "t13",
+            "from": "whyFailed",
+            "to": "invalidIncident",
+            "on": "condition",
+            "label": "Refused by ServiceNow",
+            "condition": {
+              "fieldRef": "/steps/procure/failureCode",
+              "operator": "eq",
+              "value": "INCIDENT_INVALID"
+            }
+          }
+        },
+        {
+          "op": "add",
+          "path": "/transitions/-",
+          "value": {
+            "id": "t14",
+            "from": "whyFailed",
+            "to": "notRaised",
+            "on": "default",
+            "label": "Other"
+          }
+        },
+        {
+          "op": "remove",
+          "path": "/uiLayout"
+        }
+      ],
+      "expectBlockers": []
+    }
+  ]
+}

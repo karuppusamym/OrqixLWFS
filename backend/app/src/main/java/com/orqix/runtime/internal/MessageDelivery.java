@@ -51,10 +51,13 @@ public class MessageDelivery {
     private final Json json;
     private final Clock clock;
     private final RunSuspensions suspensions;
+    private final PollWaits polls;
 
     public MessageDelivery(MessageStore store, RunStore runs, RunEvents events, ReleaseQueries releases,
-            EngineCommands engine, Json json, Clock clock, RunSuspensions suspensions) {
+            EngineCommands engine, Json json, Clock clock, RunSuspensions suspensions,
+            @org.springframework.context.annotation.Lazy PollWaits polls) {
         this.suspensions = suspensions;
+        this.polls = polls;
         this.store = store;
         this.runs = runs;
         this.events = events;
@@ -94,7 +97,12 @@ public class MessageDelivery {
         if (!errors.isEmpty()) {
             return new Outcome(Outcome.Status.INVALID, errors, null, List.of());
         }
+        if ("messageHandler".equals(step.path("type").asString(""))) {
+            return handlerMessage(current, step, output, messageId, sender, run.get(), now);
+        }
         store.close(workspaceId, current.id(), MessageStore.RECEIVED, messageId, now);
+        // S129 CG-W03: the message won; its safety-net check closes in the same transaction.
+        polls.fallbackClosed(workspaceId, current.runId(), current.nodeId(), "messageReceived");
         runs.mutate(workspaceId, current.runId(), m -> {
             m.removeStep(current.nodeId());
             m.settle();
@@ -115,6 +123,31 @@ public class MessageDelivery {
     }
 
     /**
+     * S139 (CG-E08): a message starts a handler. An interrupting handler takes it once (the engine then stops the rest
+     * of the request); a handler that runs alongside stays open for the next message.
+     */
+    private Outcome handlerMessage(MessageStore.Subscription current, JsonNode handler, ObjectNode output, UUID messageId,
+            UUID sender, RunStore.RunRow run, Instant now) {
+        UUID workspaceId = current.workspaceId();
+        boolean interrupting = handler.path("config").path("interrupting").asBoolean(false);
+        if (interrupting) {
+            store.close(workspaceId, current.id(), MessageStore.RECEIVED, messageId, now);
+        }
+        List<String> fields = new java.util.ArrayList<>();
+        output.propertyNames().forEach(fields::add);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", handler.path("label").asString(current.nodeId()));
+        data.put("message", current.messageName());
+        data.put("interrupting", interrupting);
+        data.put("fields", fields);
+        events.append(workspaceId, current.runId(), "HANDLER_MESSAGE_RECEIVED", current.nodeId(), sender, data);
+        engine.deliverMessage(current.engineExecutionId(), current.messageName(),
+                Map.of(ProcessData.stepVariable(current.nodeId()), json.write(output)));
+        return new Outcome(Outcome.Status.DELIVERED, List.of(),
+                new MessageStore.Delivered(current.runId(), run.reference(), current.nodeId()), fields);
+    }
+
+    /**
      * A wait started (or the sweeper came by): take the oldest buffered message for its key, if there is one. A message
      * that does not satisfy the wait's declared values is discarded with a timeline entry and the wait goes on.
      */
@@ -123,8 +156,8 @@ public class MessageDelivery {
         Instant now = clock.instant();
         MessageStore.Subscription subscription = store.find(workspaceId, subscriptionId)
                 .filter(s -> MessageStore.WAITING.equals(s.status())).orElse(null);
-        if (subscription == null) {
-            return false;
+        if (subscription == null || "handler".equals(store.kind(workspaceId, subscriptionId))) {
+            return false; // S139: buffered messages are for waiting steps, never for handlers
         }
         // Lock order: the request row, then the subscription, then the message (SKIP LOCKED).
         if (!store.tryLockRun(workspaceId,subscription.runId())) return false;

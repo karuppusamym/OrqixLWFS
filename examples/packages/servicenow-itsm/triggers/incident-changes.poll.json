@@ -1,0 +1,29 @@
+{
+  "kind": "poll",
+  "key": "incident-changes",
+  "label": "Poll incidents Orqix raised for an outcome",
+  "description": "For instances where the business rule cannot be installed: every 2 minutes, reads incidents with an Orqix correlation_id that reached Resolved, Closed or Canceled since the last poll (minus one minute of overlap for clock skew) and resumes the waiting request. Repeats are dropped by sys_id and sys_mod_count.",
+  "connection": "servicenow-itsm",
+  "operation": "listChangedIncidents",
+  "every": "PT2M",
+  "itemsPointer": "/result",
+  "watermark": {
+    "field": "/sys_updated_on",
+    "input": "since",
+    "format": "servicenowDateTime",
+    "initial": "now",
+    "overlap": "PT1M"
+  },
+  "dedupeKey": ["/sys_id", "/sys_mod_count"],
+  "action": {
+    "type": "message",
+    "message": "servicenow-incident-updated",
+    "correlationFrom": "/correlation_id"
+  },
+  "mapping": {
+    "state": "/state",
+    "closeCode": "/close_code",
+    "incidentNumber": "/number"
+  },
+  "maxRecordsPerPoll": 100
+}

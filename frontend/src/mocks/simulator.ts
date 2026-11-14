@@ -1,7 +1,14 @@
 import { isCalendarDate } from '@/lib/dates'
+import { describe as describePoll, offsets, scheduleOf, seconds as pollSeconds, type PollConfig } from '@/features/studio/model/pollSchedule'
 import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { decisionTypes, studioScope } from '@/features/studio/model/expressionScope'
+import { decisionFields, evaluateExpressionTable, expressionEvidence } from '@/lib/expr/decision'
+import { compile } from '@/lib/expr'
+import { CalculationFailure, runCalculation, type CalculateConfig } from '@/lib/expr/calculate'
+import { applyComputed } from '@/lib/form/computed'
+import { parseFormSchema, parseFormUi } from '@/lib/form/schema'
+import { decisionTerms, isAtomicCondition, isExpressionCondition, isExpressionTerm, isOutputExpression, tableUsesExpressions, type AtomicCondition, type Condition, type ConditionValue, type DecisionCondition, type DecisionTable, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue } from '@/features/studio/model/decisionLogic'
 
 /**
@@ -17,9 +24,9 @@ import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue 
 
 export interface SimulationScenario {
   approvals?: Record<string, { outcome?: 'approve' | 'reject' | 'timeout'; reason?: string }>
-  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome' | 'timeout'; result?: Record<string, unknown>; status?: number; body?: unknown; delaySeconds?: number }>
+  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome' | 'timeout'; result?: Record<string, unknown>; status?: number; body?: unknown; delaySeconds?: number; checks?: Array<{ result?: Record<string, unknown>; failure?: 'unavailable' | 'rejected' }> }>
   children?: Record<string, { outcomes?: string[]; results?: Record<string, unknown> }>
-  messages?: Record<string, 'arrives' | 'timeout' | { outcome?: 'arrives' | 'timeout'; payload?: Record<string, unknown>; delaySeconds?: number }>
+  messages?: Record<string, 'arrives' | 'timeout' | { outcome?: 'arrives' | 'timeout' | 'fallback'; payload?: Record<string, unknown>; delaySeconds?: number }>
   workers?: Record<string, { result?: Record<string, unknown>; failure?: 'failed'; delaySeconds?: number }>
   adapters?: Record<string, { failure?: 'unavailable' | 'unknownOutcome'; rowCount?: number }>
   simulateChildren?: boolean
@@ -67,6 +74,16 @@ export const LIMITS =
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const quote = (t: string) => `"${t}"`
 const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`
+
+/** Elapsed simulated time as h:mm (and :ss), with days beyond a day; twin of SimulationRun.clock. */
+function clock(total: number): string {
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  const hm = `${hours}:${minutes < 10 ? '0' : ''}${minutes}${secs === 0 ? '' : `:${secs < 10 ? '0' : ''}${secs}`}`
+  return days === 0 ? hm : `${count(days, 'day')} ${hm}`
+}
 
 function group(plain: string): string {
   const negative = plain.startsWith('-')
@@ -325,6 +342,8 @@ class Run {
         return this.decision(node)
       case 'branch':
         return this.branch(node)
+      case 'calculate':
+        return this.calculate(node)
       case 'http':
         return this.http(node)
       case 'generateDocument': {
@@ -445,9 +464,10 @@ class Run {
     }
     d.decisionKey = table.key
     d.version = table.version
+    if (tableUsesExpressions(table)) return this.expressionDecision(n, table, d)
     const values = new Map<string, unknown>()
     const inputs: Json[] = []
-    for (const term of table.rows.flatMap(row => conditionTerms(row.when))) {
+    for (const term of table.rows.flatMap(row => decisionTerms(row.when))) {
       const ref = term.fieldRef
       if (!values.has(ref)) {
         const v = this.resolve(ref)
@@ -463,8 +483,8 @@ class Run {
     try {
       const single = table.hitPolicy !== 'PRIORITY' && table.hitPolicy !== 'COLLECT'
       for (const [i, row] of table.rows.entries()) {
-        if (conditionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
-        if (single && this.evaluate(row.when, [])) {
+        if (decisionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
+        if (single && this.evaluate(row.when as Condition, [])) {
           matchedRow = i
           break
         }
@@ -488,9 +508,9 @@ class Run {
     let firstMatch: number | null = null
     for (const [i, row] of table.rows.entries()) {
       let m: boolean | null
-      try { m = this.evaluate(row.when, []) } catch { m = null }
+      try { m = this.evaluate(row.when as Condition, []) } catch { m = null }
       if (m === true && firstMatch === null) firstMatch = i
-      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRows.includes(i), outputs: sortedLiterals(row.then) })
+      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRows.includes(i), outputs: sortedLiterals(row.then as Record<string, Literal>) })
     }
     d.rows = rows
     d.usedDefault = matchedRow === null
@@ -541,9 +561,9 @@ class Run {
       }
       try {
         const terms: Json[] = []
-        const matched = this.evaluate(t.condition, terms)
+        const matched = this.evaluate(t.condition, terms, n.id)
         r.matched = matched
-        if (!isAtomicCondition(t.condition)) r.terms = terms
+        if (!isAtomicCondition(t.condition) && !isExpressionCondition(t.condition)) r.terms = terms
         if (matched) chosen = t
       } catch (e) {
         r.matched = null
@@ -573,7 +593,100 @@ class Run {
     return picked
   }
 
-  private evaluate(c: Condition, terms: Json[]): boolean {
+  /** Noon of the test's day in UTC: today() is the test's day (S137). */
+  private now(): string {
+    return `${this.ctx.today}T12:00:00Z`
+  }
+
+  /**
+   * A decision table with formulas (S146): the server's semantics (lib/expr/decision) with the pinned field types;
+   * today() is the simulated day at 12:00 UTC. A formula that stops the evaluation stops the request.
+   */
+  private expressionDecision(n: WorkflowNode, table: DecisionTable, d: Entry): Transition | null {
+    const dated = table.rows.some(row => row.effective)
+    const values: Record<string, unknown> = { $now: this.now(), ...(dated ? { $asOf: this.ctx.today } : {}) }
+    const inputs: Json[] = []
+    for (const ref of decisionFields(table)) {
+      const v = this.resolve(ref)
+      if (v !== null && v !== undefined) values[ref] = v
+      const fi = this.info(ref)
+      inputs.push({ fieldRef: ref, label: fi.label, value: (v ?? null) as Json, shown: v === null || v === undefined ? 'no value' : text.value(v, fi.money) })
+    }
+    d.inputs = inputs
+    let result
+    try {
+      result = evaluateExpressionTable(table, values, decisionTypes(this.def, table, n.id))
+    } catch (e) {
+      const message = (e as Error).message
+      this.stallWith(n, `${quote(n.label)} stops: ${message}`, d, 'DECISION_FAILED', message)
+      return null
+    }
+    const evidence = expressionEvidence(table, values, result, dated ? this.ctx.today : undefined)
+    d.rows = table.rows.map((row, i) => {
+      const computed = Object.fromEntries(result.expressions.filter(e => e.row === i && e.kind === 'output').map(e => [e.target, e.value]))
+      const outputs: Record<string, Json> = {}
+      for (const key of Object.keys(row.then).sort()) {
+        const v = row.then[key]
+        if (!isOutputExpression(v)) outputs[key] = v as Json
+        else if (key in computed) outputs[key] = computed[key] as Json
+      }
+      const ev = evidence.rows[i]!
+      return {
+        row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: ev.matched, selected: ev.selected, outputs,
+        ...(ev.expressions ? { expressions: ev.expressions as Json } : {}),
+        ...(ev.outputExpressions ? { outputExpressions: ev.outputExpressions as Json } : {}),
+      }
+    })
+    d.usedDefault = result.usedDefault
+    d.matchedRow = result.matchedRow === null ? null : result.matchedRow + 1
+    const collect = table.hitPolicy === 'COLLECT'
+    if (collect) {
+      d.matchedRows = result.matchedRows.map(i => i + 1)
+      d.aggregation = table.aggregation ?? null
+    }
+    const output: Record<string, Json> = {}
+    for (const key of Object.keys(result.output).sort()) output[key] = result.output[key] as Json
+    d.outputs = output
+    if (result.matchedRows.length === 0) this.matchedRules.add(`${table.key}#default`)
+    for (const i of result.matchedRows) this.matchedRules.add(`${table.key}#${i}`)
+    this.steps.set(n.id, { ...output })
+    const outputsText = outputsTextOf(output)
+    const sentence = result.matchedRow === null
+      ? `${quote(n.label)}: no rule applies, so the "otherwise" result is used: ${outputsText}.`
+      : collect
+        ? `${quote(n.label)}: ${result.matchedRows.length === 1 ? 'rule' : 'rules'} ${result.matchedRows.map(i => i + 1).join(', ')} apply, combined, so ${outputsText}.`
+        : `${quote(n.label)}: rule ${result.matchedRow + 1} applies because ${this.conditionText(table.rows[result.matchedRow]!.when, false, undefined)}, so ${outputsText}.`
+    const t = this.next(n, 'next')
+    this.add(n, sentence, d, output, t)
+    return t
+  }
+
+  /** Calculate (S137): the engine's expression language and rounding over this test's values. */
+  private calculate(n: WorkflowNode): Transition | null {
+    try {
+      const { scope } = studioScope(this.def, n.id)
+      const outputs = runCalculation(n.config as unknown as CalculateConfig, scope, k => this.input[k], (id, k) => this.steps.get(id)?.[k], this.now())
+      this.steps.set(n.id, outputs)
+      const t = this.next(n, 'next')
+      const parts = Object.entries(outputs).map(([k, v]) => `${k} = ${v === null ? 'no value' : String(v)}`)
+      this.add(n, `${quote(n.label)}: ${parts.join('; ')}.`, { outputs: outputs as Json }, outputs as Record<string, Json>, t)
+      return t
+    } catch (e) {
+      if (!(e instanceof CalculationFailure)) throw e
+      this.stallWith(n, `${quote(n.label)} stops: ${e.message}`, { output: e.output, code: e.code }, 'CALCULATION_FAILED', e.message)
+      return null
+    }
+  }
+
+  private evaluate(c: Condition, terms: Json[], at = ''): boolean {
+    if (isExpressionCondition(c)) {
+      try {
+        const { scope } = studioScope(this.def, at || null)
+        return compile(c.expression, scope).evaluate({ input: k => this.input[k], step: (id, k) => this.steps.get(id)?.[k], now: this.now() }) === true
+      } catch (e) {
+        throw new Error(`the condition ${quote(c.expression)} cannot be evaluated: ${(e as Error).message}`)
+      }
+    }
     if (isAtomicCondition(c)) return this.atom(c, null)
     const all = 'all' in c
     const list = (all ? c.all : c.any) ?? []
@@ -619,6 +732,7 @@ class Run {
   // -------------------------------------------------------------------------------------------- http
 
   private http(n: WorkflowNode): Transition | null {
+    if (n.config.poll && typeof n.config.poll === 'object') return this.polled(n)
     const s = this.scenario.calls?.[n.id] ?? {}
     const failure = s.failure ?? null
     if (failure !== null && !['rejected', 'unavailable', 'unknownOutcome', 'timeout'].includes(failure)) throw new ScenarioError(`calls.${n.id}.failure must be rejected, unavailable, unknownOutcome or timeout`)
@@ -798,6 +912,108 @@ class Run {
     return t
   }
 
+  /**
+   * Twin of SimulationRun.polled (docs/build/S129): a call that keeps checking until done. The test may give a
+   * sequence of answers under calls.<id>.checks (the last one repeats); the checks follow the runtime's jitter-free
+   * schedule and report their simulated time.
+   */
+  private polled(n: WorkflowNode): Transition | null {
+    const p = n.config.poll as PollConfig
+    const s = this.scenario.calls?.[n.id] ?? {}
+    const checks = s.checks
+    if (checks !== undefined && (!Array.isArray(checks) || checks.length === 0 || checks.length > 100)) throw new ScenarioError(`calls.${n.id}.checks must list 1 to 100 answers`)
+    const connKey = String(n.config.connectionRef ?? '')
+    const operation = String(n.config.operation ?? '')
+    const conn = this.ctx.connection(connKey)
+    const op = conn?.operations[operation]
+    const connName = conn ? conn.name : connKey
+    const schedule = scheduleOf(p)
+    const at = schedule ? offsets(schedule, Math.max(1, schedule.maxChecks)) : [0]
+    const listed: Json[] = []
+    const d: Entry = { connection: connKey, connectionName: connName, operation, polling: true, plannedChecks: at.length, checks: listed }
+    const callText = `${quote(n.label)} checks ${connName} (${op ? (op.label ?? operation) : operation})`
+    const maxErrors = p.onCheckError?.maxConsecutive ?? 5
+    const resultMapping = (n.config.resultMapping ?? {}) as Record<string, string>
+    let errors = 0
+    for (let i = 0; i < at.length; i++) {
+      const when = at[i] as number
+      const answer = (checks ? checks[Math.min(i, checks.length - 1)] : s) as { result?: unknown; failure?: string }
+      const failure = answer.failure ?? null
+      const entry: Entry = { check: i + 1, atSeconds: when }
+      if (i < 50) listed.push(entry)
+      let out: Record<string, unknown> | null = null
+      if (failure === null) {
+        let response: unknown = answer.result && typeof answer.result === 'object' ? answer.result : null
+        if (response === null) response = op?.responseSchema && typeof op.responseSchema === 'object' ? sample(op.responseSchema, '') : null
+        out = {}
+        for (const key of Object.keys(resultMapping).sort()) {
+          if (response === null) {
+            out[key] = `sample-${key}`
+            continue
+          }
+          const value = pointer(response, resultMapping[key] as string)
+          if ((value === undefined || value === null) && (p.optionalResults ?? []).includes(key)) continue
+          if (value === undefined || value === null || typeof value === 'object') { out = null; break }
+          out[key] = value
+        }
+      }
+      if (failure !== null || out === null) {
+        const kind = failure ?? 'invalidResponse'
+        if (!['unavailable', 'rejected', 'invalidResponse'].includes(kind)) throw new ScenarioError(`calls.${n.id}.checks[${i}].failure must be unavailable or rejected`)
+        entry.outcome = kind
+        if (kind !== 'unavailable') {
+          d.checksMade = i + 1
+          const what = `${callText} ${count(i + 1, 'time')}; at ${clock(when)}${kind === 'rejected' ? ' the system refuses the request.' : ' the answer cannot be used.'}`
+          const reason = kind === 'rejected' ? 'EFFECT_REJECTED' : 'RESPONSE_INVALID'
+          if (this.next(n, 'failed') !== null) return this.knownFailure(n, d, what, reason, null)
+          this.stallWith(n, `${what} The request needs attention.`, d, reason, 'The checks stopped on an answer that cannot be used. Someone must fix the cause and retry.')
+          return null
+        }
+        errors++
+        if (errors >= maxErrors) {
+          d.checksMade = i + 1
+          const what = `${callText} ${count(i + 1, 'time')}; the last ${count(errors, 'check')} could not reach it.`
+          if (p.onCheckError?.then === 'timedOut') {
+            const t = this.next(n, 'timedOut')
+            this.add(n, `${what} It gives up and takes the timed-out path.`, d, null, t)
+            return t
+          }
+          this.stallWith(n, `${what} The request needs attention until someone checks again.`, d, 'POLL_CHECKS_FAILING', `The checks failed ${errors} times in a row.`)
+          return null
+        }
+        continue
+      }
+      errors = 0
+      entry.values = out as Json
+      this.steps.set(n.id, out)
+      const done = this.evaluate(p.until as Condition, [])
+      const failed = !done && p.failWhen !== undefined && this.evaluate(p.failWhen as Condition, [])
+      if (!done && !failed) {
+        entry.outcome = 'pending'
+        this.steps.delete(n.id)
+        continue
+      }
+      entry.outcome = done ? 'done' : 'failed'
+      d.checksMade = i + 1
+      d.result = out as Json
+      const sentence = `${callText} ${count(i + 1, 'time')}${i === 0 ? '' : ` (${i === 1 ? 'the first answer says not done yet' : `the first ${i} answers say not done yet`})`}. At ${clock(when)} the answer ${done ? 'says the work is done' : 'says the work failed'}${Object.keys(out).length === 0 ? '' : ` and returns ${outputsTextOf(out)}`}.`
+      if (done) {
+        const t = this.next(n, 'next')
+        this.add(n, sentence, d, out, t)
+        return t
+      }
+      const facts = { ...out, failureKind: 'remoteFailed', failureHttpStatus: 0, failureMessage: 'The other system reports that the work failed.' }
+      this.steps.set(n.id, facts)
+      const t = this.next(n, 'failed')
+      this.add(n, `${sentence} The request takes the failed path.`, d, facts, t)
+      return t
+    }
+    d.checksMade = at.length
+    const t = this.next(n, 'timedOut')
+    this.add(n, `${callText} ${count(at.length, 'time')} until ${clock(at[at.length - 1] ?? 0)}; the work is never done in this test, so it gives up and takes the timed-out path.`, d, null, t)
+    return t
+  }
+
   /** Twin of SimulationRun.knownFailure: a known rejection or unusable read-only answer takes the failure route. */
   private knownFailure(n: WorkflowNode, d: Entry, description: string, reason: string, httpStatus: number | null): Transition | null {
     const kind = reason === 'EFFECT_REJECTED' ? 'rejected' : 'invalidResponse'
@@ -936,7 +1152,11 @@ class Run {
     const setting = this.scenario.messages?.[n.id]
     const mock = setting !== null && typeof setting === 'object' ? setting : null
     let choice: string = mock ? (mock.outcome ?? 'arrives') : setting === undefined || setting === null ? 'arrives' : String(setting)
-    if (choice !== 'arrives' && choice !== 'timeout') throw new ScenarioError(`messages.${n.id} must be arrives or timeout`)
+    const safetyNet = n.config.fallbackCheck as { every?: string } | undefined
+    if (choice !== 'arrives' && choice !== 'timeout' && !(choice === 'fallback' && safetyNet)) throw new ScenarioError(`messages.${n.id} must be arrives or timeout${safetyNet ? ', or fallback for the safety-net check' : ''}`)
+    // S129: the safety-net check finds the work done before the message arrives; it completes the wait the same way.
+    const fallback = choice === 'fallback'
+    if (fallback) choice = 'arrives'
     const payloadMock = mock?.payload
     if (payloadMock !== undefined && (payloadMock === null || typeof payloadMock !== 'object' || Array.isArray(payloadMock))) throw new ScenarioError(`messages.${n.id}.payload must be an object`)
     const delay = mock ? mockDelay(`messages.${n.id}`, mock) : null
@@ -984,7 +1204,12 @@ class Run {
       d.arrived = true
       d.payload = { ...out } as Json
       t = this.next(n, 'next')
-      sentence = `${quote(n.label)}: the message ${quote(message)} arrives for ${correlation}.${Object.keys(out).length === 0 ? '' : ` In this test it carries ${outputsTextOf(out)}.`}`
+      if (fallback) {
+        d.resumedBy = 'fallbackCheck'
+        sentence = `${quote(n.label)}: the message ${quote(message)} does not come, but the safety-net check every ${describePoll(pollSeconds(safetyNet?.every))} finds the work done, so the wait ends.${Object.keys(out).length === 0 ? '' : ` The check returns ${outputsTextOf(out)}.`}`
+      } else {
+        sentence = `${quote(n.label)}: the message ${quote(message)} arrives for ${correlation}.${Object.keys(out).length === 0 ? '' : ` In this test it carries ${outputsTextOf(out)}.`}`
+      }
     }
     if (note !== null) {
       d.note = note
@@ -1217,12 +1442,16 @@ class Run {
     return null
   }
 
-  private conditionText(c: Condition, withValue: boolean, known: unknown): string {
-    if (!isAtomicCondition(c)) {
-      const all = 'all' in c
-      const parts = ((all ? c.all : c.any) ?? []).map((t) => this.conditionText(t, withValue, undefined))
+  private conditionText(c: Condition | DecisionCondition, withValue: boolean, known: unknown): string {
+    if (isExpressionTerm(c)) return `${this.info(c.fieldRef).label}: formula ${c.expression}`
+    if (isExpressionCondition(c as Condition)) return (c as { expression: string }).expression
+    if (!isAtomicCondition(c as Condition)) {
+      const g = c as { all?: Array<Condition | DecisionCondition>; any?: Array<Condition | DecisionCondition> }
+      const all = 'all' in g
+      const parts = ((all ? g.all : g.any) ?? []).map((t) => this.conditionText(t, withValue, undefined))
       return `${all ? 'all of these are true: ' : 'at least one of these is true: '}${parts.join('; ')}`
     }
+    c = c as AtomicCondition
     const f = this.info(c.fieldRef)
     const actual = known !== undefined && known !== null ? known : withValue ? this.resolve(c.fieldRef) : null
     const left = withValue && actual !== null && actual !== undefined ? `${f.label} (${text.value(actual, f.money)})` : f.label
@@ -1240,7 +1469,7 @@ class Run {
     for (const issue of this.ctx.issues) if (issue.severity === 'warning') this.warn(issue.code, issue.nodeId ?? null, issue.message)
     for (const table of this.def.decisions) {
       for (const [i, row] of table.rows.entries()) {
-        const why = isAtomicCondition(row.when) ? this.impossible(row.when) : null
+        const why = !isExpressionTerm(row.when) && isAtomicCondition(row.when as Condition) ? this.impossible(row.when as AtomicCondition) : null
         if (why !== null) this.warn('RULE_NEVER_MATCHES', this.decisionStep(table.key), `Rule ${i + 1} of ${quote(table.key)} can never apply: ${why}`)
       }
     }
@@ -1344,7 +1573,7 @@ class Run {
   private routeDescription(t: Transition): string {
     const from = this.byId.get(t.from) as WorkflowNode
     const to = this.byId.get(t.to) as WorkflowNode
-    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', failed: 'when the step fails', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next' }[t.on]
+    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', failed: 'when the step fails', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next', aiLabel: `when AI says ${t.aiLabel ?? ''}`, lowConfidence: 'when AI is not confident enough', needsReview: 'when a person must review', aiUnavailable: 'when AI is unavailable', limitReached: 'when the send-back limit is reached', branch: `when ${t.branch ?? 'a branch'} happens first` }[t.on]
     return `${from.label}, ${when}, goes to ${to.label}`
   }
 }
@@ -1383,6 +1612,8 @@ function outputsTextOf(out: Record<string, unknown>): string {
 
 function pointer(body: unknown, ref: string): unknown {
   const tokens = parsePointer(ref)
+  // CG-W02 (S133): a dry run has no status location; like the Java simulator, the status reference is a sample value.
+  if (tokens?.length === 2 && tokens[0] === '@async') return `sample-${tokens[1]}`
   let current: unknown = body
   for (const token of tokens ?? []) {
     current = current !== null && typeof current === 'object' && !Array.isArray(current) ? (current as Record<string, unknown>)[token] : undefined
@@ -1440,8 +1671,10 @@ export class ScenarioError extends Error {}
 /**
  * Dry run of a definition. Throws {@link ScenarioError} for a malformed scenario.
  */
-export function simulateDefinition(def: Definition, input: Record<string, unknown>, scenario: SimulationScenario, ctx: SimContext, depth = 0, budget:Budget={nodes:0,children:0}): SimulationOutcome {
+export function simulateDefinition(def: Definition, sample: Record<string, unknown>, scenario: SimulationScenario, ctx: SimContext, depth = 0, budget:Budget={nodes:0,children:0}): SimulationOutcome {
   validateScenario(scenario)
+  // CG-F04 (S137): computed fields are filled as the server fills them when the request is submitted.
+  const input = def.inputUi?.computed ? applyComputed(parseFormSchema(def.inputSchema), parseFormUi(def.inputUi), sample, `${ctx.today}T12:00:00Z`) : sample
   const blockers = ctx.issues.filter((i) => i.severity === 'blocker' && !TOLERATED.has(i.code))
   if (blockers.length > 0 || !def.nodes.some((n) => n.type === 'start')) return { status: 'cannotRun', issues: blockers }
   const errors = ctx.validateInput(def, input)

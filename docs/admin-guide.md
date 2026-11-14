@@ -480,3 +480,14 @@ People sign in to the `orqix` tool (`tools/orqix-cli`) with a device code; their
 settings, and `ORQIX_CLI_ENABLED=false` refuses all CLI tokens. A CLI token reaches only the routes the tool uses, with
 the person's own permissions. CI jobs pass a token file (`orqix login --token-file`). Test files, coverage minimums and
 package contract tests: [S148](build/S148-test-as-code-coverage-cli.md).
+
+## AI reviewer on approval steps - 14 November 2026
+
+An approval step can have an AI reviewer ([S152](build/S152-ai-reviewer.md)). Reviews run on the AI task workers
+(`orqix.ai.tasks.*`, S134) and follow the workspace AI policy: `allowAutoWithReview=false` turns every deciding reviewer
+into a suggestion, `lowRiskLabels` must list `skillKey:approve` or `skillKey:reject` for autonomy `auto`, and in a
+`regulated` workspace a rejection always goes to a person. Retiring a skill version stops its reviews at once (the
+tasks stay with people). Decisions by the AI reviewer are audited as `task.decided-by-ai` with actor type `agent` and no
+subject (the audit hash chain covers them as any other event); `autoWithReview` decisions are sampled into the AI review
+queue. Migration V460 makes `task_decision.actor_subject_id` nullable for AI reviewer decisions; reports that join
+decisions to people should use `actor_kind` (`person` or `aiReviewer`).

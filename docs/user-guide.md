@@ -49,7 +49,7 @@ Open queues sort by priority, then oldest creation time. Use **Sort tasks** or *
 2. If the task belongs to your group, select **Claim task** first. This tells colleagues you are handling it; use **Release** to hand it back.
 3. Write a comment if you like, then select **Approve** — or **Reject**. Rejecting requires a reason so the requester knows what to change.
 
-You never see your own requests in your approval list, and you cannot approve them. If a colleague decides the same task first, Orqix shows "This task was completed by …" and nothing is recorded twice.
+You never see your own requests in your approval list, and you cannot approve them. If a colleague decides the same task first, Orqix shows "This task was completed by …" and nothing is recorded twice. Some steps have an AI reviewer that suggests approve or reject, or decides confident cases itself; see [AI reviewer on approval steps](#ai-reviewer-on-approval-steps-designers-and-approvers---14-november-2026).
 
 ## Designing a workflow (designers)
 
@@ -402,3 +402,11 @@ shows exactly how many and which requests; you type that number and a reason to 
 in one operation, at the speed you chose; each one gets the usual checks, a request that no longer matches is skipped,
 and you can pause, resume or cancel the rest. Settings → Operations shows worker job queues, checks that wait on other
 systems, package trigger delays and connection errors. Details: [S142](build/S142-bulk-search-job-dashboard.md).
+
+## AI reviewer on approval steps (designers and approvers) - 14 November 2026
+
+**Designers.** In the Studio, select an approval step and open **AI reviewer**. Choose a **Reviewing skill**: only approved AI skills that answer *approve* or *reject* are offered. Choose **How much the AI reviewer may decide**: *Suggest* (the default) shows the suggestion to the approver, who decides; *Decide when confident, with a review sample afterwards* and *Decide when confident (low-risk answers only)* let the AI reviewer approve or reject the task itself when its confidence is at or above the **Confidence threshold** (default 0.85). Map the request values it may see under **What is sent** and choose a redaction for each if needed. Publishing refuses a skill without an approved version or a passing evaluation, a level above what the skill was promoted to, and steps with several approvers, one approval per list item, or fields the approver must fill in. The workspace AI policy can lower the level, never raise it.
+
+**Approvers.** A task of such a step shows **AI reviewer suggests: Approve (0.91)** (or Reject) with the rationale or reasons, and why the AI did not decide on its own (for example *not confident enough*, *this step lets the AI reviewer only suggest*, or *someone took the task while AI was reviewing it*). **Use the suggestion as my comment** copies the rationale into your comment; you still choose Approve or Reject, and your choice is recorded as following or overriding the suggestion. If you decide before the AI reviewer has answered, your decision counts and the review stops; the AI reviewer never decides a task you have claimed or changed.
+
+**Decided by AI reviewer.** When the AI reviewer decides, the decision history and the request timeline say **Decided by AI reviewer**, the reason is its rationale, and the step's results say `decidedBy: ai-reviewer`. The AI reviewer is not a person: it never counts as the requester approving their own request or as a person for separation of duties, and its decisions do not appear in anyone's completed tasks. Details: [S152](build/S152-ai-reviewer.md).

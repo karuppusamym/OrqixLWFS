@@ -98,7 +98,7 @@ Metering: one `ai_generation` row per task (`kind aiTask`) and per evaluation ru
 - CG-A06 (document extraction over attachments, OCR providers, verification task) and CG-A07 (operator explain).
 - Agents and `ToolChat` still use their own OpenRouter client; moving them onto `ProviderRegistry` (and holding agent conversations in the encrypted turn state) belongs to the agent-tools session. The SPI and `TurnVault` are ready for it.
 - A Studio page for AI skills (authoring, approval, evaluation runs, shadow dashboard, promotions) and an AI review queue page: the API is complete, the UI shows skills only in the inspector and decisions only in run detail.
-- Automatic human outcomes: the outcome is recorded explicitly; an approval that follows an AI task does not yet record it by itself.
+- Automatic human outcomes: the outcome is recorded explicitly; an approval that follows an AI task does not yet record it by itself. (An approval with an AI reviewer records it automatically since [S152](S152-ai-reviewer.md).)
 - Prompt caching for OpenAI-compatible, Azure, Bedrock and Gemini endpoints beyond what those providers do automatically; streaming; log-probability calibration for providers other than OpenAI-compatible.
 - Live provider accounts: every adapter is verified against the WireMock stand-in only.
 - Retention purge of `ai_decision_record` past `retain_until` (the column is set; the purge job is not written).

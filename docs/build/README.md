@@ -122,3 +122,5 @@ Check until done, callback safety net and "Waiting for" (Camunda gap plan Wave A
 Workspace feature switches (administrators turn AI, cases, import, agents, apps and Kafka on or off per workspace; `409 FEATURE_DISABLED`): [S127](S127-workspace-feature-switches.md) (V208).
 Generated test cases for every path (Test tab, docs/26): [S122](S122-generated-test-cases.md) (frontend only).
 Step retry policy with backoff, jitter and `Retry-After`; circuit breaker and request limit per binding; connection health in Settings (CG-W04, CG-C09): [S131](S131-retry-and-circuit-breaker.md) (V220, compiler 0.3.0, additive contract change).
+
+AI reviewer on approval steps: an approved AI skill approves or rejects a task when confident and allowed, otherwise suggests to the person deciding: [S152](S152-ai-reviewer.md) (V460, additive contract change).

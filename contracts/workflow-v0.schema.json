@@ -1392,6 +1392,84 @@
                 "$ref": "#/$defs/fieldKey"
               }
             },
+            "aiReviewer": {
+              "description": "AI reviewer (docs/build/S152): an approved AI skill reviews each task of this step and approves or rejects it instead of a person when it is confident and the autonomy allows; otherwise the task stays with people and shows the suggestion. The skill must be a classify or recommend skill with the labels (or outcomes) approve and reject. Not combined with several approvers, a list of items or fields that must be filled in when approving. The workspace AI policy can lower the autonomy, never raise it. When AI decides, the outputs are decision, reason (the AI rationale), decidedBy = ai-reviewer, decidedAt and aiReview.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "skill",
+                "inputs"
+              ],
+              "properties": {
+                "skill": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "version"
+                  ],
+                  "properties": {
+                    "key": {
+                      "description": "Key of the shared AI skill.",
+                      "$ref": "#/$defs/key"
+                    },
+                    "version": {
+                      "description": "Approved version of the skill.",
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                },
+                "autonomy": {
+                  "description": "suggest (default): the AI suggestion is shown and a person decides; autoWithReview: AI decides when confident and a sample is reviewed afterwards; auto: AI decides when confident, only for answers the workspace policy marks low-risk.",
+                  "enum": [
+                    "suggest",
+                    "autoWithReview",
+                    "auto"
+                  ]
+                },
+                "minConfidence": {
+                  "description": "Calibrated confidence below which a person decides. Default 0.85.",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "reviewSamplePercent": {
+                  "description": "autoWithReview only: share of AI decisions queued for after-the-fact review (default 10).",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "inputs": {
+                  "description": "Skill input name to request or earlier-step value. Only mapped values are sent.",
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 30,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+                  },
+                  "additionalProperties": {
+                    "$ref": "#/$defs/fieldRef"
+                  }
+                },
+                "redaction": {
+                  "description": "Per input: how the value is minimized before it is sent, on top of the field classification policy.",
+                  "type": "object",
+                  "maxProperties": 30,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+                  },
+                  "additionalProperties": {
+                    "enum": [
+                      "maskCardNumbersAndEmails",
+                      "maskDigits",
+                      "hash",
+                      "drop"
+                    ]
+                  }
+                }
+              }
+            },
             "fieldAccess": {
               "description": "Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving.",
               "type": "object",

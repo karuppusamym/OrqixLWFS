@@ -198,7 +198,7 @@ public final class ModelReader {
                             c.get("perItem").has("assigneeFrom") ? c.get("perItem").get("assigneeFrom").stringValue() : null) : null,
                     c.has("fieldAccess") ? stringMap(c.get("fieldAccess")) : Map.of(),
                     c.has("capture") ? readForm("/nodes/" + index + "/config/capture", c.get("capture")) : null,
-                    c.get("escalationPolicy"));
+                    c.get("escalationPolicy"), c.has("aiReviewer") ? aiReviewer(c.get("aiReviewer")) : null);
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
@@ -696,6 +696,15 @@ public final class ModelReader {
             all.putIfAbsent(e.getKey(), list + "/" + e.getValue().stringValue());
         }
         return Collections.unmodifiableMap(all);
+    }
+
+    /** S152: the AI reviewer of an approval step. */
+    private static Node.AiReviewer aiReviewer(JsonNode r) {
+        return new Node.AiReviewer(r.get("skill").get("key").stringValue(), r.get("skill").get("version").intValue(),
+                r.path("autonomy").asString(Node.AiTask.SUGGEST),
+                r.has("minConfidence") ? r.get("minConfidence").decimalValue() : Node.AiReviewer.DEFAULT_MIN_CONFIDENCE,
+                r.path("reviewSamplePercent").asInt(Node.AiTask.DEFAULT_REVIEW_PERCENT), stringMap(r.get("inputs")),
+                r.has("redaction") ? stringMap(r.get("redaction")) : Map.of(), r);
     }
 
     private static Map<String, String> stringMap(JsonNode o) {

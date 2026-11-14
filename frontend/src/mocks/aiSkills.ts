@@ -48,6 +48,24 @@ export const MOCK_AI_SKILL: S['AiSkill'] = {
   })],
 }
 
+/** S152: a skill that reviews purchase approvals (answers approve or reject), approved and promoted to decide. */
+const REVIEW_DOC = {
+  schemaVersion: '1.0', kind: 'skill', key: 'purchase-review', name: 'Purchase review', mode: 'classify',
+  instructions: 'Decide whether the purchase request can be approved under the purchasing policy.', modelProfile: 'economy',
+  input: { purpose: { type: 'string', required: true, classification: 'customer-text' }, amount: { type: 'number' } },
+  labels: [{ key: 'approve', description: 'Within the purchasing policy', risk: 'low' },
+    { key: 'reject', description: 'Against the purchasing policy', risk: 'high' }],
+  evaluation: { suite: 'purchase-review-suite', minAccuracy: 0.9, minRecall: { reject: 0.95 }, minCases: 50 },
+}
+
+export const MOCK_REVIEW_SKILL: S['AiSkill'] = {
+  key: 'purchase-review', name: 'Purchase review', ownerId: DANA, createdAt: NOW, approvedVersion: 1, mode: 'classify',
+  versions: [version('purchase-review', 1, REVIEW_DOC, {
+    status: 'approved', submittedAt: NOW, approverId: PAUL, approvedAt: NOW, autonomyCeiling: 'autoWithReview',
+    evaluationGate: { passing: true, runId: '00000000-0000-7000-8000-00000000a004' },
+  })],
+}
+
 const REFUND_DOC = {
   schemaVersion: '1.0', kind: 'skill', key: 'refund-reason', name: 'Refund reason', mode: 'recommend',
   instructions: 'Recommend whether to refund the request in full, in part, or not at all.', modelProfile: 'economy',
@@ -102,7 +120,7 @@ function fresh(): Store {
   }))
   const suiteDoc = { schemaVersion: '1.0', kind: 'evaluationSuite', key: 'dispute-triage-suite', name: 'Dispute triage cases', skillKey: 'dispute-triage', cases }
   return {
-    skills: [triage, refund],
+    skills: [triage, refund, structuredClone(MOCK_REVIEW_SKILL)],
     suites: [{ key: 'dispute-triage-suite', skillKey: 'dispute-triage', name: 'Dispute triage cases', caseCount: 60, revision: 3, contentHash: 'c'.repeat(64), updatedAt: NOW, document: suiteDoc }],
     runs: [{
       id: '00000000-0000-7000-8000-00000000a003', skillKey: 'dispute-triage', version: 1, suiteKey: 'dispute-triage-suite', suiteHash: 'c'.repeat(64),

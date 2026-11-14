@@ -29,6 +29,7 @@ public final class Rules {
         RetryRules.check(rc);
         AdapterStepRules.check(rc);
         AiTaskRules.check(rc);
+        AiReviewerRules.check(rc);
         ExpressionRules.check(rc);
         AgentWriteToolRules.check(rc);
         MultiInstanceRules.check(rc);

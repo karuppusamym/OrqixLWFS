@@ -12,6 +12,7 @@ import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
 import { ApprovalViewPicker } from './ApprovalViewPicker'
 import { ListApprovalFields } from './ListApprovalFields'
+import { AiReviewerFields } from './AiReviewerFields'
 import { StagesInspector } from './StagesInspector'
 import { SubprocessesInspector } from './ScopeInspectors'
 import { SchedulesPanel } from '@/features/settings/SchedulesPanel'
@@ -127,6 +128,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
         </FormField>
         {cfg<string>(node, 'timeoutAfter') ? <DurationPreview text={cfg<string>(node, 'timeoutAfter') ?? ''} verb="allows" /> : null}
       </InspectorSection>
+      <AiReviewerFields node={node} />
       <WorkManagementFields node={node} groups={items} />
       <StageEmailFields node={node} />
       <Advanced>

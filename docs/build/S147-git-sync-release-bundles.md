@@ -179,6 +179,41 @@ before `InboundAccepted`); `ReleaseManifest` gains optional `gitSource`.
   signed archive, and copying connection definitions or templates as part of a bundle.
 - Browser (Playwright) journey; the frontend uses mock handlers that are a simplified double of the server.
 
-## Verification
+## Verification - 9 and 10 November 2026
 
-Filled in below after the runs.
+Backend (JDK 21, `backend/mvnw -o clean verify`, real PostgreSQL via Testcontainers and Flowable, every response
+validated against `openapi.yaml`):
+
+- New: `GitSyncApiTest` (2) against the WireMock stand-ins (`support/GitStandIn`, an in-memory GitHub and GitLab).
+  GitHub: connection permissions, reserved reference, egress refusal and repository shape; push to `orqix/<key>`
+  with a pull request; layout (workflow.json without provenance, generated BPMN, references, connection definitions,
+  orqix-sync.json with the content hash); no token, binding URL, reference or `secretRef` in any file; every call
+  authenticated; an unchanged push makes no commit; publish refused before approval; publish after approval with
+  `gitSource` in the manifest and the evidence pack; a reviewer edit makes the old approval stale (422), then the
+  hash mismatch (409); preview lists the change; import with a stale revision is 412; the import carries
+  `provenance.gitCommit`, and publishing it from the reviewed commit succeeds; history and audit; a draft with a token
+  is never pushed. GitLab: subgroup project, update actions on a second push, merged merge request refused without and
+  published with an approval from the merge commit, `tests.json` added in Git imported as a suite version, removing it
+  or adding an unknown member refused.
+- New: `ReleaseBundleApiTest` (2): bundle with workflow, rule table, request form, shared decision and connection;
+  idempotent replay; read back and list; plan (no change in the target), promotion creating the shared decision there
+  and rewriting the pin, the target's bundle has the same hash and `sameContent`; second promotion reuses the decision
+  version and needs the expected draft (422 without, 412 stale); evidence pack bundle and both promotions; audit in the
+  target. A disabled target binding blocks the plan and the promotion and leaves the target unchanged; unknown
+  target and bundle are 404; an operator is 403.
+- `SecurityMatrixTest` covers the 14 new operations (foreign principals 404, nothing changes, permission and audit
+  declared). `ArchitectureTest` passes (modulith boundaries; only integration resolves secrets).
+- Full suites: compiler 1224 tests pass. Application 1416 tests (5 skipped). First full run: 2 failures, the matrix's
+  missing audit exemption for the read-only `checkBundlePromotion` (fixed) and `PollWaitsTest.twoSchedulersNeverCheckTheSameRowAtOnce`
+  (timing; passes on rerun). Second full run: 1415 pass, 1 failure: `SecurityMatrixTest` "nothing changed" snapshot,
+  where rows moved only in engine and run tables (`act_ru_execution`, `run_event`, `task_reminder`, `notification`,
+  `effect_journal`) from background job execution of earlier tests' runs; no S147 table changed. `SecurityMatrixTest`
+  and `PollWaitsTest` pass when run together on their own (27 of 27).
+
+Frontend: `GitSync.test.tsx` (5): connect a repository by secret reference and test it; members see the repository
+but not the reference; push and import a branch as a new draft; publish refused until the commit is approved, then
+published as a bundle; plan and promote a bundle. Full suite 1790 tests: 1788 pass, 2 in `AiSkillsPage.test.tsx` time
+out under load and pass alone (3 of 3). `tsc -b --noEmit` and `eslint .` pass.
+
+Contracts: `python tools/contract-check/contract_check.py` PASS (142 checks, schema.d.ts up to date);
+`npx @redocly/cli@2.60.0 lint` valid with the 75 warnings that were there before (none from this slice).

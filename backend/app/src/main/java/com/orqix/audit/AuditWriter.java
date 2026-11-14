@@ -26,7 +26,9 @@ import com.orqix.shared.web.Sql;
 public class AuditWriter {
 
     public enum ActorType {
-        USER("user"), SERVICE("service"), SYSTEM("system");
+        USER("user"), SERVICE("service"), SYSTEM("system"),
+        /** The AI reviewer of an approval step (S152): acts without a subject; the metadata names the skill. */
+        AGENT("agent");
 
         private final String value;
 
@@ -49,7 +51,7 @@ public class AuditWriter {
      * One audit record.
      *
      * @param workspaceId  null for platform-level actions
-     * @param actorSubject null only for {@link ActorType#SYSTEM}
+     * @param actorSubject null only for {@link ActorType#SYSTEM} and {@link ActorType#AGENT}
      */
     public record Entry(UUID workspaceId, ActorType actorType, UUID actorSubject, String action, String resourceType,
             String resourceId, Outcome outcome, Map<String, ?> metadata) {
@@ -159,6 +161,9 @@ public class AuditWriter {
             Map.entry("task.delegated", Set.of("taskId", "toSubjectId", "fromSubjectId")),
             Map.entry("task.priority-changed", Set.of("taskId", "from", "to")),
             Map.entry("task.decided", Set.of("taskId", "nodeId", "action", "policyFlags")),
+            // S152: a task decided by the AI reviewer of its step. Skill, confidence and the decision record only.
+            Map.entry("task.decided-by-ai", Set.of("taskId", "nodeId", "action", "skillKey", "skillVersion",
+                    "confidence", "threshold", "aiDecisionId", "reviewSampled")),
             Map.entry("run.cancelled", Set.of("closurePolicy","cancelledTaskIds")),
             Map.entry("task.input-corrected", Set.of("taskId", "nodeId", "fields")),
             Map.entry("externaljob.completed", Set.of("topic", "nodeId", "attempt")),

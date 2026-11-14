@@ -533,6 +533,32 @@ public class AiTaskEngine implements AiTaskPort {
         if ("shadow".equals(ctx.effective)) {
             route = "next";
             status = "shadow";
+        } else if (request.review()) {
+            // S152: the AI reviewer of an approval. Its answer (a classify label or a recommend outcome) decides the
+            // task only when it is approve or reject, confident, within the autonomy and not held for a person.
+            String value = "classify".equals(request.mode()) ? answer.label() : answer.recommendation();
+            boolean adverse = "classify".equals(request.mode())
+                    ? labelFacts(ctx.version.document(), value).path("adverse").asBoolean(false) : "reject".equals(value);
+            status = "needsReview";
+            route = "needsReview";
+            if (below) {
+                route = "lowConfidence";
+                status = "lowConfidence";
+            } else if (!"approve".equals(value) && !"reject".equals(value)) {
+                ctx.downgrades.add("notADecision");
+            } else if ("suggest".equals(ctx.effective)) {
+                // a person decides with the suggestion
+            } else if (ctx.policy.regulated() && adverse) {
+                // D-CG3: adverse outcomes in regulated workspaces always need a person.
+                ctx.downgrades.add("adverseRegulated");
+            } else if ("auto".equals(ctx.effective)
+                    && !ctx.policy.lowRiskLabels().contains(request.skillKey() + ":" + value)) {
+                ctx.downgrades.add("notLowRisk");
+            } else {
+                route = "label:" + value;
+                status = "decided";
+                sampled = "autoWithReview".equals(ctx.effective) && sampled(request);
+            }
         } else {
             switch (request.mode()) {
                 case "classify" -> {

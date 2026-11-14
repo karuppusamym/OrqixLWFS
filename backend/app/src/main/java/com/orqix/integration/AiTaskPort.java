@@ -91,11 +91,23 @@ public interface AiTaskPort {
      * @param hasNeedsReview true when the step has a needsReview path (classify may then use it instead of
      *                       lowConfidence for suggest and policy downgrades)
      * @param input          mapped values by skill input name, before minimization
+     * @param review         true for the AI reviewer of an approval (S152): a classify or recommend answer of
+     *                       {@code approve} or {@code reject} is routed like a classify label ({@code label:approve},
+     *                       {@code label:reject}); anything else goes to a person
      */
     record TaskRequest(UUID workspaceId, UUID runId, UUID workflowId, UUID initiatorId, String nodeId, int occurrence,
             UUID jobId, String skillKey, int skillVersion, String contentHash, String mode, String autonomy,
             BigDecimal minConfidence, int reviewSamplePercent, Map<String, String> redaction, boolean hasNeedsReview,
-            ObjectNode input) {
+            ObjectNode input, boolean review) {
+
+        public TaskRequest(UUID workspaceId, UUID runId, UUID workflowId, UUID initiatorId, String nodeId,
+                int occurrence, UUID jobId, String skillKey, int skillVersion, String contentHash, String mode,
+                String autonomy, BigDecimal minConfidence, int reviewSamplePercent, Map<String, String> redaction,
+                boolean hasNeedsReview, ObjectNode input) {
+            this(workspaceId, runId, workflowId, initiatorId, nodeId, occurrence, jobId, skillKey, skillVersion,
+                    contentHash, mode, autonomy, minConfidence, reviewSamplePercent, redaction, hasNeedsReview, input,
+                    false);
+        }
     }
 
     /**

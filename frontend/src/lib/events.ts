@@ -82,6 +82,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'CHILD_STARTED':
       return 'waiting'
     case 'TASK_DECIDED':
+    case 'TASK_DECIDED_BY_AI':
       return event.data.action === 'reject' ? 'rejected' : 'success'
     case 'EFFECT_SUCCEEDED':
     case 'EFFECT_RECONCILED':
@@ -277,6 +278,20 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const action = event.data.action === 'reject' ? 'rejected' : 'approved'
       return `${actorName(event, ctx)} ${action} ${label}`
     }
+    // S152: the AI reviewer of an approval step.
+    case 'TASK_DECIDED_BY_AI': {
+      const action = event.data.action === 'reject' ? 'rejected' : 'approved'
+      const confidence = num(event.data.confidence)
+      return `Decided by AI reviewer: ${action} ${label}${confidence !== undefined ? ` (confidence ${confidence})` : ''}`
+    }
+    case 'AI_REVIEW_QUEUED':
+      return `AI reviewer started reviewing ${label}`
+    case 'AI_REVIEW_SUGGESTED': {
+      const suggestion = str(event.data.recommendation)
+      return `AI reviewer suggests to ${suggestion ?? 'decide'} ${label}; a person decides`
+    }
+    case 'AI_REVIEW_UNAVAILABLE':
+      return `AI reviewer could not review ${label}; a person decides`
     case 'DECISION_EVALUATED':
       return `${label}: ${outputsForTimeline(event.data.outputs)}`
     case 'EFFECT_SUCCEEDED': {

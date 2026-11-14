@@ -228,9 +228,31 @@ public final class RuntimeDtos {
     public record GroupRef(String key, String name) {
     }
 
+    /**
+     * {@code decidedBy} is {@code person} or {@code aiReviewer} (S152). For the AI reviewer, {@code actor} is the fixed
+     * reference {@code AI reviewer} (no person) and {@code aiReview} names the skill and the AI decision record.
+     */
     public record TaskDecision(UUID id, String taskId, UUID runId, String nodeId,
             @JsonInclude(JsonInclude.Include.NON_NULL) String label, SubjectRef actor, String action, String reason,
-            String comment, Instant decidedAt, List<String> policyFlags) {
+            String comment, Instant decidedAt, List<String> policyFlags, String decidedBy,
+            @JsonInclude(JsonInclude.Include.NON_NULL) AiReviewRef aiReview) {
+    }
+
+    /** The AI reviewer behind a decision (S152). */
+    public record AiReviewRef(String skillKey, int skillVersion, UUID decisionId) {
+    }
+
+    /**
+     * The AI review of a task (S152). {@code status}: pending (AI is working), suggested (AI answered, a person decides),
+     * decided (AI decided the task), unavailable (AI could not answer, a person decides) or cancelled (a person decided
+     * first). {@code heldFor} says why a confident answer did not decide: suggest, lowConfidence, notADecision,
+     * adverseRegulated, notLowRisk, notPromoted, drift, policy or personActed. Recommendation, rationale and reasons are
+     * shown only to callers who may see the request data.
+     */
+    public record AiReview(String status, String skillKey, int skillVersion, String autonomy, String effectiveAutonomy,
+            String recommendation, java.math.BigDecimal confidence, java.math.BigDecimal threshold, String rationale,
+            List<String> reasons, boolean decidedByAi, String heldFor, String unavailableReason, UUID decisionId,
+            String humanOutcome) {
     }
 
     public record TaskSummary(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
@@ -303,7 +325,8 @@ public final class RuntimeDtos {
     public record TaskDetail(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
             String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision, TaskRequest request,
-            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy, JsonNode approvalView) {
+            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy, JsonNode approvalView,
+            AiReview aiReview) {
     }
 
     public record TaskCounts(int assigned, int claimable) {

@@ -74,6 +74,15 @@ section, after copying the section's content under a heading for that release be
 - `GET /workspaces/{workspaceId}/document-sources/{sourceId}/files` 503 application/problem+json response `code` may also return "GIT_BRANCH_MOVED", "GIT_CONTENT_MISMATCH", "GIT_REVIEW_REQUIRED"
 - `GET /workspaces/{workspaceId}/document-sources/{sourceId}/files/{itemId}/versions` 503 application/problem+json response `code` may also return "GIT_BRANCH_MOVED", "GIT_CONTENT_MISMATCH", "GIT_REVIEW_REQUIRED"
 - `GET /workspaces/{workspaceId}/runs/{runId}` 200 application/json new response field `protectedFields`
+- `GET /workspaces/{workspaceId}/runs/{runId}` 200 application/json new response field `tasks[].decision.aiReview`
+- `GET /workspaces/{workspaceId}/runs/{runId}` 200 application/json new response field `tasks[].decision.decidedBy`
+- `GET /workspaces/{workspaceId}/tasks` 200 application/json new response field `items[].decision.aiReview`
+- `GET /workspaces/{workspaceId}/tasks` 200 application/json new response field `items[].decision.decidedBy`
+- `GET /workspaces/{workspaceId}/tasks/{taskId}` 200 application/json new response field `aiReview`
+- `GET /workspaces/{workspaceId}/tasks/{taskId}` 200 application/json new response field `decision.aiReview`
+- `GET /workspaces/{workspaceId}/tasks/{taskId}` 200 application/json new response field `decision.decidedBy`
+- `GET /workspaces/{workspaceId}/tasks/{taskId}` 200 application/json new response field `history[].aiReview`
+- `GET /workspaces/{workspaceId}/tasks/{taskId}` 200 application/json new response field `history[].decidedBy`
 - `GET /workspaces/{workspaceId}/workflows/{workflowId}` 200 application/json response `permissions[]` may also return "data.reveal"
 - `GET /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}` 200 application/json new response field `manifest.gitSource`
 - `GET /workspaces/{workspaceId}/workflows/{workflowId}/test-suite` 200 application/json new response field `coverageMinimum`
@@ -88,13 +97,68 @@ section, after copying the section's content under a heading for that release be
 - `POST /workspaces/{workspaceId}/migrations/projects/{projectId}/convert-next` 201 application/json response `converted.workflow.permissions[]` may also return "data.reveal"
 - `POST /workspaces/{workspaceId}/migrations/{migrationId}/convert` 201 application/json response `workflow.permissions[]` may also return "data.reveal"
 - `POST /workspaces/{workspaceId}/runs/{runId}/cancel` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/cancel` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/cancel` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/migrate` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/migrate` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/migrate` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/migrate-with-mapping` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/repair` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/repair` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/repair` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/resume` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/resume` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/resume` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/retry` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/retry` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/retry` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/signals` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/signals` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/signals` 200 application/json new response field `tasks[].decision.decidedBy`
 - `POST /workspaces/{workspaceId}/runs/{runId}/suspend` 200 application/json new response field `protectedFields`
+- `POST /workspaces/{workspaceId}/runs/{runId}/suspend` 200 application/json new response field `tasks[].decision.aiReview`
+- `POST /workspaces/{workspaceId}/runs/{runId}/suspend` 200 application/json new response field `tasks[].decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/claim` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/claim` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/claim` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/claim` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/claim` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/correct-input` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/correct-input` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/correct-input` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/correct-input` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/correct-input` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/decision` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/decision` 200 application/json new response field `decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/decision` 201 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/decision` 201 application/json new response field `decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/delegate` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/delegate` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/delegate` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/delegate` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/delegate` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/reassign` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/reassign` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/reassign` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/reassign` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/reassign` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/release` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/release` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/release` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/release` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/release` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back` 200 application/json new response field `history[].decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw` 200 application/json new response field `aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw` 200 application/json new response field `decision.aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw` 200 application/json new response field `decision.decidedBy`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw` 200 application/json new response field `history[].aiReview`
+- `POST /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw` 200 application/json new response field `history[].decidedBy`
 - `POST /workspaces/{workspaceId}/workflows` 201 application/json response `permissions[]` may also return "data.reveal"
 - `POST /workspaces/{workspaceId}/workflows/{workflowId}/active-release` 200 application/json response `permissions[]` may also return "data.reveal"
 - `POST /workspaces/{workspaceId}/workflows/{workflowId}/publish` 200 application/json new response field `manifest.gitSource`
@@ -107,6 +171,11 @@ section, after copying the section's content under a heading for that release be
 - `POST /workspaces/{workspaceId}/workflows/{workflowId}/test-suite/run` 200 application/json new response field `coverageShortfalls`
 - `PUT /workspaces/{workspaceId}/document-sources/grants/{sourceId}` 400 application/problem+json response `code` may also return "GIT_BRANCH_MOVED", "GIT_CONTENT_MISMATCH", "GIT_REVIEW_REQUIRED"
 - `PUT /workspaces/{workspaceId}/document-sources/grants/{sourceId}` 412 application/problem+json response `code` may also return "GIT_BRANCH_MOVED", "GIT_CONTENT_MISMATCH", "GIT_REVIEW_REQUIRED"
+- `PUT /workspaces/{workspaceId}/tasks/{taskId}/priority` 200 application/json new response field `aiReview`
+- `PUT /workspaces/{workspaceId}/tasks/{taskId}/priority` 200 application/json new response field `decision.aiReview`
+- `PUT /workspaces/{workspaceId}/tasks/{taskId}/priority` 200 application/json new response field `decision.decidedBy`
+- `PUT /workspaces/{workspaceId}/tasks/{taskId}/priority` 200 application/json new response field `history[].aiReview`
+- `PUT /workspaces/{workspaceId}/tasks/{taskId}/priority` 200 application/json new response field `history[].decidedBy`
 - `PUT /workspaces/{workspaceId}/workflows/{workflowId}/folder` 200 application/json response `permissions[]` may also return "data.reveal"
 - `PUT /workspaces/{workspaceId}/workflows/{workflowId}/owner` 200 application/json response `permissions[]` may also return "data.reveal"
 - `PUT /workspaces/{workspaceId}/workflows/{workflowId}/test-suite` new optional request field `coverageMinimum`

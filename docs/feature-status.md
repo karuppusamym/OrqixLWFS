@@ -340,3 +340,9 @@ Work merged into `develop` on 30 to 31 October 2026 (PRs #16 to #19) and brought
 | Saved work views for tasks and runs (V209): owner-only edits, optional sharing of filters (never results), allow-listed filters, revision conflicts, 200 per workspace, audited `workview.saved` / `workview.deleted` | [user guide](user-guide.md#saved-views-for-tasks-and-runs---30-october-2026) | Implemented | No dedicated backend API test or component test yet; covered only by the contract-generated security matrix and the Tasks page test |
 | Task search, queue and due filters run on the server; Home task preview orders overdue first; grouped navigation | [UI review](28-ui-product-review-2026-10-30.md) | Verified, *tests* | Mock-mode browser review only; no usability study |
 | Decisions page under Design; case type designer in the shared editor frame (autosave, undo, Check/Publish header); case Test tab; access administration in Settings; Features grouped by standard | PR #18 and #19 | Verified, *frontend tests and focused backend tests* | Playwright end-to-end suite repaired in PR #19; not re-run after this merge |
+
+## AI reviewer on approval steps - 14 November 2026
+
+| Feature | Note | Status | Limits |
+|---|---|---|---|
+| AI reviewer on an approval step: an approved classify or recommend skill answering approve or reject decides the task when confident and allowed (autoWithReview, auto), otherwise suggests; the person deciding first always wins; automatic human outcome on the AI decision record; AGENT audit actor; Studio section, task suggestion panel, decision history and timeline | [S152](build/S152-ai-reviewer.md) | Verified, *compiler, application (real PostgreSQL and Flowable, stub provider) and frontend tests* | Not for several approvers, list items or steps with required fields; no simulator mocks for the reviewer; no live provider, browser or Docker-stack run |

@@ -373,6 +373,27 @@ function stepCaptureOf(run: MockRun, task: MockTask): { properties: Record<strin
   return capture?.properties && Object.keys(capture.properties).length ? capture as { properties: Record<string, unknown> } : undefined
 }
 
+/**
+ * S152: the AI reviewer's suggestion on a task whose step has one. Mock runs never call a model and the AI reviewer
+ * never decides here: suggest-only steps show a confident suggestion, deciding steps an answer below the threshold.
+ */
+function mockAiReview(run: MockRun, task: MockTask): TaskDetail['aiReview'] {
+  const reviewer = nodeById(currentRelease(run).definition, task.nodeId)?.config.aiReviewer as
+    { skill?: { key?: string; version?: number }; autonomy?: 'suggest' | 'autoWithReview' | 'auto'; minConfidence?: number } | undefined
+  if (!reviewer?.skill?.key) return null
+  const autonomy = reviewer.autonomy ?? 'suggest'
+  const threshold = reviewer.minConfidence ?? 0.85
+  const suggestOnly = autonomy === 'suggest'
+  return {
+    status: 'suggested', skillKey: reviewer.skill.key, skillVersion: reviewer.skill.version ?? 1, autonomy, effectiveAutonomy: autonomy,
+    recommendation: 'approve', confidence: suggestOnly ? 0.91 : Math.max(0, Math.round((threshold - 0.07) * 100) / 100), threshold,
+    rationale: 'Within the purchasing policy for this cost center, and the amount is below the team budget.',
+    reasons: ['The purpose is an ordinary replacement.'], decidedByAi: false, heldFor: suggestOnly ? 'suggest' : 'lowConfidence',
+    unavailableReason: null, decisionId: null,
+    humanOutcome: task.decision ? (task.decision.action === 'approve' ? 'accepted' : 'overridden') : null,
+  }
+}
+
 function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: MockTask): TaskDetail {
   const rel = currentRelease(run)
   const summaryValue = toTaskSummary(run, task)
@@ -390,6 +411,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [],
       ...(Object.keys(stepAccessOf(run, task)).length ? { fieldAccess: stepAccessOf(run, task) } : {}), ...(stepCaptureOf(run, task) ? { capture: stepCaptureOf(run, task) } : {}) },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
+    aiReview: mockAiReview(run, task),
     allowedActions: {
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : separated ? 'SEPARATION_OF_DUTIES' : 'NOT_ELIGIBLE' },
       release: open && isAssignee ? { allowed: true } : { allowed: false, reasonCode: 'TASK_NOT_CLAIMED_BY_CALLER' },

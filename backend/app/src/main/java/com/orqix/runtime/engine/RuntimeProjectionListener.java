@@ -75,6 +75,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private final com.orqix.runtime.internal.TaskDispatcher dispatcher;
     private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations;
     private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.AiReviews> reviewers;
 
     public RuntimeProjectionListener(Json json, RunStore runs, TaskStore tasks, RunEvents events,
             ReleaseQueries releases, RuntimeMetrics metrics, @org.springframework.context.annotation.Lazy ChildRuns children,
@@ -82,7 +83,9 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages,
             @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher,
             org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations,
-            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions) {
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.AiReviews> reviewers) {
+        this.reviewers = reviewers;
         this.dispatcher = dispatcher;
         this.escalations = escalations;
         this.taskActions = taskActions;
@@ -265,6 +268,31 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         // S141: the escalation levels of the step's policy (CG-T04) and the actionable messages (CG-T01).
         escalations.ifAvailable(e -> e.plan(workspaceId, runId, task.getId(), element.getId(), now));
         taskActions.ifAvailable(a -> a.enqueueOnCreate(workspaceId, task.getId()));
+        if (item == null) {
+            reviewers.ifAvailable(r -> queueReview(r, task, element.getId(), workspaceId, runId));
+        }
+    }
+
+    /** S152: the AI reviewer of the step reviews the new task (mapped values resolved now, sealed in the job). */
+    private void queueReview(com.orqix.runtime.internal.AiReviews reviewers, TaskEntity task, String nodeId,
+            UUID workspaceId, UUID runId) {
+        var run = runs.find(workspaceId, runId).orElse(null);
+        if (run == null) {
+            return;
+        }
+        var spec = reviewers.spec(workspaceId, releases.require(workspaceId, run.releaseId()).node(nodeId));
+        if (spec == null) {
+            return;
+        }
+        ObjectNode input = json.object();
+        spec.inputs().forEach((name, ref) -> {
+            JsonNode value = ProcessData.resolve(task, json, ref);
+            if (!value.isMissingNode() && !value.isNull()) {
+                input.set(name, value);
+            }
+        });
+        int version = tasks.find(workspaceId, task.getId()).map(TaskStore.TaskRow::version).orElse(1);
+        reviewers.queue(workspaceId, runId, nodeId, task.getId(), version, spec, input);
     }
 
     /**

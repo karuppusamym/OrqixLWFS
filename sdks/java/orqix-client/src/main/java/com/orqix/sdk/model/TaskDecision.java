@@ -20,6 +20,8 @@ import java.util.List;
  * @param comment optional (may be null)
  * @param decidedAt required
  * @param policyFlags required
+ * @param decidedBy S152: person, or aiReviewer when the AI reviewer of the step decided (actor is then the fixed reference AI reviewer, not a person).
+ * @param aiReview S152: the skill and AI decision record behind an AI reviewer decision.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -34,5 +36,7 @@ public record TaskDecision(
         @JsonProperty("reason") String reason,
         @JsonProperty("comment") String comment,
         @JsonProperty("decidedAt") OffsetDateTime decidedAt,
-        @JsonProperty("policyFlags") List<String> policyFlags) {
+        @JsonProperty("policyFlags") List<String> policyFlags,
+        @JsonProperty("decidedBy") String decidedBy,
+        @JsonProperty("aiReview") TaskDecisionAiReview aiReview) {
 }

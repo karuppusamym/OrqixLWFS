@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { components } from '@/api/schema'
-import { AI_STATUS, aiResult } from './AiDecisionsPanel'
+import { AI_STATUS, aiExplanation, aiResult } from './AiDecisionsPanel'
 
 type AiDecision = components['schemas']['AiDecision']
 
@@ -18,5 +18,13 @@ describe('AI decisions in run detail (docs/build/S134)', () => {
   it('says when a person takes over', () => {
     expect(AI_STATUS.unavailable).toContain('a person takes over')
     expect(AI_STATUS.shadow).toContain('did not change the path')
+  })
+
+  it('shows why the AI answered: rationale and reasons (S152)', () => {
+    expect(aiExplanation({ ...base, output: { recommendation: 'reject', rationale: 'Over budget for this cost center.' } }))
+      .toEqual({ rationale: 'Over budget for this cost center.', reasons: [] })
+    expect(aiExplanation({ ...base, output: { label: 'approve', reasons: ['Within the cost center budget.', ''] } }))
+      .toEqual({ rationale: null, reasons: ['Within the cost center budget.'] })
+    expect(aiExplanation(base)).toEqual({ rationale: null, reasons: [] })
   })
 })

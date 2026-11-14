@@ -1,0 +1,21 @@
+# Accepted image-scan findings. Every entry needs a reason and an expiry (exp:YYYY-MM-DD); after the expiry the scan
+# fails again, so the finding is looked at once more.
+#
+# krb5-libs 1.21.1-10.el9_8.1 (ubi9/openjdk-21-runtime:1.24, 2026-11-14): Trivy reports the RHEL 9.9 build
+# 1.21.1-10.el9_9.2 as the fix, but no UBI 9 repository carries it yet, so `microdnf update` in the Dockerfile cannot
+# install it. The findings are in the KDC and kadmind servers, which the image neither ships nor runs; the JVM does not
+# load the native krb5 library. Remove these lines once the fixed package reaches UBI 9.
+CVE-2026-107364 exp:2026-12-14
+CVE-2026-112315 exp:2026-12-14
+CVE-2026-112316 exp:2026-12-14
+CVE-2026-112317 exp:2026-12-14
+CVE-2026-112318 exp:2026-12-14
+CVE-2026-112319 exp:2026-12-14
+CVE-2026-112320 exp:2026-12-14
+CVE-2026-112321 exp:2026-12-14
+CVE-2026-112322 exp:2026-12-14
+CVE-2026-112323 exp:2026-12-14
+CVE-2026-118380 exp:2026-12-14
+CVE-2026-119079 exp:2026-12-14
+CVE-2026-71199 exp:2026-12-14
+CVE-2026-71200 exp:2026-12-14

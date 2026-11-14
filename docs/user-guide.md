@@ -115,7 +115,7 @@ Requests already in progress always finish on the version they started with. To 
 | The request must stop | **Cancel** — work already done in other systems is listed and is not undone automatically |
 | An approver is unavailable | **Reassign** the task to another eligible person, or back to the group |
 | A request shows fewer open steps than it should, or looks stuck | **Check consistency** on the request, see [Checking a request against the engine](#checking-a-request-against-the-engine-operators) |
-| A request waits for a signal that nothing will send | Send it through the API, see [Sections, handlers, errors, signals and undo](#sections-handlers-errors-signals-and-undo--19-october-2026) |
+| A request waits for a signal that nothing will send | **Send signal**: pick the signal the request waits for (or type its name) and give a reason, see [Sections, handlers, errors, signals and undo](#sections-handlers-errors-signals-and-undo--19-october-2026) |
 | An AI agent send has an unknown outcome | **Agent writes** page, **Record outcome**, see [Agent write tools](#agent-write-tools-operators-and-approvers) |
 
 Every operator action asks for a reason and is recorded. Operators cannot change an approval decision.
@@ -224,7 +224,7 @@ For designers ([S59](build/S59-subprocesses-errors-signals-compensation.md), [S7
 4. **Undo.** On a call that can change something, set **Undo** to the call it reverses and choose **Run automatically**. Orqix runs the automatic undo calls of the calls that actually succeeded in this request, most recent first, through the same journaled path as any call; a failing undo call needs attention and an operator retry sends only the remaining ones. Undo is request-wide, covers only system calls and is not per section.
 5. **When it fails.** A call inside a section with an error route can opt in to raise a named error when it fails for good (a rejection by the system, not a timeout, 5xx, 429 or unknown outcome); the section's error route then runs. Turning it on removes the call's own Failed route.
 
-The canvas draws a frame behind each section and handler. A *Wait for a signal* step can also be released by an operator. Limits: none of this works with parallel steps inside sections, and child workflows, external-worker jobs and message waits are not cancelled cleanly by a section boundary; a request waiting in a workflow that has sections cannot be moved to another release.
+The canvas draws a frame behind each section and handler. A *Wait for a signal* step can also be released by an operator with **Send signal** on the request. Limits: none of this works with parallel steps inside sections, and child workflows, external-worker jobs and message waits are not cancelled cleanly by a section boundary; a request waiting in a workflow that has sections cannot be moved to another release.
 
 ## Several approvers and inclusive paths — 19 October 2026
 
@@ -266,7 +266,7 @@ If the production workspace requires approval, **Promote as draft** is replaced 
 | The difference cannot be repaired automatically | Anything else: an unknown timer or subscription, a child, call, document or signal wait, a job in flight, a dead-letter or suspended job, a task without its row, or a request needing attention for another reason | Read the message; resolve the cause (for example retry or reconcile) and check again |
 | The request is suspended / has ended | Not checked | Resume first, or nothing to do |
 
-A rebuild is refused (`RUN_NOT_REPAIRABLE` or a version conflict) if the request progressed since you opened the dialog; open it again. If the optional **Consistency scan** is on, **Runs** shows a panel of requests it found drifted (it reports only; it never repairs) and the request shows a warning pointing to **Check consistency**. Operators can also release a request waiting for a signal through the API (`POST /workspaces/{ws}/runs/{runId}/signals`, `run.operate`; there is no button yet); a signal nobody awaits is refused as `SIGNAL_NOT_AWAITED`.
+A rebuild is refused (`RUN_NOT_REPAIRABLE` or a version conflict) if the request progressed since you opened the dialog; open it again. If the optional **Consistency scan** is on, **Runs** shows a panel of requests it found drifted (it reports only; it never repairs) and the request shows a warning pointing to **Check consistency**. Operators can also release a request waiting for a signal with **Send signal** under Operator actions (`run.operate`; also `POST /workspaces/{ws}/runs/{runId}/signals`). The button appears while the request waits in a *Wait for a signal* step or its workflow has signal handlers. The dialog offers those signals, or another name, and needs a reason; it is not available while the request is suspended. The signal reaches only this request; a signal nobody awaits is refused ("Nothing in this request is waiting for that signal now").
 
 ## Agent write tools (operators and approvers)
 

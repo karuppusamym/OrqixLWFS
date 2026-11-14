@@ -56,8 +56,12 @@ FROM ${RUNTIME_IMAGE}
 # Apply the base image's pending OS security updates (the CI image scan blocks on fixed HIGH/CRITICAL findings, such as
 # CVE-2026-19445 and CVE-2026-19553 in python3/python3-libs of ubi9/openjdk-21-runtime:1.24). The user is set back to
 # the non-root default below.
+# The two repository indexes are fetched on every build: when Red Hat publishes updates they change, which invalidates
+# the update layer below, so a build cache never keeps an image whose fixed CVEs were already released.
 USER 0
-RUN microdnf -y update --nodocs --setopt=install_weak_deps=0 && microdnf clean all
+ADD --chmod=0644 https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/repodata/repomd.xml /tmp/ubi-baseos-repomd.xml
+ADD --chmod=0644 https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os/repodata/repomd.xml /tmp/ubi-appstream-repomd.xml
+RUN rm -f /tmp/ubi-*-repomd.xml && microdnf -y update --nodocs --setopt=install_weak_deps=0 && microdnf clean all
 
 ARG VERSION=dev
 ARG REVISION=unknown

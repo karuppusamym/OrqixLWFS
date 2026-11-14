@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router'
+import { Link, Navigate } from 'react-router'
 import { useMe } from '@/api/queries'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { UserX } from 'lucide-react'
+import { LayoutGrid, Plus, UserX } from 'lucide-react'
 import { readLastWorkspace } from '@/lib/storage'
 import { isProblemError } from '@/api/problem'
 
@@ -34,12 +34,29 @@ export function RootRedirect() {
   const last = readLastWorkspace()
   const target = workspaces.find((w) => w.id === last) ?? workspaces[0]
   if (!target) {
+    // A platform administrator can create the first workspace; everyone else needs someone to add them.
+    const platformAdmin = meQuery.data.platformAdmin
     return (
       <main id="main" className="mx-auto max-w-xl p-8">
         <PageHeader title="No workspace yet" />
-        <EmptyState icon={UserX} title={`You are signed in as ${meQuery.data.subject.displayName}, but you are not a member of any workspace.`}>
-          Ask a workspace administrator to add you.
+        <EmptyState
+          icon={platformAdmin ? LayoutGrid : UserX}
+          title={`You are signed in as ${meQuery.data.subject.displayName}, but you are not a member of any workspace.`}
+          action={platformAdmin ? (
+            <Button asChild variant="primary">
+              <Link to="/admin?new=workspace"><Plus aria-hidden="true" /> Create a workspace</Link>
+            </Button>
+          ) : undefined}
+        >
+          {platformAdmin
+            ? 'As a platform administrator you can create one and make yourself its administrator.'
+            : 'Ask a workspace administrator to add you.'}
         </EmptyState>
+        {platformAdmin ? (
+          <p className="mt-4 text-center text-sm">
+            <Link to="/admin">Go to platform administration</Link>
+          </p>
+        ) : null}
       </main>
     )
   }

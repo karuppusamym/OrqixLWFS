@@ -131,6 +131,12 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 aiPins.put(ai.id(), pin);
                 aiRefs.add(new CompiledWorkflow.AiSkillRef(ai.id(), ai.skillRef(), pin.version(), pin.contentHash(),
                         pin.modelProfile(), ai.autonomy(), ai.shadow() ? null : pin.passingEvaluationId()));
+            } else if (n instanceof Node.Approval a && a.aiReviewer() != null) {
+                // S152: the AI reviewer of an approval pins its skill version in the release manifest too.
+                var reviewer = a.aiReviewer();
+                var pin = analysis.workspace().aiSkills().get(reviewer.skillKey()).versions().get(reviewer.skillVersion());
+                aiRefs.add(new CompiledWorkflow.AiSkillRef(a.id(), reviewer.skillKey(), pin.version(),
+                        pin.contentHash(), pin.modelProfile(), reviewer.autonomy(), pin.passingEvaluationId()));
             }
         }
         BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts,

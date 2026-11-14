@@ -130,46 +130,61 @@ public final class AiTaskRules {
 
     private static void inputs(RuleContext rc, Node.AiTask ai, CompileContext.AiSkillVersion v,
             CompileContext.AiSkillInfo skill) {
+        inputs(rc, ai, ai.configPath("inputMapping"), ai.configPath("redaction"), ai.inputMapping(), ai.redaction(), v,
+                skill);
+    }
+
+    /**
+     * The mapped inputs against the skill's input contract and their availability at {@code owner}; shared by the AI
+     * task and the AI reviewer of an approval (S152).
+     */
+    static void inputs(RuleContext rc, Node owner, String mappingPath, String redactionPath,
+            Map<String, String> mapping, Map<String, String> redaction, CompileContext.AiSkillVersion v,
+            CompileContext.AiSkillInfo skill) {
         for (String required : v.requiredInputs()) {
-            if (!ai.inputMapping().containsKey(required)) {
-                rc.issues().blocker("WF_AI_INPUT_MISSING", ai.configPath("inputMapping"), ai.id(), null, q(ai)
+            if (!mapping.containsKey(required)) {
+                rc.issues().blocker("WF_AI_INPUT_MISSING", mappingPath, owner.id(), null, q(owner)
                         + " must map the input " + q(required) + " of " + q(skill.name()) + ".");
             }
         }
-        ai.inputMapping().forEach((name, ref) -> {
-            String path = ai.configPath("inputMapping") + "/" + name;
+        mapping.forEach((name, ref) -> {
+            String path = mappingPath + "/" + name;
             String type = v.inputs().get(name);
             if (type == null) {
-                rc.issues().blocker("WF_AI_INPUT_UNKNOWN", path, ai.id(), null, q(skill.name())
+                rc.issues().blocker("WF_AI_INPUT_UNKNOWN", path, owner.id(), null, q(skill.name())
                         + " has no input " + q(name) + ". Its inputs are: " + String.join(", ", new java.util.TreeSet<>(
                         v.inputs().keySet())) + ".");
                 return;
             }
             var resolved = rc.types().resolve(ref);
             if (resolved instanceof Unknown u) {
-                rc.issues().blocker("WF_AI_INPUT_UNKNOWN", path, ai.id(), null, u.message());
+                rc.issues().blocker("WF_AI_INPUT_UNKNOWN", path, owner.id(), null, u.message());
                 return;
             }
             if (resolved instanceof Resolved r) {
                 if (!compatible(type, r.type().kind())) {
-                    rc.issues().blocker("WF_AI_INPUT_TYPE", path, ai.id(), null, "The input " + q(name) + " of "
+                    rc.issues().blocker("WF_AI_INPUT_TYPE", path, owner.id(), null, "The input " + q(name) + " of "
                             + q(skill.name()) + " is " + ("attachment".equals(type) ? FieldKind.ATTACHMENT.description()
                             : FieldKind.fromJson(type, null).description())
                             + ", but the mapped value is " + r.type().kind().description() + ".");
                 }
                 if (r.type().mayBeAbsent() && v.requiredInputs().contains(name)) {
-                    rc.issues().blocker("WF_AI_INPUT_OPTIONAL", path, ai.id(), null, "The input " + q(name)
+                    rc.issues().blocker("WF_AI_INPUT_OPTIONAL", path, owner.id(), null, "The input " + q(name)
                             + " is required by the skill, but this value may be missing when the step starts.");
                 }
             }
-            Conditions.availability(rc, ref, ai, path, null);
+            Conditions.availability(rc, ref, owner, path, null);
         });
-        for (String name : ai.redaction().keySet()) {
-            if (!ai.inputMapping().containsKey(name)) {
-                rc.issues().blocker("WF_AI_REDACTION_UNKNOWN", ai.configPath("redaction") + "/" + name, ai.id(),
-                        null, "Redaction is set for " + q(name) + ", which " + q(ai) + " does not send.");
+        for (String name : redaction.keySet()) {
+            if (!mapping.containsKey(name)) {
+                rc.issues().blocker("WF_AI_REDACTION_UNKNOWN", redactionPath + "/" + name, owner.id(),
+                        null, "Redaction is set for " + q(name) + ", which " + q(owner) + " does not send.");
             }
         }
+    }
+
+    static int rankOf(String autonomy) {
+        return rank(autonomy);
     }
 
     private static boolean compatible(String skillType, FieldKind actual) {

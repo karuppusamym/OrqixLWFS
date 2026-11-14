@@ -299,6 +299,8 @@ public final class BpmnGenerator {
                 if (a.calendar() != null) x.attr("calendar", a.calendar().toString());
                 if (a.escalation() != null) x.attr("escalation", a.escalation().toString());
                 if (a.escalationPolicy() != null) x.attr("escalationPolicy", a.escalationPolicy().toString());
+                // S152: written only when set, so approvals without an AI reviewer generate exactly the BPMN they did.
+                if (a.aiReviewer() != null) x.attr("aiReviewer", a.aiReviewer().raw().toString());
                 if (a.listDriven()) {
                     x.leaf("orqix", "perItem", ORQIX_NS).attr("itemsRef", a.perItem().itemsRef());
                     if (a.perItem().itemLabel() != null) x.attr("itemLabel", a.perItem().itemLabel());

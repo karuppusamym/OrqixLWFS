@@ -42,10 +42,12 @@ public sealed interface Node {
                     java.util.Map<String, String> fieldAccess,
                     com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture,
                     /** CG-T04 (S141): the raw escalation policy, or null. */
-                    tools.jackson.databind.JsonNode escalationPolicy) implements Node {
+                    tools.jackson.databind.JsonNode escalationPolicy,
+                    /** S152: the AI reviewer of the step's tasks, or null. */
+                    AiReviewer aiReviewer) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null,null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null,null,null);
         }
 
         /**
@@ -77,6 +79,30 @@ public sealed interface Node {
         @Override
         public NodeKind kind() {
             return NodeKind.APPROVAL;
+        }
+    }
+
+    /**
+     * The AI reviewer of an approval step (S152): an approved classify or recommend skill version answers approve or
+     * reject for each task; with autonomy {@code autoWithReview} or {@code auto} a confident answer decides the task.
+     */
+    record AiReviewer(String skillKey, int skillVersion, String autonomy, java.math.BigDecimal minConfidence,
+                      int reviewSamplePercent, Map<String, String> inputs, Map<String, String> redaction,
+                      /** The configuration as written (kept in the BPMN for the round trip). */
+                      tools.jackson.databind.JsonNode raw) {
+
+        public static final java.math.BigDecimal DEFAULT_MIN_CONFIDENCE = new java.math.BigDecimal("0.85");
+        /** The answers the skill must offer. */
+        public static final java.util.List<String> DECISIONS = java.util.List.of("approve", "reject");
+
+        public AiReviewer {
+            inputs = java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(inputs));
+            redaction = java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(redaction));
+        }
+
+        /** @return true when a confident answer decides the task (autoWithReview or auto) */
+        public boolean decides() {
+            return AiTask.AUTO.equals(autonomy) || AiTask.AUTO_WITH_REVIEW.equals(autonomy);
         }
     }
 

@@ -219,6 +219,12 @@ class AiReviewerFlowTest extends RuntimeTestBase {
         assertThat(detail.path("aiReview").path("decidedByAi").asBoolean()).isTrue();
         assertThat(detail.path("aiReview").path("recommendation").asString()).isEqualTo("approve");
         assertThat(detail.path("completedBy").path("displayName").asString()).isEqualTo("AI reviewer");
+        // The run evidence pack names the AI reviewer and its skill version.
+        Response pack = api("olga.operator").get("/workspaces/{ws}/runs/{id}/evidence-pack?format=json", PURCHASING,
+                approved);
+        assertThat(pack.status()).as(pack.toString()).isEqualTo(200);
+        assertThat(new String(pack.bytes(), java.nio.charset.StandardCharsets.UTF_8))
+                .contains("AI reviewer (" + skill + " v1)");
         // The AI reviewer is no person: it never appears in anyone's completed tasks.
         assertThat(api("mani.manager").get("/workspaces/{ws}/tasks?view=completed", PURCHASING).body().toString())
                 .doesNotContain(approvedTask);

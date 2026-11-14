@@ -154,6 +154,7 @@ public class RunEvidencePack {
         jdbc.sql("""
                 SELECT t.engine_task_id, t.node_id, t.label, t.candidate_group_key, t.assignee_subject_id, t.status,
                        t.due_at, t.created_at, t.claimed_at, t.ended_at, d.action, d.actor_subject_id, d.decided_at,
+                       d.actor_kind, d.ai_skill_key, d.ai_skill_version,
                        d.policy_flags::text AS flags, b.due_at AS breach_due, b.detected_at
                 FROM task_context t
                 LEFT JOIN task_decision d ON d.workspace_id = t.workspace_id AND d.engine_task_id = t.engine_task_id
@@ -172,7 +173,10 @@ public class RunEvidencePack {
                     step.put("assignee", assignee == null ? null : person(people, assignee));
                     UUID decidedBy = Sql.uuid(rs, "actor_subject_id");
                     step.put("decision", rs.getString("action"))
-                            .put("decidedBy", decidedBy == null ? null : person(people, decidedBy))
+                            .put("decidedBy", decidedBy != null ? person(people, decidedBy)
+                                    // S152: the AI reviewer of the step, named with its skill version.
+                                    : "aiReviewer".equals(rs.getString("actor_kind")) ? "AI reviewer ("
+                                    + rs.getString("ai_skill_key") + " v" + rs.getInt("ai_skill_version") + ")" : null)
                             .put("decidedAt", text(Sql.instant(rs, "decided_at")));
                     JsonNode flags = rs.getString("flags") == null ? json.mapper().createArrayNode()
                             : json.parse(rs.getString("flags"));

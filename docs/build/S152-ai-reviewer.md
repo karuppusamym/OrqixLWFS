@@ -76,6 +76,7 @@ changes only when it has an AI reviewer, so no golden file moves.
 - `TaskService.decide` calls `AiReviews.personDecided` after inserting the person's decision: cancel the open review job
   and record the human outcome.
 - `autoWithReview` decisions are sampled into the existing after-the-fact review queue (`GET /ai-review-queue`).
+- The run evidence pack names the decider of an AI-decided step as `AI reviewer (<skill> v<n>)`.
 
 ## 3. API
 
@@ -127,8 +128,8 @@ No new settings. `orqix.ai.tasks.*` (worker, threads, lease, attempts, deadline)
   field access, required capture; optional capture allowed); review sample warning. Full compiler suite 1232 tests pass.
 - Application `AiReviewerFlowTest` (3, real PostgreSQL and Flowable, answers from `AiTaskStub`): confident approve and
   confident reject decided by the AI reviewer (null subject, `aiReviewer` kind, rationale as reason, decision record
-  linked to the task, `agent` audit without subject, step outputs, task detail history and `aiReview`, absent from the
-  person's completed list, no rationale in events); low confidence stays with a person, whose reject is recorded as
+  linked to the task, `agent` audit without subject, step outputs, task detail history and `aiReview`, the run
+  evidence pack naming the AI reviewer, absent from the person's completed list, no rationale in events); low confidence stays with a person, whose reject is recorded as
   `overridden reject <reason>`; autonomy suggest stays with a person, whose approve is recorded as `accepted`; a person
   who decides while AI is working cancels the job (one decision, no record, no AI event); a person who claims while AI
   is working keeps the task (`personActed`).
@@ -136,6 +137,9 @@ No new settings. `orqix.ai.tasks.*` (worker, threads, lease, attempts, deadline)
   `SeparationOfDutiesTest`, `ListDrivenApprovalTest`, `InclusiveAndMultiInstanceTest`, `StepFormRuntimeTest`,
   `ActionableTasksTest`, `TaskDispatchTest`, `ApproverCorrectionTest`, `WorkManagementTest`, `PurchaseScenariosTest`,
   `EvidencePackTest`, `AuditChainTest`, `SecurityMatrixTest`, `ArchitectureTest`: 110 tests pass.
+- Full backend `mvnw -o verify` (JDK 21, compiler and application, coverage gate, packaging): BUILD SUCCESS - compiler
+  1232 tests, application 1447 (5 skipped). The evidence-pack naming was added after that run and re-run with
+  `AiReviewerFlowTest` and `EvidencePackTest` (5 pass).
 - Contracts: `contract_check.py` 144 checks pass; Redocly lint valid (76 warnings, unchanged); `sdks/codegen/generate.py
   --check` current; `frontend/src/api/schema.d.ts` regenerated.
 - Frontend: `tsc -b`, ESLint, Vitest (new `AiReviewerFields.test.tsx`, `AiReviewPanel.test.tsx`, additions to
@@ -151,6 +155,8 @@ No new settings. `orqix.ai.tasks.*` (worker, threads, lease, attempts, deadline)
 - A reviewer on a step reached again in a loop reviews each visit; a review job of an earlier visit whose task ended by
   a timer is ended when the next visit queues its job (not when the timer fires).
 - A person who opens the task while AI is still working sees "reviewing"; the page does not refresh by itself.
+- The workspace exit export and the run retention archive list AI reviewer decisions with an empty actor (their
+  file formats were not changed to carry `actor_kind`).
 - Live provider accounts, browser end-to-end journeys and the Docker stack were not exercised for this feature.
 - The release change record PDF (`docs/release/orqix-change-record-2026-11-10.pdf`) has no generator source in the
   repository and was not regenerated.

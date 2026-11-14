@@ -14762,6 +14762,35 @@ export interface components {
                 priority: components["schemas"]["ActionAvailability"];
             };
             completedBy?: components["schemas"]["SubjectRef"] | null;
+            /** @description S152: the AI review of this task when its step has an AI reviewer; null otherwise. */
+            aiReview?: components["schemas"]["TaskAiReview"] | null;
+        };
+        /** @description The AI review of a task (S152). status pending: AI is working; suggested: AI answered and a person decides; decided: the AI reviewer decided the task; unavailable: AI could not answer and a person decides; cancelled: a person decided first. heldFor says why an answer did not decide the task. recommendation, rationale and reasons are null (or empty) for callers who may not see the request data. */
+        TaskAiReview: {
+            /** @enum {string} */
+            status: "pending" | "suggested" | "decided" | "unavailable" | "cancelled";
+            skillKey: components["schemas"]["Key"];
+            skillVersion: number;
+            /** @enum {string} */
+            autonomy: "suggest" | "autoWithReview" | "auto";
+            /** @enum {string|null} */
+            effectiveAutonomy?: "suggest" | "autoWithReview" | "auto" | null;
+            /** @description The AI answer, usually approve or reject */
+            recommendation?: string | null;
+            confidence?: number | null;
+            threshold?: number | null;
+            /** @description Recommend skills: the rationale of the answer */
+            rationale?: string | null;
+            /** @description Classify skills: the reasons of the answer */
+            reasons: string[];
+            decidedByAi: boolean;
+            /** @enum {string|null} */
+            heldFor?: "suggest" | "lowConfidence" | "notADecision" | "adverseRegulated" | "notLowRisk" | "notPromoted" | "drift" | "policy" | "personActed" | null;
+            unavailableReason?: string | null;
+            /** @description The AI decision record (run AI decisions) */
+            decisionId?: components["schemas"]["Uuid"] | null;
+            /** @enum {string|null} */
+            humanOutcome?: "accepted" | "overridden" | null;
         };
         TaskPriorityRequest: {
             expectedVersion: number;
@@ -14796,6 +14825,17 @@ export interface components {
             comment?: string | null;
             decidedAt: components["schemas"]["Timestamp"];
             policyFlags: string[];
+            /**
+             * @description S152: person, or aiReviewer when the AI reviewer of the step decided (actor is then the fixed reference AI reviewer, not a person).
+             * @enum {string}
+             */
+            decidedBy?: "person" | "aiReviewer";
+            /** @description S152: the skill and AI decision record behind an AI reviewer decision. */
+            aiReview?: {
+                skillKey: components["schemas"]["Key"];
+                skillVersion: number;
+                decisionId: components["schemas"]["Uuid"];
+            };
         };
         ReassignRequest: {
             expectedVersion: number;
@@ -17317,6 +17357,32 @@ export interface components {
                 };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
+                /** @description AI reviewer (docs/build/S152): an approved AI skill reviews each task of this step and approves or rejects it instead of a person when it is confident and the autonomy allows; otherwise the task stays with people and shows the suggestion. The skill must be a classify or recommend skill with the labels (or outcomes) approve and reject. Not combined with several approvers, a list of items or fields that must be filled in when approving. The workspace AI policy can lower the autonomy, never raise it. When AI decides, the outputs are decision, reason (the AI rationale), decidedBy = ai-reviewer, decidedAt and aiReview. */
+                aiReviewer?: {
+                    skill: {
+                        /** @description Key of the shared AI skill. */
+                        key: components["schemas"]["key"];
+                        /** @description Approved version of the skill. */
+                        version: number;
+                    };
+                    /**
+                     * @description suggest (default): the AI suggestion is shown and a person decides; autoWithReview: AI decides when confident and a sample is reviewed afterwards; auto: AI decides when confident, only for answers the workspace policy marks low-risk.
+                     * @enum {unknown}
+                     */
+                    autonomy?: "suggest" | "autoWithReview" | "auto";
+                    /** @description Calibrated confidence below which a person decides. Default 0.85. */
+                    minConfidence?: number;
+                    /** @description autoWithReview only: share of AI decisions queued for after-the-fact review (default 10). */
+                    reviewSamplePercent?: number;
+                    /** @description Skill input name to request or earlier-step value. Only mapped values are sent. */
+                    inputs: {
+                        [key: string]: components["schemas"]["fieldRef"];
+                    };
+                    /** @description Per input: how the value is minimized before it is sent, on top of the field classification policy. */
+                    redaction?: {
+                        [key: string]: "maskCardNumbersAndEmails" | "maskDigits" | "hash" | "drop";
+                    };
+                };
                 /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
                 fieldAccess?: {
                     [key: string]: "hidden" | "readOnly" | "editable" | "required";
@@ -18198,6 +18264,32 @@ export interface components {
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
+                        /** @description AI reviewer (docs/build/S152): an approved AI skill reviews each task of this step and approves or rejects it instead of a person when it is confident and the autonomy allows; otherwise the task stays with people and shows the suggestion. The skill must be a classify or recommend skill with the labels (or outcomes) approve and reject. Not combined with several approvers, a list of items or fields that must be filled in when approving. The workspace AI policy can lower the autonomy, never raise it. When AI decides, the outputs are decision, reason (the AI rationale), decidedBy = ai-reviewer, decidedAt and aiReview. */
+                        aiReviewer?: {
+                            skill: {
+                                /** @description Key of the shared AI skill. */
+                                key: components["schemas"]["key"];
+                                /** @description Approved version of the skill. */
+                                version: number;
+                            };
+                            /**
+                             * @description suggest (default): the AI suggestion is shown and a person decides; autoWithReview: AI decides when confident and a sample is reviewed afterwards; auto: AI decides when confident, only for answers the workspace policy marks low-risk.
+                             * @enum {unknown}
+                             */
+                            autonomy?: "suggest" | "autoWithReview" | "auto";
+                            /** @description Calibrated confidence below which a person decides. Default 0.85. */
+                            minConfidence?: number;
+                            /** @description autoWithReview only: share of AI decisions queued for after-the-fact review (default 10). */
+                            reviewSamplePercent?: number;
+                            /** @description Skill input name to request or earlier-step value. Only mapped values are sent. */
+                            inputs: {
+                                [key: string]: components["schemas"]["fieldRef"];
+                            };
+                            /** @description Per input: how the value is minimized before it is sent, on top of the field classification policy. */
+                            redaction?: {
+                                [key: string]: "maskCardNumbersAndEmails" | "maskDigits" | "hash" | "drop";
+                            };
+                        };
                         /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
                         fieldAccess?: {
                             [key: string]: "hidden" | "readOnly" | "editable" | "required";

@@ -19429,6 +19429,35 @@ components:
                 reassign: { $ref: '#/components/schemas/ActionAvailability' }
                 priority: { $ref: '#/components/schemas/ActionAvailability' }
             completedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+            aiReview:
+              description: 'S152: the AI review of this task when its step has an AI reviewer; null otherwise.'
+              oneOf: [{ $ref: '#/components/schemas/TaskAiReview' }, { type: 'null' }]
+    TaskAiReview:
+      description: >-
+        The AI review of a task (S152). status pending: AI is working; suggested: AI answered and a person decides;
+        decided: the AI reviewer decided the task; unavailable: AI could not answer and a person decides; cancelled: a
+        person decided first. heldFor says why an answer did not decide the task. recommendation, rationale and reasons
+        are null (or empty) for callers who may not see the request data.
+      type: object
+      required: [status, skillKey, skillVersion, autonomy, decidedByAi, reasons]
+      properties:
+        status: { type: string, enum: [pending, suggested, decided, unavailable, cancelled] }
+        skillKey: { $ref: '#/components/schemas/Key' }
+        skillVersion: { type: integer, minimum: 1 }
+        autonomy: { type: string, enum: [suggest, autoWithReview, auto] }
+        effectiveAutonomy: { type: [string, 'null'], enum: [suggest, autoWithReview, auto, null] }
+        recommendation: { type: [string, 'null'], description: 'The AI answer, usually approve or reject' }
+        confidence: { type: [number, 'null'] }
+        threshold: { type: [number, 'null'] }
+        rationale: { type: [string, 'null'], description: 'Recommend skills: the rationale of the answer' }
+        reasons: { type: array, items: { type: string }, description: 'Classify skills: the reasons of the answer' }
+        decidedByAi: { type: boolean }
+        heldFor:
+          type: [string, 'null']
+          enum: [suggest, lowConfidence, notADecision, adverseRegulated, notLowRisk, notPromoted, drift, policy, personActed, null]
+        unavailableReason: { type: [string, 'null'] }
+        decisionId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'The AI decision record (run AI decisions)' }
+        humanOutcome: { type: [string, 'null'], enum: [accepted, overridden, null] }
     TaskPriorityRequest:
       type: object
       additionalProperties: false
@@ -19472,6 +19501,18 @@ components:
         comment: { type: [string, 'null'] }
         decidedAt: { $ref: '#/components/schemas/Timestamp' }
         policyFlags: { type: array, items: { type: string } }
+        decidedBy:
+          description: 'S152: person, or aiReviewer when the AI reviewer of the step decided (actor is then the fixed reference AI reviewer, not a person).'
+          type: string
+          enum: [person, aiReviewer]
+        aiReview:
+          description: 'S152: the skill and AI decision record behind an AI reviewer decision.'
+          type: object
+          required: [skillKey, skillVersion, decisionId]
+          properties:
+            skillKey: { $ref: '#/components/schemas/Key' }
+            skillVersion: { type: integer, minimum: 1 }
+            decisionId: { $ref: '#/components/schemas/Uuid' }
     ReassignRequest:
       type: object
       additionalProperties: false

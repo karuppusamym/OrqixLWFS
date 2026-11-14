@@ -67,6 +67,14 @@ public class AiTaskJobs {
         this.platformMetrics = platformMetrics;
     }
 
+    private AiReviews reviews;
+
+    /** S152: settles review jobs (the AI reviewer of an approval). */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setReviews(@org.springframework.context.annotation.Lazy AiReviews reviews) {
+        this.reviews = reviews;
+    }
+
     public AiTaskJobs(JdbcClient jdbc, Json json, Clock clock, RunStore runs, RunEvents events, ReleaseQueries releases,
             EngineCommands engine, AiTaskPort ai, AiTaskQueueSettings settings) {
         this.jdbc = jdbc;
@@ -130,6 +138,79 @@ public class AiTaskJobs {
                 Map.of("skill", spec.skillKey(), "skillVersion", spec.skillVersion(), "autonomy", spec.autonomy()));
     }
 
+    /**
+     * Queues the AI review of an approval task (S152) in the transaction that created the task. The approval stays the
+     * current step; the job remembers the task and the version it saw, so a person who acts on the task first keeps
+     * it. Review jobs of earlier visits whose task is no longer open are ended first.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void publishReview(Spec spec, String taskId, int taskVersion) {
+        List<UUID> stale = jdbc.sql("""
+                UPDATE ai_task_job j SET status = 'cancelled', lease_owner = NULL, lease_expires_at = NULL,
+                       input_cipher = NULL, last_error = 'The task ended before the AI review finished.', ended_at = :now
+                WHERE j.run_id = :run AND j.node_id = :node AND j.purpose = 'review' AND j.status IN ('available', 'running')
+                  AND NOT EXISTS (SELECT 1 FROM task_context t WHERE t.workspace_id = j.workspace_id
+                                  AND t.engine_task_id = j.task_id AND t.status = 'open')
+                RETURNING j.id
+                """).param("now", Sql.ts(clock.instant())).param("run", spec.runId()).param("node", spec.nodeId())
+                .query(UUID.class).list();
+        stale.forEach(id -> ai.endTurns(spec.workspaceId(), id));
+        boolean open = jdbc.sql("""
+                SELECT count(*) FROM ai_task_job WHERE run_id = :run AND node_id = :node AND status IN ('available', 'running')
+                """).param("run", spec.runId()).param("node", spec.nodeId()).query(Integer.class).single() > 0;
+        if (open) {
+            return;
+        }
+        int occurrence = jdbc.sql("SELECT count(*) + 1 FROM ai_task_job WHERE run_id = :run AND node_id = :node")
+                .param("run", spec.runId()).param("node", spec.nodeId()).query(Integer.class).single();
+        UUID id = Ids.newId();
+        Instant now = clock.instant();
+        ObjectNode payload = json.object();
+        payload.put("mode", spec.mode()).put("autonomy", spec.autonomy())
+                .put("minConfidence", spec.minConfidence()).put("reviewSamplePercent", spec.reviewSamplePercent())
+                .put("hasNeedsReview", true).put("review", true);
+        if (spec.contentHash() != null) {
+            payload.put("contentHash", spec.contentHash());
+        }
+        ObjectNode redaction = payload.putObject("redaction");
+        spec.redaction().forEach(redaction::put);
+        payload.set("input", spec.input());
+        String sealed = ai.seal(spec.workspaceId(), id, payload);
+        jdbc.sql("""
+                INSERT INTO ai_task_job (id, workspace_id, run_id, node_id, occurrence, skill_key, skill_version, mode,
+                    autonomy, status, deadline_at, input_key_id, input_cipher, available_at, created_at, purpose, task_id,
+                    task_version)
+                VALUES (:id, :ws, :run, :node, :occ, :skill, :version, :mode, :autonomy, 'available', :deadline, :key,
+                        :cipher, :now, :now, 'review', :task, :taskVersion)
+                """).param("id", id).param("mode", spec.mode()).param("autonomy", spec.autonomy())
+                .param("ws", spec.workspaceId()).param("run", spec.runId()).param("node", spec.nodeId())
+                .param("occ", occurrence).param("skill", spec.skillKey()).param("version", spec.skillVersion())
+                .param("deadline", Sql.ts(now.plus(settings.maxTimeout())))
+                .param("key", sealed.substring(0, sealed.indexOf(':'))).param("cipher", sealed)
+                .param("now", Sql.ts(now)).param("task", taskId).param("taskVersion", taskVersion).update();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("taskId", taskId);
+        data.put("skill", spec.skillKey());
+        data.put("skillVersion", spec.skillVersion());
+        data.put("autonomy", spec.autonomy());
+        events.append(spec.workspaceId(), spec.runId(), "AI_REVIEW_QUEUED", spec.nodeId(), null, data);
+    }
+
+    /** A person decided the task first (S152): its open review job ends and its turn state goes. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean cancelReview(UUID workspaceId, String taskId) {
+        List<UUID> ids = jdbc.sql("""
+                UPDATE ai_task_job SET status = 'cancelled', lease_owner = NULL, lease_expires_at = NULL,
+                       input_cipher = NULL, last_error = 'A person decided the task before the AI review finished.',
+                       ended_at = :now
+                WHERE workspace_id = :ws AND task_id = :task AND purpose = 'review' AND status IN ('available', 'running')
+                RETURNING id
+                """).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("task", taskId)
+                .query(UUID.class).list();
+        ids.forEach(id -> ai.endTurns(workspaceId, id));
+        return !ids.isEmpty();
+    }
+
     /** The engine cancelled the step (section, error, request ended): the job ends and its turn state goes. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void cancelOpen(UUID workspaceId, UUID runId, String nodeId) {
@@ -191,17 +272,18 @@ public class AiTaskJobs {
                 payload.path("mode").asString(), payload.path("autonomy").asString(),
                 payload.path("minConfidence").decimalValue(), payload.path("reviewSamplePercent").asInt(10), redaction,
                 payload.path("hasNeedsReview").asBoolean(false),
-                input.isObject() ? (ObjectNode) input : json.object());
+                input.isObject() ? (ObjectNode) input : json.object(), payload.path("review").asBoolean(false));
     }
 
     /** A request without the sealed input (it could not be opened): enough to end the task on aiUnavailable. */
     public AiTaskPort.TaskRequest requestWithoutInput(Claimed job) {
         RunStore.RunRow run = runs.find(job.workspaceId(), job.runId()).orElseThrow();
-        return jdbc.sql("SELECT skill_key, skill_version, mode, autonomy FROM ai_task_job WHERE id = :id")
+        return jdbc.sql("SELECT skill_key, skill_version, mode, autonomy, purpose FROM ai_task_job WHERE id = :id")
                 .param("id", job.id()).query((rs, n) -> new AiTaskPort.TaskRequest(job.workspaceId(), job.runId(),
                         run.workflowId(), run.initiator(), job.nodeId(), job.occurrence(), job.id(),
                         rs.getString("skill_key"), rs.getInt("skill_version"), null, rs.getString("mode"),
-                        rs.getString("autonomy"), new BigDecimal("0.8"), 10, Map.of(), false, json.object())).single();
+                        rs.getString("autonomy"), new BigDecimal("0.8"), 10, Map.of(), false, json.object(),
+                        "review".equals(rs.getString("purpose")))).single();
     }
 
     /**
@@ -213,6 +295,12 @@ public class AiTaskJobs {
      */
     @Transactional
     public boolean complete(Claimed job, AiTaskPort.Outcome outcome) {
+        var review = jdbc.sql("SELECT task_id, task_version FROM ai_task_job WHERE id = :id AND purpose = 'review'")
+                .param("id", job.id()).query((rs, n) -> Map.entry(rs.getString("task_id"), rs.getInt("task_version")))
+                .optional();
+        if (review.isPresent()) {
+            return completeReview(job, outcome, review.get().getKey(), review.get().getValue());
+        }
         boolean held = jdbc.sql("""
                 SELECT count(*) FROM ai_task_job WHERE id = :id AND fence = :fence AND status = 'running'
                 """).param("id", job.id()).param("fence", job.fence()).query(Integer.class).single() == 1;
@@ -250,6 +338,32 @@ public class AiTaskJobs {
         variables.put(ProcessData.stepVariable(job.nodeId()), json.write(outcome.outputs()));
         variables.put(routeVariable(job.nodeId()), outcome.route());
         engine.resumeChild(run.engineProcessInstanceId(), job.nodeId(), variables);
+        return true;
+    }
+
+    /**
+     * Completes a review job (S152). The request is locked first, like a person's decision, so the two are serialized:
+     * whoever comes second finds the task decided (a person) or the job ended (the AI reviewer).
+     */
+    private boolean completeReview(Claimed job, AiTaskPort.Outcome outcome, String taskId, int taskVersion) {
+        RunStore.RunRow run = runs.lock(job.workspaceId(), job.runId()).orElseThrow();
+        boolean held = jdbc.sql("""
+                SELECT count(*) FROM ai_task_job WHERE id = :id AND fence = :fence AND status = 'running'
+                """).param("id", job.id()).param("fence", job.fence()).query(Integer.class).single() == 1;
+        if (!held) {
+            return false;
+        }
+        jdbc.sql("SELECT id FROM ai_task_job WHERE id = :id FOR UPDATE").param("id", job.id()).query(UUID.class).single();
+        Instant now = clock.instant();
+        UUID decisionId = ai.record(outcome.record());
+        jdbc.sql("UPDATE ai_decision_record SET task_id = :task WHERE id = :id AND workspace_id = :ws")
+                .param("task", taskId).param("id", decisionId).param("ws", job.workspaceId()).update();
+        if (!run.isActive()) {
+            end(job, "cancelled", "The request ended before the AI review finished.", now);
+            return false;
+        }
+        end(job, "completed", null, now);
+        reviews.settle(job.workspaceId(), job.runId(), job.nodeId(), taskId, taskVersion, decisionId, outcome);
         return true;
     }
 

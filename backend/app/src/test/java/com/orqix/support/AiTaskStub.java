@@ -30,7 +30,9 @@ import tools.jackson.databind.node.ObjectNode;
  * Gemini ({@code /gemini/v1beta/models/{m}:generateContent}). Answers are deterministic and follow keywords in the
  * request data, so AI jobs running concurrently need no scripted queue:
  * <ul>
- * <li>a classify answer is {@code unusual} when the data says "urgent", otherwise {@code routine};</li>
+ * <li>a classify answer is {@code unusual} when the data says "urgent", otherwise {@code routine}; a skill with the
+ * labels approve and reject (S152 AI reviewer) answers {@code reject} when the data says "decline", otherwise
+ * {@code approve}; a recommend answer follows the same rule;</li>
  * <li>"unsure" answers with confidence 0.4, otherwise 0.95;</li>
  * <li>"outage" answers 503; "garbled" answers invalid JSON on the first call of a conversation (the repair works);</li>
  * <li>"slow" answers after 1.5 seconds; "ignore previous instructions" is answered like any other data.</li>
@@ -235,7 +237,13 @@ public final class AiTaskStub {
         if (all.contains("one extract task") && all.contains("recognized text of a")) {
             return document(confidence);
         }
-        if (all.contains("one classify task")) {
+        if (all.contains("one classify task") && all.contains("\"approve\"") && all.contains("\"reject\"")) {
+            // S152: an AI reviewer skill answers approve, or reject when the request says "decline".
+            String label = data.contains("decline") ? "reject" : "approve";
+            a.put("label", label).put("confidence", confidence);
+            a.putArray("reasons").addObject().put("text", "reject".equals(label) ? "The vendor is on the decline list."
+                    : "Within the cost center budget.").put("quote", "");
+        } else if (all.contains("one classify task")) {
             String label = data.contains("urgent") ? "unusual" : "routine";
             a.put("label", label).put("confidence", confidence);
             String quote = data.contains("urgent") ? "urgent" : "Replacement";
@@ -250,7 +258,10 @@ public final class AiTaskStub {
             a.put("score", data.contains("urgent") ? 80 : 20).put("confidence", confidence);
             a.putArray("reasons").addObject().put("text", "Risk factors.").put("quote", "");
         } else if (all.contains("one recommend task")) {
-            a.put("recommendation", "approve").put("rationale", "Within budget.").put("confidence", confidence);
+            boolean decline = data.contains("decline");
+            a.put("recommendation", decline ? "reject" : "approve")
+                    .put("rationale", decline ? "Over budget for this cost center." : "Within budget.")
+                    .put("confidence", confidence);
         } else {
             a.put("summary", "A short summary.").put("confidence", confidence);
         }

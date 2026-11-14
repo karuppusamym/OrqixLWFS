@@ -825,6 +825,26 @@ public sealed record TaskDecision
     public DateTimeOffset DecidedAt { get; init; }
     [JsonPropertyName("policyFlags")]
     public List<string> PolicyFlags { get; init; } = default!;
+    /// <summary>S152: person, or aiReviewer when the AI reviewer of the step decided (actor is then the fixed reference AI reviewer, not a person).</summary>
+    [JsonPropertyName("decidedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DecidedBy { get; init; }
+    /// <summary>S152: the skill and AI decision record behind an AI reviewer decision.</summary>
+    [JsonPropertyName("aiReview")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TaskDecisionAiReview? AiReview { get; init; }
+}
+
+/// <summary>S152: the skill and AI decision record behind an AI reviewer decision.</summary>
+/// <remarks>Unknown fields are ignored; new optional properties may be added in a minor SDK release.</remarks>
+public sealed record TaskDecisionAiReview
+{
+    [JsonPropertyName("skillKey")]
+    public string SkillKey { get; init; } = default!;
+    [JsonPropertyName("skillVersion")]
+    public long SkillVersion { get; init; }
+    [JsonPropertyName("decisionId")]
+    public string DecisionId { get; init; } = default!;
 }
 
 /// <summary>components.schemas.TaskSummary</summary>

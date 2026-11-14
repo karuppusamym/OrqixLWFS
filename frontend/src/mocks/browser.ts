@@ -7,6 +7,7 @@ import { createHandlers, getCurrentUser, setCurrentUser } from './handlers'
 import { createViewHandlers, resetMockViews, restoreMockViews, snapshotMockViews } from './views'
 import { createCaseHandlers, resetMockCases, restoreMockCases, snapshotMockCases } from './cases'
 import { createPromotionHandlers } from './promotion'
+import { createPlatformHandlers } from './platform'
 import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
 import { createConnectionHealthHandlers } from './connectionHealth'
@@ -95,7 +96,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createBulkHandlers(getCurrentUser), ...createAlertsRetentionHandlers(getCurrentUser), ...createGitBundleHandlers(getCurrentUser), ...createSecurityHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
+  const handlers = [...createFeatureHandlers(getCurrentUser), ...createMcpServerHandlers(getCurrentUser), ...createTaskActionHandlers(getCurrentUser), ...createBulkHandlers(getCurrentUser), ...createAlertsRetentionHandlers(getCurrentUser), ...createGitBundleHandlers(getCurrentUser), ...createSecurityHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createConnectionHealthHandlers(getCurrentUser), ...createCallbackHandlers(), ...createGuestFormHandlers(), ...createPackageHandlers(), ...createAgentWriteHandlers(), ...createAgentToolHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createPlatformHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)

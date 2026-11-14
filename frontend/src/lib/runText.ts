@@ -41,6 +41,10 @@ export function stepOwnerText(step: CurrentStep, lifecycle?: Run['lifecycle']): 
   if (step.kind === 'wait') return step.dueAt ? `Waiting until ${formatUtcDateTime(step.dueAt)}: ${step.label}` : `Waiting until the timer finishes: ${step.label}`
   if (step.kind === 'child') return `Waiting for the child request: ${step.label}`
   if (step.kind === 'external') return `Waiting for an outside worker: ${step.label}`
+  // Steps that are not approvals must not fall through to "Waiting for an approver".
+  if (step.kind === 'waitForSignal') return `Waiting for a signal: ${step.label}`
+  if (step.kind === 'generateDocument') return `${step.label} is in progress`
+  if (step.kind === 'compensate') return `Undoing earlier steps: ${step.label}`
   if (step.assignee) return `${step.assignee.displayName} is working on: ${step.label}`
   const group = step.candidateGroup ? humanize(step.candidateGroup) : 'an approver'
   return `Waiting for ${group}: ${step.label}`

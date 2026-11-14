@@ -1,4 +1,4 @@
-import { Activity, AppWindow, BarChart3, Bot, BrainCircuit, ClipboardCheck, ShieldCheck, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Table2, Workflow, X } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bot, BrainCircuit, Building2, ClipboardCheck, ShieldCheck, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Plus, Rocket, Send, Settings, Shapes, Table2, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -224,7 +224,8 @@ function TopBar({ menuButton, homeHref }: { menuButton: ReactNode; homeHref: str
   const switchTo = (id: string) => {
     if (id !== workspace.id) navigate(`/w/${id}`)
   }
-  const other = me.workspaces.length > 1
+  // Platform administrators always get the menu: it is where they create another workspace.
+  const other = me.workspaces.length > 1 || me.platformAdmin
   const barButton = 'text-topbar-foreground hover:bg-topbar-hover active:bg-topbar-hover'
   return (
     <header className="focus-on-bar sticky top-0 z-30 bg-topbar text-topbar-foreground">
@@ -255,6 +256,16 @@ function TopBar({ menuButton, homeHref }: { menuButton: ReactNode; homeHref: str
                     {w.id === workspace.id ? <Check className="size-4" aria-label="Current workspace" /> : null}
                   </DropdownMenuItem>
                 ))}
+                {me.platformAdmin ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link to="/admin?new=workspace" className="text-foreground no-underline">
+                        <Plus className="size-4" aria-hidden="true" /> Create a workspace
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
@@ -282,6 +293,13 @@ function TopBar({ menuButton, homeHref }: { menuButton: ReactNode; homeHref: str
                 My requests
               </Link>
             </DropdownMenuItem>
+            {me.platformAdmin ? (
+              <DropdownMenuItem asChild>
+                <Link to="/admin" className="text-foreground no-underline">
+                  <Building2 className="size-4" aria-hidden="true" /> Platform administration
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onSelect={() => signOut()}>
               <LogOut className="size-4" aria-hidden="true" /> Sign out
             </DropdownMenuItem>

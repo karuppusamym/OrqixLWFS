@@ -13,6 +13,19 @@ type S = components['schemas']
 // Identity
 export const getMe = () => call(api.GET('/me'))
 
+// Platform administration (platform.admin only): organizations and workspaces
+export const listOrganizations = (query: { cursor?: string; limit?: number } = {}) =>
+  call(api.GET('/admin/organizations', { params: { query } }))
+
+export const createOrganization = (body: { key: string; name: string }) =>
+  call(api.POST('/admin/organizations', { body }))
+
+export const listWorkspacesAdmin = (query: { cursor?: string; limit?: number } = {}) =>
+  call(api.GET('/admin/workspaces', { params: { query } }))
+
+export const createWorkspace = (body: S['CreateWorkspaceRequest']) =>
+  call(api.POST('/admin/workspaces', { body }))
+
 // Templates and workflows
 export const listTemplates = (ws: string) => call(api.GET('/workspaces/{workspaceId}/templates', { params: { path: { workspaceId: ws } } }))
 
@@ -473,6 +486,15 @@ export const repairRun = (ws: string, runId: string, body: S['RepairRunRequest']
 export const resumeRun = (ws: string, runId: string, body: S['ResumeRunRequest'], idempotencyKey: string) =>
   call(
     api.POST('/workspaces/{workspaceId}/runs/{runId}/resume', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+/** Deliver a named signal to the steps and handlers of this one request that wait for it now (S59). */
+export const sendRunSignal = (ws: string, runId: string, body: S['SendRunSignalRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/signals', {
       params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
       body,
     }),

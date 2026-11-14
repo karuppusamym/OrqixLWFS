@@ -78,6 +78,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
   switch (event.type) {
     case 'TASK_CREATED':
     case 'WAIT_STARTED':
+    case 'SIGNAL_WAIT_STARTED':
     case 'CHILD_STARTED':
       return 'waiting'
     case 'TASK_DECIDED':
@@ -192,6 +193,19 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       if (message) return `${label}: the message ${message} arrived${event.data.buffered === true ? ' (it was received before the wait started)' : ''}`
       return `${label}: the wait finished`
     }
+    case 'SIGNAL_WAIT_STARTED':
+      return `${label}: waiting for the signal ${str(event.data.signal) ?? ''}`.trimEnd()
+    case 'SIGNAL_SENT': {
+      const signal = str(event.data.signal) ?? ''
+      // An operator sends it with a reason; a "Send a signal" step sends it without an actor.
+      if (event.actor) {
+        const reason = str(event.data.reason)
+        return `${actorName(event, ctx)} sent the signal ${signal}${reason ? `: ${reason}` : ''}`
+      }
+      return `${label}: sent the signal ${signal}`.trimEnd()
+    }
+    case 'SIGNAL_RECEIVED':
+      return `${label}: the signal ${str(event.data.signal) ?? ''} arrived`.replace('  ', ' ')
     case 'MESSAGE_DISCARDED':
       return `${label}: a message ${str(event.data.message)} that arrived earlier did not fit and was ignored`
     case 'GUEST_LINK_SENT':

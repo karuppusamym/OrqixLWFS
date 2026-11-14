@@ -36,6 +36,30 @@ export function reaches(def: Definition, from: string, to: string): boolean {
   return reachableFrom(def, from).has(to)
 }
 
+/** Steps reachable from `from` on forward paths: bounded "send back to" paths (S138) are left out. */
+export function forwardReachableFrom(def: Definition, from: string): Set<string> {
+  const seen = new Set<string>()
+  const stack = [from]
+  while (stack.length > 0) {
+    const current = stack.pop() as string
+    for (const t of outgoing(def, current)) {
+      if (!t.maxTraversals && !seen.has(t.to)) {
+        seen.add(t.to)
+        stack.push(t.to)
+      }
+    }
+  }
+  return seen
+}
+
+/**
+ * Steps a path leaving `from` may send the request back to (S138): `from` itself and every step that leads to it on
+ * forward paths, except the request form.
+ */
+export function sendBackTargets(def: Definition, from: string): WorkflowNode[] {
+  return def.nodes.filter((n) => n.type !== 'start' && (n.id === from || forwardReachableFrom(def, n.id).has(from)))
+}
+
 /** Connecting `from` -> `to` would close a loop (workflows are acyclic in v0). */
 export function wouldCreateCycle(def: Definition, from: string, to: string): boolean {
   return from === to || reaches(def, to, from)

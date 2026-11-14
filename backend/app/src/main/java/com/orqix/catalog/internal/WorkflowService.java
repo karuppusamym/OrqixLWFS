@@ -106,7 +106,9 @@ public class WorkflowService {
             String folder, String owner, String cursor, Integer limit) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         boolean reader = access.has(Permission.WORKFLOW_READ);
-        if (!reader && !access.canStartAnything()) {
+        // CG-I01 (S151): workflows readable through folder or workflow grants only (empty for workspace-wide readers).
+        Set<UUID> scopedRead = reader ? Set.of() : access.workflowsWith(Permission.WORKFLOW_READ);
+        if (!reader && scopedRead.isEmpty() && !access.canStartAnything()) {
             throw policy.deny(workspaceId, caller.subjectId(), "workflow.read", "listWorkflows", false,
                     new ApiException(ProblemCode.FORBIDDEN));
         }
@@ -119,18 +121,30 @@ public class WorkflowService {
         if ((folder != null && !unfiled && folderId == null) || (owner != null && ownerId == null)) {
             throw ApiException.malformed("folder must be a folder ID or none, and owner a subject ID.");
         }
-        if ((folder != null || owner != null) && !reader) {
+        if ((folder != null || owner != null) && !reader && scopedRead.isEmpty()) {
             throw policy.deny(workspaceId, caller.subjectId(), "workflow.read", "listWorkflows", false,
                     new ApiException(ProblemCode.FORBIDDEN));
         }
         int size = Limits.of(limit);
         String filterKey = "listWorkflows|" + workspaceId + "|" + (q == null ? "" : q) + "|" + startable + "|" + reader
-                + "|" + (folder == null ? "" : folder) + "|" + (owner == null ? "" : owner);
+                + "|" + (folder == null ? "" : folder) + "|" + (owner == null ? "" : owner)
+                + (scopedRead.isEmpty() ? "" : "|scoped");
         CursorCodec.Position after = cursors.decode(cursor, filterKey);
         // Starters without workflow.read only see workflows they may start now (active release + grant).
-        boolean onlyStartable = startable || !reader;
+        boolean onlyStartable = startable || (!reader && scopedRead.isEmpty());
         Set<UUID> restrictTo = onlyStartable && !access.has(Permission.WORKFLOW_START) ? access.workflowStartGrants() : null;
+        if (!onlyStartable && !reader) {
+            // Scoped readers see the workflows they may read plus the ones they may start (S151).
+            Set<UUID> union = new java.util.HashSet<>(scopedRead);
+            union.addAll(access.workflowStartGrants());
+            restrictTo = union;
+        }
         List<CatalogStore.WorkflowRow> rows = store.workflows(workspaceId, q, onlyStartable, restrictTo, folderId, unfiled, ownerId, after, size + 1);
+        if (!onlyStartable && !reader) {
+            // A start grant alone shows a workflow only while it can be started (as for starters without read).
+            Set<UUID> readable = scopedRead;
+            rows = rows.stream().filter(r -> readable.contains(r.id()) || canStart(access, r)).toList();
+        }
         Page.Result<CatalogStore.WorkflowRow> page = Page.of(rows, size,
                 row -> new CursorCodec.Position(row.createdAt(), row.id().toString()), cursors, filterKey);
         Map<UUID, String> names = subjects.displayNames(page.items().stream().map(CatalogStore.WorkflowRow::owner).toList());
@@ -166,6 +180,42 @@ public class WorkflowService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("key", request.key());
         metadata.put("templateId", request.templateId());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.created",
+                "workflow", id.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+        return view(store.workflow(workspaceId, id).orElseThrow(), access);
+    }
+
+    /**
+     * Creates a workflow from a starter workflow of an installed connector package (S133). The template's package
+     * connections are pinned to the versions installed in this workspace; the new draft is then edited and published
+     * like any other.
+     */
+    @Transactional
+    public CatalogDtos.WorkflowView createFromPackageTemplate(Caller caller, UUID workspaceId, UUID packageVersionId,
+            String templateKey, CatalogDtos.CreateWorkflowRequest request,
+            com.orqix.integration.ConnectorPackageTemplates packages) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        com.orqix.integration.ConnectorPackageTemplates.Starter starter = packages
+                .starterWorkflow(workspaceId, packageVersionId, templateKey).orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.WORKFLOW_EDIT, "createWorkflowFromPackageTemplate", false);
+        if (request.templateId() != null) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A package starter workflow takes no templateId.")
+                    .withFieldErrors(List.of(new ApiException.FieldError("/templateId", "not", "Leave templateId out")));
+        }
+        ObjectNode definition = (ObjectNode) json.parse(starter.definitionJson());
+        definition.put("workflowKey", request.key());
+        definition.put("name", request.name());
+        if (request.description() != null) {
+            ((ObjectNode) definition.withObjectProperty("metadata")).put("description", request.description());
+        }
+        UUID id = Ids.newId();
+        if (!store.insertWorkflow(id, workspaceId, request.key(), request.name(), request.description(), caller.subjectId())) {
+            throw new ApiException(ProblemCode.DUPLICATE_KEY, "A workflow with this key already exists.");
+        }
+        store.insertDraft(workspaceId, id, 1, json.write(definition), "0.1", caller.subjectId());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("key", request.key());
+        metadata.put("templateId", "package:" + starter.packageId() + "@" + starter.packageVersion() + "/" + templateKey);
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.created",
                 "workflow", id.toString(), AuditWriter.Outcome.SUCCESS, metadata));
         return view(store.workflow(workspaceId, id).orElseThrow(), access);
@@ -284,13 +334,36 @@ public class WorkflowService {
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED).withFieldErrors(errors);
         }
+        // S146: a table with formula entries is evaluated with the types the compiler checked them with.
+        String types = null;
+        boolean formulas = false;
+        for (JsonNode table : json.parse(draft.definitionJson()).path("decisions")) {
+            if (decisionKey.equals(table.path("key").asString(null))) {
+                try {
+                    formulas = com.orqix.compiler.DecisionTables.usesExpressions(json.write(table));
+                } catch (IllegalArgumentException malformed) {
+                    formulas = false;
+                }
+            }
+        }
+        if (formulas) {
+            types = compiler.decisionTypes(draft.definitionJson(),
+                    contexts.create(visible.access().workspace(), draft.definitionJson()), decisionKey);
+            values.putIfAbsent("$now", java.time.Instant.now());
+        }
         try {
-            DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values);
+            DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values, types);
             Map<String, Object> output = new LinkedHashMap<>();
             result.output().forEach((k, v) -> output.put(k, v instanceof BigDecimal d ? d : v));
             return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output,
-                    result.matchedRows());
+                    result.matchedRows(), formulas ? result.expressions().stream()
+                            .map(e -> new CatalogDtos.DecisionExpressionEntry(e.row(), e.term(), e.kind(), e.target(),
+                                    e.expression(), e.value())).toList() : null);
         } catch (IllegalArgumentException e) {
+            if (formulas) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/values", "type", e.getMessage())));
+            }
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
                     .withFieldErrors(List.of(new ApiException.FieldError("/values", "type",
                             "A tested field is missing or has the wrong type")));
@@ -304,7 +377,8 @@ public class WorkflowService {
 
     /** Loads the workflow by (workspace, id); 404 unless the caller may read workflows or start this one. */
     Visible visible(Caller caller, UUID workspaceId, UUID workflowId, String operationId) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        // CG-I01 (S151): workspace-wide permissions plus the grants on this workflow (directly or through its folder).
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId).onWorkflow(workflowId);
         CatalogStore.WorkflowRow workflow = store.workflow(workspaceId, workflowId).orElseThrow(ApiException::notFound);
         if (!access.has(Permission.WORKFLOW_READ) && !canStart(access, workflow)
                 && !access.has(Permission.WORKFLOW_EDIT) && !access.has(Permission.WORKFLOW_PUBLISH)) {
@@ -332,7 +406,7 @@ public class WorkflowService {
                         row.activeDraftRevision());
         return new CatalogDtos.WorkflowView(row.id(), row.key(), row.name(), row.description(),
                 subjects.ref(row.owner(), names), row.draftRevision(), active, canStart(access, row), row.updatedAt(),
-                null, null, null, access.has(Permission.WORKFLOW_READ) ? row.folderId() : null);
+                null, null, null, access.hasOnWorkflow(Permission.WORKFLOW_READ, row.id()) ? row.folderId() : null);
     }
 
     private CatalogDtos.WorkflowDraft draftView(CatalogStore.DraftRow draft) {

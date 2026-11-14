@@ -39,6 +39,25 @@ public class TaskService {
     public record Decided(RuntimeDtos.TaskDecision decision, boolean replayed) {
     }
 
+    /**
+     * A decision of the AI reviewer of the step (S152).
+     *
+     * @param action     approve or reject
+     * @param reason     the AI rationale (never blank: a rejection needs a reason)
+     * @param decisionId the AI decision record
+     */
+    public record AgentDecision(String action, String reason, UUID decisionId, String skillKey, int skillVersion,
+            java.math.BigDecimal confidence, java.math.BigDecimal threshold, boolean reviewSampled) {
+    }
+
+    private AiReviews aiReviews;
+
+    /** S152: the AI reviewer of approval steps (setter: the reviewer decides through this service). */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAiReviews(@org.springframework.context.annotation.Lazy AiReviews aiReviews) {
+        this.aiReviews = aiReviews;
+    }
+
     private final PolicyService policy;
     private final SubjectService subjects;
     private final TaskStore tasks;
@@ -270,6 +289,11 @@ public class TaskService {
         if (decisionId == null) {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task was already decided.");
         }
+        if (aiReviews != null) {
+            // S152: an AI review still running ends; an AI suggestion gets this decision as its human outcome.
+            aiReviews.personDecided(workspaceId, task.runId(), taskId, request.action(), blankToNull(request.reason()),
+                    caller.subjectId());
+        }
         ObjectNode output = json.object();
         output.put("decision", reject ? "rejected" : "approved");
         if (!blank(request.reason())) {
@@ -339,6 +363,96 @@ public class TaskService {
         metrics.taskDecided(request.action());
         TaskQueries.DecisionRow decision = taskQueries.decision(workspaceId, decisionId).orElseThrow();
         return new Decided(views.decision(decision, task.label(), names(decision)), false);
+    }
+
+    /**
+     * The AI reviewer of the step decides the task (S152). Same invariants as a person's decision: the task is open, the
+     * request is not suspended and not with its requester, and the task is still at the version the review saw (a
+     * person who claimed, corrected or was assigned it keeps it). One transaction with the job's completion; the
+     * request is locked first, so a person deciding at the same time is serialized and nobody decides twice. The AI
+     * reviewer is no person: its decision is never a self-approval and never counts for separation of duties.
+     *
+     * @return false when the task is no longer the AI reviewer's to decide (nothing changed)
+     * @throws EngineCommands.EngineConflictException when the engine is busy (the worker retries the completion)
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public boolean decideAsAgent(UUID workspaceId, String taskId, int expectedVersion, AgentDecision decision) {
+        TaskStore.TaskRow snapshot = tasks.find(workspaceId, taskId).orElse(null);
+        if (snapshot == null) {
+            return false;
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, snapshot.runId()).orElse(null);
+        TaskStore.TaskRow task = tasks.lock(workspaceId, taskId).orElse(null);
+        if (run == null || task == null || !task.isOpen() || task.version() != expectedVersion
+                || suspensions.isSuspended(workspaceId, task.runId()) || sendBackOpen(workspaceId, taskId)
+                || tasks.item(workspaceId, taskId).isPresent()) {
+            return false;
+        }
+        JsonNode node = releases.require(workspaceId, run.releaseId()).node(task.nodeId());
+        StepForm stepForm = StepForm.of(node);
+        boolean reject = "reject".equals(decision.action());
+        boolean fieldsNeeded = !stepForm.required().isEmpty()
+                || stepForm.capture() != null && !stepForm.capture().path("required").isEmpty();
+        if (!reject && fieldsNeeded || !List.of("approve", "reject").contains(decision.action())) {
+            return false; // fields only a person can fill in (publishing refuses such steps)
+        }
+        if (!tasks.bumpVersion(workspaceId, taskId, expectedVersion)) {
+            return false;
+        }
+        Instant now = clock.instant();
+        UUID decisionId = taskQueries.insertAgentDecision(workspaceId, taskId, task.runId(), task.nodeId(),
+                decision.action(), decision.reason(), now, decision.decisionId(), decision.skillKey(),
+                decision.skillVersion());
+        if (decisionId == null) {
+            return false;
+        }
+        ObjectNode output = json.object();
+        output.put("decision", reject ? "rejected" : "approved");
+        output.put("reason", decision.reason());
+        output.put("decidedBy", "ai-reviewer");
+        output.put("decidedAt", now.toString());
+        ObjectNode review = output.putObject("aiReview");
+        review.put("skill", decision.skillKey()).put("version", decision.skillVersion());
+        if (decision.confidence() != null) {
+            review.put("confidence", decision.confidence());
+        }
+        if (decision.threshold() != null) {
+            review.put("threshold", decision.threshold());
+        }
+        review.put("decisionId", decision.decisionId().toString());
+        tasks.end(workspaceId, taskId, "completed", now);
+        runs.mutate(workspaceId, task.runId(), m -> {
+            m.removeStep(task.nodeId());
+            m.settle();
+        });
+        Map<String, Object> decided = new LinkedHashMap<>();
+        decided.put("action", decision.action());
+        decided.put("decidedBy", "aiReviewer");
+        decided.put("skill", decision.skillKey());
+        decided.put("skillVersion", decision.skillVersion());
+        decided.put("confidence", decision.confidence());
+        decided.put("reviewSampled", decision.reviewSampled());
+        events.append(workspaceId, task.runId(), "TASK_DECIDED_BY_AI", task.nodeId(), null, decided);
+        engine.complete(taskId, Map.of(ProcessData.stepVariable(task.nodeId()), json.write(output)), null);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("taskId", taskId);
+        metadata.put("nodeId", task.nodeId());
+        metadata.put("action", decision.action());
+        metadata.put("skillKey", decision.skillKey());
+        metadata.put("skillVersion", decision.skillVersion());
+        metadata.put("confidence", decision.confidence());
+        metadata.put("threshold", decision.threshold());
+        metadata.put("aiDecisionId", decision.decisionId().toString());
+        metadata.put("reviewSampled", decision.reviewSampled());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.AGENT, null, "task.decided-by-ai", "task",
+                taskId, AuditWriter.Outcome.SUCCESS, metadata));
+        metrics.taskDecided(decision.action());
+        return true;
+    }
+
+    /** @return true when the task exists and is open */
+    boolean isOpen(UUID workspaceId, String taskId) {
+        return tasks.find(workspaceId, taskId).map(TaskStore.TaskRow::isOpen).orElse(false);
     }
 
     /**
@@ -536,7 +650,7 @@ public class TaskService {
         boolean candidate = access.groupKeys().contains(task.candidateGroupKey()) && hasSkills(access,task) && access.has(Permission.TASK_ACT);
         boolean visible = access.has(Permission.RUN_READ) || me.equals(task.assignee()) || candidate
                 || taskQueries.decisionForTask(task.workspaceId(), task.taskId())
-                        .map(d -> d.actor().equals(me)).orElse(false);
+                        .map(d -> me.equals(d.actor())).orElse(false);
         if (!visible) {
             throw ApiException.notFound();
         }
@@ -591,6 +705,48 @@ public class TaskService {
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
+    /**
+     * CG-T04/CG-T01 (S141): the person rebuilt from the groups stored at their latest login, exactly as delegation and
+     * dispatch see them. Empty for an unknown or disabled person.
+     */
+    java.util.Optional<Caller> storedCaller(UUID subjectId) {
+        SubjectService.Subject subject = subjects.find(subjectId).orElse(null);
+        if (subject == null || subject.disabled()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new Caller(subjectId, subject.displayName(), subject.email(), subject.issuer(),
+                subject.externalSubject(), subjects.storedGroups(subjectId), false));
+    }
+
+    /** Known, enabled people who can see the workspace and belong to the group (stored groups), at most {@code max}. */
+    List<SubjectService.Subject> groupMembers(UUID workspaceId, String groupKey, int max) {
+        List<SubjectService.Subject> members = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (members.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            WorkspaceAccess access = policy.freshAccess(other, workspaceId).filter(WorkspaceAccess::visible).orElse(null);
+            if (access != null && policy.groupKeys(workspaceId, subject.id(), other.groups()).contains(groupKey)) {
+                members.add(subject);
+            }
+        }
+        return members;
+    }
+
+    /** Known, enabled people holding {@code run.operate} in the workspace, at most {@code max}. */
+    List<SubjectService.Subject> operators(UUID workspaceId, int max) {
+        List<SubjectService.Subject> found = new ArrayList<>();
+        for (SubjectService.Subject subject : subjects.knownSubjects(TaskDispatcher.MAX_CANDIDATES)) {
+            if (found.size() >= max) break;
+            Caller other = storedCaller(subject.id()).orElse(null);
+            if (other == null) continue;
+            if (policy.freshAccess(other, workspaceId).filter(a -> a.visible() && a.has(Permission.RUN_OPERATE)).isPresent()) {
+                found.add(subject);
+            }
+        }
+        return found;
+    }
+
     RuntimeDtos.TaskDetail detail(VisibleTask visible) {
         TaskStore.TaskRow task = visible.task();
         RunStore.RunRow run = visible.run();
@@ -606,7 +762,8 @@ public class TaskService {
         RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
         JsonNode node = release.node(task.nodeId());
         StepForm stepForm = StepForm.of(node);
-        JsonNode input = participant ? run.input() : json.object();
+        // CG-I05 (S151): personal and sensitive answers are masked; only the audited reveal returns them.
+        JsonNode input = participant ? com.orqix.compiler.FieldClassification.mask(run.input(), release.inputSchema()) : json.object();
         if (participant && stepForm.access().containsValue("hidden") && input instanceof ObjectNode full) {
             // S123: a field hidden on this step is left out of the task view.
             ObjectNode shown = full.deepCopy();
@@ -631,8 +788,9 @@ public class TaskService {
                 historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run), taskQueries.openSendBack(task.workspaceId(), task.taskId()).orElse(null),
                         stepForm.access(), stepForm.capture()),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
-                own == null ? null : views.ref(own.actor(), names),
-                node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"));
+                own == null ? null : views.actor(own, names),
+                node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"),
+                aiReviews == null ? null : aiReviews.view(task.workspaceId(), task.taskId(), own, participant).orElse(null));
     }
 
     /** The request fields the caller may correct on this open task now: the holder of the task, or an operator who can see the data. */
@@ -732,14 +890,21 @@ public class TaskService {
         tools.jackson.databind.node.ObjectNode after = json.object();
         for (var change : changes.entrySet()) {
             JsonNode value = change.getValue();
+            boolean hidden = com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), change.getKey());
+            if (hidden && com.orqix.compiler.FieldClassification.isMask(value)) {
+                // CG-I05 (S151): the masked text sent back unchanged keeps the stored answer.
+                continue;
+            }
             if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,
                         "Only the fields this step lets you correct can change, and only to a single value.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/changes/" + change.getKey(), "enum",
                                 "Not a field this step lets you correct")));
             }
-            before.set(change.getKey(), corrected.path(change.getKey()));
-            after.set(change.getKey(), value);
+            // The request timeline never holds a protected answer (CG-I05, S151).
+            before.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK)
+                    : corrected.path(change.getKey()));
+            after.set(change.getKey(), hidden ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK) : value);
             corrected.set(change.getKey(), value);
         }
         if (corrected.equals(run.input())) {
@@ -753,7 +918,8 @@ public class TaskService {
                             .map(e -> new ApiException.FieldError("/changes" + e.pointer(), e.code(), e.message())).toList());
         }
         try {
-            engine.correctInput(run.engineProcessInstanceId(), json.write(corrected), caller.subjectId());
+            engine.correctInput(run.engineProcessInstanceId(), runs.engineInput(workspaceId, run.releaseId(), corrected),
+                    caller.subjectId());
         } catch (EngineCommands.EngineConflictException e) {
             throw new ApiException(ProblemCode.RUN_BUSY, "The request is busy; try again shortly.");
         }
@@ -817,7 +983,7 @@ public class TaskService {
     }
 
     private Map<UUID, String> names(TaskQueries.DecisionRow decision) {
-        return subjects.displayNames(List.of(decision.actor()));
+        return decision.actor() == null ? Map.of() : subjects.displayNames(List.of(decision.actor()));
     }
 
     private static boolean blank(String value) {

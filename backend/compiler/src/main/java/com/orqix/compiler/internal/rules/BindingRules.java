@@ -9,6 +9,7 @@ import java.util.Set;
 
 import com.orqix.compiler.CompileContext.GroupInfo;
 import com.orqix.compiler.internal.json.JsonPointers;
+import com.orqix.compiler.internal.model.Enums.FieldKind;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Dependency;
 import com.orqix.compiler.internal.rules.Connections.Pinned;
@@ -133,7 +134,7 @@ final class BindingRules {
                 continue;
             }
             boolean scalar = switch (field.type()) {
-                case STRING, NUMBER, INTEGER, BOOLEAN, DATE -> true;
+                case STRING, NUMBER, INTEGER, BOOLEAN, DATE, TIME, DATETIME -> true;
                 case ARRAY, OBJECT, ATTACHMENT -> false;
             };
             if (!scalar) {
@@ -161,6 +162,8 @@ final class BindingRules {
             case Node.GenerateDocument g -> refs.addAll(g.inputMapping().values());
             case Node.ExternalTask e -> refs.addAll(e.inputMapping().values());
             case Node.SendAdapter a -> refs.addAll(a.inputMapping().values());
+            case Node.AiTask ai -> refs.addAll(ai.inputMapping().values());
+            case Node.Calculate c -> refs.addAll(ExpressionRules.calculateRefs(rc, c));
             case Node.StartWorkflow s -> {
                 refs.addAll(s.inputMapping().values());
                 if (s.forEach() != null) refs.add(s.forEach().itemsRef());
@@ -173,16 +176,27 @@ final class BindingRules {
                 var table = rc.types().table(d.decisionRef());
                 if (table != null) {
                     table.rows().forEach(row -> conditionRefs(row.when(), refs));
+                    // S146: the fields named inside expression entries are read too.
+                    if (table.usesExpressions()) {
+                        ExpressionRules.decisionExpressions(rc, table).forEach(e -> refs.addAll(e.fieldRefs()));
+                    }
                 }
             }
             default -> {
             }
         }
         for (com.orqix.compiler.internal.model.WorkflowDefinition.Transition t : rc.leaving(node)) {
-            if (t.condition() != null) {
+            if (t.condition() != null && t.condition().isExpression()) {
+                refs.addAll(ExpressionRules.refs(rc, node, t.condition().expression(), java.util.Map.of()));
+            } else if (t.condition() != null) {
                 conditionRefs(t.condition(), refs);
             }
         }
+        // = mappings (S137) read the fields their expressions name.
+        new java.util.ArrayList<>(refs).stream().filter(r -> r.startsWith("=")).forEach(r -> {
+            refs.remove(r);
+            refs.addAll(ExpressionRules.refs(rc, node, r.substring(1), java.util.Map.of()));
+        });
         return refs;
     }
 
@@ -199,6 +213,16 @@ final class BindingRules {
         for (Node n : rc.definition().nodes()) {
             if (n instanceof Node.Http http) {
                 usedKeys.add(http.connectionRef());
+            } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
+                usedKeys.add(m.fallbackCheck().connectionRef()); // S129 safety-net check
+            } else if (n instanceof Node.WaitForFirst w) {
+                usedKeys.addAll(checkConnections(w)); // S139 check branches
+            }
+        }
+        // S140: lookup fields of the request form use their connection too.
+        for (var field : rc.definition().inputSchema().properties().values()) {
+            if (field.json() != null && field.json().path("lookup").path("connection").isString()) {
+                usedKeys.add(field.json().get("lookup").get("connection").asString());
             }
         }
         for (Dependency dup : rc.connections().duplicates()) {
@@ -233,6 +257,9 @@ final class BindingRules {
         // Field references are checked even when the connection cannot be resolved.
         for (Map.Entry<String, String> e : n.inputMapping().entrySet()) {
             String path = JsonPointers.append(n.configPath("inputMapping"), e.getKey());
+            if (e.getValue().startsWith("=")) {
+                continue; // an Orqix expression (S137), checked by ExpressionRules
+            }
             Resolution res = rc.types().resolve(e.getValue());
             if (res instanceof Unknown u) {
                 rc.issues().blocker("WF_FIELDREF_UNKNOWN", path, n.id(), null, u.message());
@@ -267,6 +294,25 @@ final class BindingRules {
                         + " has no request field " + q(e.getKey()) + ".");
                 continue;
             }
+            if (e.getKey().equals(Connections.reconcileKeyField(operation))) {
+                rc.issues().blocker("WF_MAPPING_RECONCILE_KEY", path, n.id(), null, "The operation " + op
+                        + " fills " + q(e.getKey()) + " itself, so it can find the record after an uncertain"
+                        + " outcome. Remove this mapping.");
+                continue;
+            }
+            if (target.kind() == FieldKind.ATTACHMENT) {
+                // A file input (v1 multipart or binary body) accepts only a file of this request.
+                if (rc.types().resolve(e.getValue()) instanceof Resolved r && r.type().kind() != FieldKind.ATTACHMENT) {
+                    rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(e.getKey())
+                            + " expects a file of this request, but the source is " + r.type().kind().description()
+                            + " (" + e.getValue() + ").");
+                }
+                continue;
+            }
+            if (e.getValue().startsWith("=")) {
+                expressionMapping(rc, n, e.getKey(), e.getValue().substring(1), target, path);
+                continue;
+            }
             if (rc.types().resolve(e.getValue()) instanceof Resolved r) {
                 String problem = FieldTypes.incompatibility(r.type(), target.kind(), target.enumValues());
                 if (problem != null) {
@@ -276,7 +322,7 @@ final class BindingRules {
             }
         }
         for (String required : Connections.requiredRequestFields(operation)) {
-            if (!n.inputMapping().containsKey(required)) {
+            if (!n.inputMapping().containsKey(required) && !required.equals(Connections.reconcileKeyField(operation))) {
                 rc.issues().blocker("WF_MAPPING_MISSING_REQUIRED", n.configPath("inputMapping"), n.id(), null,
                         "The operation " + op + " requires " + q(required) + ", but " + n.label()
                                 + " does not provide it.");
@@ -284,11 +330,14 @@ final class BindingRules {
         }
         for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
             String path = JsonPointers.append(n.configPath("resultMapping"), e.getKey());
-            Connections.ResponseScalar scalar = Connections.responseScalar(operation, e.getValue());
+            if (Connections.responseList(operation, e.getValue()) != null) {
+                continue;
+            }
+            Connections.ResponseScalar scalar = rc.connections().result(n.connectionRef(), n.operation(), e.getValue());
             if (scalar == null) {
                 rc.issues().blocker("WF_RESULT_POINTER_UNKNOWN", path, n.id(), null, "The response of " + op
                         + " has no single value at " + e.getValue() + ".");
-            } else if (!scalar.allRequired()) {
+            } else if (!scalar.allRequired() && !(n.polls() && n.poll().optional(e.getKey()))) {
                 rc.issues().warning("WF_RESULT_OPTIONAL", path, n.id(), null, "The response of " + op
                         + " does not always contain " + e.getValue() + ". If it is missing, " + q(n)
                         + " stops and the request needs attention.");
@@ -302,9 +351,49 @@ final class BindingRules {
         }
     }
 
+    /** An = mapping (S137): the expression's type must fit the request field. */
+    private static void expressionMapping(RuleContext rc, Node.Http n, String key, String source,
+            Connections.RequestField target, String path) {
+        com.orqix.compiler.expr.Expression e;
+        try {
+            e = com.orqix.compiler.expr.Expression.compile(source, ExpressionRules.scope(rc, n, Map.of()));
+        } catch (com.orqix.compiler.expr.ExpressionException problem) {
+            return; // reported by ExpressionRules
+        }
+        FieldKind kind = switch (e.type()) {
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.NUMBER -> FieldKind.NUMBER;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.STRING -> FieldKind.STRING;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.BOOLEAN -> FieldKind.BOOLEAN;
+            case com.orqix.compiler.expr.ExprType.Scalar s when s == com.orqix.compiler.expr.ExprType.Scalar.DATE -> FieldKind.DATE;
+            case com.orqix.compiler.expr.ExprType.Scalar s -> null;
+            default -> FieldKind.ARRAY;
+        };
+        if (kind == null) return;
+        if (kind == FieldKind.ARRAY) {
+            rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(key)
+                    + " takes a single value, but this expression gives " + e.type().describe() + ".");
+            return;
+        }
+        String problem = FieldTypes.incompatibility(new FieldTypes.FieldType(kind, null, false, null, null),
+                target.kind(), target.enumValues());
+        if (problem != null) {
+            rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(key) + " "
+                    + problem + " (the expression gives " + e.type().describe() + ").");
+        }
+    }
+
     /** @return connection keys of http nodes, in canonical node order without repeats */
     static List<String> usedConnections(RuleContext rc) {
-        return rc.definition().nodes().stream().filter(n -> n instanceof Node.Http)
-                .map(n -> ((Node.Http) n).connectionRef()).distinct().toList();
+        return rc.definition().nodes().stream().flatMap(n -> n instanceof Node.Http h ? java.util.stream.Stream.of(h.connectionRef())
+                : n instanceof Node.WaitForMessage m && m.fallbackCheck() != null
+                        ? java.util.stream.Stream.of(m.fallbackCheck().connectionRef())
+                : n instanceof Node.WaitForFirst w ? checkConnections(w).stream() : java.util.stream.Stream.<String>empty())
+                .distinct().toList();
+    }
+
+    /** @return the connections the check branches of a "Wait for the first" step call (S139), in branch order */
+    static List<String> checkConnections(Node.WaitForFirst w) {
+        return w.branches().stream().filter(b -> b.check() != null).map(b -> b.check().connectionRef()).distinct()
+                .toList();
     }
 }

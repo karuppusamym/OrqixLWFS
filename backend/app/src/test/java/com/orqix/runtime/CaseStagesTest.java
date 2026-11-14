@@ -192,11 +192,19 @@ class CaseStagesTest extends RuntimeTestBase {
         assertThat(stages.detectOverdue()).isZero();
         for (UUID r : List.of(run, other)) {
             assertThat(stageEvents(r).stream().filter(e -> e.equals("STAGE_OVERDUE:intake")).count()).isEqualTo(1);
-            // The initiator and the operator are told once each.
-            assertThat(notifications(PURCHASING, r, "workflowMessage")).isEqualTo(2);
-            assertThat(jdbc.sql("""
+            // The initiator and every operator the workspace knows are told once each. The number of operators depends
+            // on which test users the shared database has seen (S143 adds a second operator), so count recipients.
+            int recipients = jdbc.sql("""
                     SELECT count(DISTINCT recipient_subject_id) FROM notification
                     WHERE run_id = :r AND dedup_key LIKE 'stage-overdue:%'
+                    """).param("r", r).query(Integer.class).single();
+            assertThat(recipients).isGreaterThanOrEqualTo(2);
+            assertThat(notifications(PURCHASING, r, "workflowMessage")).isEqualTo(recipients);
+            assertThat(jdbc.sql("""
+                    SELECT count(*) FROM notification n JOIN subject s ON s.id = n.recipient_subject_id
+                    WHERE n.run_id = :r AND n.dedup_key LIKE 'stage-overdue:%'
+                      AND (n.recipient_subject_id = (SELECT initiator_subject_id FROM workflow_run WHERE id = :r)
+                           OR s.external_subject = 'kc-olga.operator')
                     """).param("r", r).query(Integer.class).single()).isEqualTo(2);
         }
         String message = api("rhea.requester").get("/workspaces/{ws}/me/notifications", PURCHASING).body()

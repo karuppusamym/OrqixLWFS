@@ -16,24 +16,35 @@ import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
 /**
  * Failure routes (S32). A "Call a system" step may have one optional {@code failed} path:
  * a business reaction to a known permanent HTTP rejection or invalid read-only response. Child workflow failure
- * paths are blocked; exhausted retries retain operator incidents. The failure facts {@code failureKind}, {@code failureHttpStatus} and {@code failureMessage} are
+ * paths are blocked; exhausted retries retain operator incidents. The failure facts {@code failureKind}, {@code failureHttpStatus}, {@code failureMessage} and {@code failureCode} (the
+ * business code of a mapped error of a v1 connection, S130, else empty) are
  * outputs of that step that exist only on the failed path. An outcome that may have happened (unknown) never takes
  * the path. Also checks the {@code compensates} annotation of a call step.
  */
 final class FailureRules {
 
     /** Reserved output names of a step with a failed path, in documentation order. */
-    static final List<String> FAILURE_OUTPUTS = List.of("failureKind", "failureHttpStatus", "failureMessage");
+    static final List<String> FAILURE_OUTPUTS = List.of("failureKind", "failureHttpStatus", "failureMessage",
+            "failureCode");
 
     /** Values of {@code failureKind}. */
-    static final Set<String> FAILURE_KINDS = Set.of("rejected", "invalidResponse");
+    static final Set<String> FAILURE_KINDS = Set.of("rejected", "invalidResponse", "remoteFailed");
+
+    /**
+     * Failure facts of "Work by an external worker" on its failed path (S132, CG-E10): {@code failureKind} is always
+     * {@code workerError}, {@code failureCode} the worker's business error code and {@code failureMessage} its message.
+     */
+    static final List<String> EXTERNAL_FAILURE_OUTPUTS = List.of("failureKind", "failureCode", "failureMessage");
+
+    /** Values of {@code failureKind} for an external worker. */
+    static final Set<String> EXTERNAL_FAILURE_KINDS = Set.of("workerError");
 
     private FailureRules() {
     }
 
     /** @return true for the step kinds that can have a failed path */
     static boolean canFail(Node n) {
-        return n.kind() == NodeKind.HTTP || n.kind() == NodeKind.START_WORKFLOW;
+        return n.kind() == NodeKind.HTTP || n.kind() == NodeKind.START_WORKFLOW || n.kind() == NodeKind.EXTERNAL_TASK;
     }
 
     /** @return the {@code failed} transition leaving the step, or null */
@@ -52,6 +63,11 @@ final class FailureRules {
 
     static boolean isFailureOutput(String key) {
         return FAILURE_OUTPUTS.contains(key);
+    }
+
+    /** As {@link #isFailureOutput(String)}, with the failure facts of the producing step's kind. */
+    static boolean isFailureOutput(Node producer, String key) {
+        return producer instanceof Node.ExternalTask ? EXTERNAL_FAILURE_OUTPUTS.contains(key) : isFailureOutput(key);
     }
 
     /**
@@ -118,6 +134,15 @@ final class FailureRules {
                     rc.issues().blocker("WF_FAILURE_ROUTE_OUTPUT_CLASH", h.configPath("resultMapping") + "/" + reserved,
                             n.id(), failed.id(), q(n) + " has a path for when it fails, so the result name "
                                     + q(reserved) + " is reserved for the failure details. Use another name.");
+                }
+            }
+        }
+        if (n instanceof Node.ExternalTask e) {
+            for (String reserved : EXTERNAL_FAILURE_OUTPUTS) {
+                if (e.field(reserved) != null) {
+                    rc.issues().blocker("WF_FAILURE_ROUTE_OUTPUT_CLASH", e.configPath("result"), n.id(), failed.id(),
+                            q(n) + " has a path for when it fails, so the result name " + q(reserved)
+                                    + " is reserved for the failure details. Use another name.");
                 }
             }
         }

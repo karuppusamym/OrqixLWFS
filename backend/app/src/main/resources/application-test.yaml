@@ -43,12 +43,40 @@ logging:
     org.springframework.boot.autoconfigure: warn
 
 orqix:
+  # S139: tests run reminders and schedules explicitly (WaitReminders.runDue, Schedules.runDue).
+  reminders:
+    tick: 1h
+  schedules:
+    tick: 1h
+  # S144: tests evaluate alerts and run retention sweeps explicitly (AlertEngine, RetentionSweeper, HistoryPurger).
+  alerts:
+    poll-delay: 1h
+  retention:
+    scheduled: false
+    history-delay: 1h
+    filesystem:
+      root: ${java.io.tmpdir}/orqix-test-run-archives
+  mcp:
+    # S136 tests: the elicitation stream gives up quickly when a test never answers.
+    elicitation-wait: 10s
+  analytics:
+    # S145: tests run the projector and the KPI evaluation explicitly (AnalyticsProjector.run, KpiEvaluator.evaluate).
+    projector-tick: 1h
+    kpi-check-interval: 1h
   insights:
     # Tests read figures right after changing data, so no figure is kept (production default: 30 seconds).
     cache-ttl-seconds: 0
   identity:
     bootstrap-platform-admin-groups: orqix-platform-admins
     end-session-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/logout
+  protection:
+    field-keys:
+      # Tests only: a fixed key so sensitive answers can be stored without a mounted secret.
+      dev-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    audit-signing:
+      dev-ephemeral: true
+    audit-chain:
+      scheduled: false
   secrets:
     dir: ${java.io.tmpdir}/orqix-test-secrets
   ai:

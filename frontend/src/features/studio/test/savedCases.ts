@@ -126,10 +126,38 @@ export function exportCases(workflowKey: string, cases: SavedCase[]): string {
   return JSON.stringify({ format: FORMAT, version: 2, workflow: workflowKey, cases }, null, 2)
 }
 
+/** CG-Q01 (S148): the test file format shared with the publication suite and CI (contracts/workflow-test-suite-v1.schema.json). */
+export const TEST_FILE_FORMAT = 'orqix.workflow-tests/v1'
+
+/** A case as the server runs it (WorkflowTestCase). */
+export interface ServerCase {
+  id: string
+  name: string
+  input: Record<string, unknown>
+  scenario?: unknown
+  expect: string
+  assertions?: unknown
+}
+
+/**
+ * A test file: every case as the server runs it, plus `studio`, the Test tab's own state of the case (answers as typed,
+ * step settings), so importing it here again restores the case exactly. The server and CI ignore `studio`.
+ */
+export function exportTestFile(workflowKey: string, entries: Array<{ saved: SavedCase; server: ServerCase }>, coverageMinimum?: Record<string, number>): string {
+  return JSON.stringify({
+    schemaVersion: TEST_FILE_FORMAT,
+    ...(workflowKey ? { workflowKey } : {}),
+    ...(coverageMinimum && Object.keys(coverageMinimum).length > 0 ? { coverageMinimum } : {}),
+    cases: entries.map(({ saved, server }) => ({ ...server, studio: { version: saved.version, values: saved.values, settings: saved.settings, assertions: saved.assertions } })),
+  }, null, 2)
+}
+
 export interface ImportResult {
   cases: SavedCase[]
   /** Cases left out because they were malformed or the list was full. */
   skipped: number
+  /** Cases of a test file without the Test tab's state (written by hand or by the CLI): they run in CI, not here. */
+  withoutStudio?: number
   error: string | null
 }
 
@@ -141,6 +169,23 @@ export function importCases(text: string, current: SavedCase[]): ImportResult {
     parsed = JSON.parse(text)
   } catch {
     return { cases: current, skipped: 0, error: 'This file is not a list of saved test cases.' }
+  }
+  if (isRecord(parsed) && parsed.schemaVersion === TEST_FILE_FORMAT) {
+    if (!Array.isArray(parsed.cases) || parsed.cases.length > 100) return { cases: current, skipped: 0, error: 'This test file has no list of cases.' }
+    let cases = current
+    let skipped = 0
+    let withoutStudio = 0
+    for (const raw of parsed.cases) {
+      if (!isRecord(raw) || !isRecord(raw.studio)) {
+        withoutStudio++
+        continue
+      }
+      const c = parseCase({ ...raw.studio, name: raw.name, expect: raw.expect })
+      const merged = c ? upsertCase(cases, { ...c, id: `case-${Math.random().toString(36).slice(2, 10)}` }) : null
+      if (merged) cases = merged
+      else skipped++
+    }
+    return { cases, skipped, withoutStudio, error: null }
   }
   const list = isRecord(parsed) && parsed.format === FORMAT && (parsed.version === undefined || parsed.version === 1 || parsed.version === 2) && Array.isArray(parsed.cases) && parsed.cases.length <= 100 ? parsed.cases : null
   if (!list) return { cases: current, skipped: 0, error: 'This file is not a list of saved test cases.' }

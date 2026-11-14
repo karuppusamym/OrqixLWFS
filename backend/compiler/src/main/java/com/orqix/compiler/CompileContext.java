@@ -28,6 +28,9 @@ import tools.jackson.databind.JsonNode;
  *                                  S85); an agent step whose
  *                                  operation declares write tools can only be published when each is approved for
  *                                  this workflow. Empty means none is approved (fail closed).
+ * @param aiSkills                  AI skills of the workspace by key (CG-A01, S134): their versions with approval status,
+ *                                  contract facts and whether a passing evaluation run on the pinned profile exists
+ *                                  within 30 days (the publish gate)
  */
 public record CompileContext(
         boolean selfApprovalAllowed,
@@ -36,15 +39,76 @@ public record CompileContext(
         Set<String> enabledConnectionBindings,
         Map<String, WorkflowInfo> workflows,
         Map<String, AdapterInfo> adapters,
-        Set<WriteToolApproval> writeToolApprovals) {
+        Set<WriteToolApproval> writeToolApprovals,
+        Map<String, AiSkillInfo> aiSkills) {
 
     public CompileContext {
+        aiSkills = aiSkills == null ? Map.of() : Map.copyOf(aiSkills);
         groups = Map.copyOf(groups);
         connectionVersions = List.copyOf(connectionVersions);
         enabledConnectionBindings = Set.copyOf(enabledConnectionBindings);
         workflows = workflows == null ? Map.of() : Map.copyOf(workflows);
         adapters = adapters == null ? Map.of() : Map.copyOf(adapters);
         writeToolApprovals = writeToolApprovals == null ? Set.of() : Set.copyOf(writeToolApprovals);
+    }
+
+    /** A context without AI skills (no AI task can be published). */
+    public CompileContext(boolean selfApprovalAllowed, Map<String, GroupInfo> groups,
+            List<ConnectionVersion> connectionVersions, Set<String> enabledConnectionBindings,
+            Map<String, WorkflowInfo> workflows, Map<String, AdapterInfo> adapters,
+            Set<WriteToolApproval> writeToolApprovals) {
+        this(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows, adapters,
+                writeToolApprovals, Map.of());
+    }
+
+    /** @return the same facts with these AI skills */
+    public CompileContext withAiSkills(Map<String, AiSkillInfo> skills) {
+        return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
+                adapters, writeToolApprovals, skills);
+    }
+
+    /** An AI skill (S134) and its versions by number. */
+    public record AiSkillInfo(String key, String name, Map<Integer, AiSkillVersion> versions) {
+        public AiSkillInfo {
+            versions = Map.copyOf(versions);
+        }
+
+        /** @return the highest approved version, or null */
+        public AiSkillVersion latestApproved() {
+            return versions.values().stream().filter(AiSkillVersion::approved)
+                    .max(java.util.Comparator.comparingInt(AiSkillVersion::version)).orElse(null);
+        }
+    }
+
+    /**
+     * One version of an AI skill. {@code inputs} and {@code fields} map a name to its scalar type ({@code string},
+     * {@code number}, {@code integer}, {@code boolean}, {@code date}); {@code requiredInputs} and {@code requiredFields}
+     * name the required ones.
+     *
+     * @param status              {@code draft}, {@code submitted}, {@code approved} or {@code retired}
+     * @param passingEvaluationId the passing evaluation run on {@code modelProfile} within 30 days, or null
+     * @param autonomyCeiling     the highest autonomy this version has been promoted to ({@code suggest} until promoted)
+     */
+    public record AiSkillVersion(int version, String status, String mode, String contentHash, String modelProfile,
+            List<AiLabel> labels, Map<String, String> inputs, Set<String> requiredInputs, Map<String, String> fields,
+            Set<String> requiredFields, java.math.BigDecimal scoreMin, java.math.BigDecimal scoreMax,
+            List<String> outcomes, String passingEvaluationId, String autonomyCeiling) {
+        public AiSkillVersion {
+            labels = List.copyOf(labels);
+            inputs = Map.copyOf(inputs);
+            requiredInputs = Set.copyOf(requiredInputs);
+            fields = Map.copyOf(fields);
+            requiredFields = Set.copyOf(requiredFields);
+            outcomes = List.copyOf(outcomes);
+        }
+
+        public boolean approved() {
+            return "approved".equals(status);
+        }
+    }
+
+    /** A classify label: {@code risk} is low, medium or high; {@code adverse} needs a person in regulated workspaces. */
+    public record AiLabel(String key, String risk, boolean adverse) {
     }
 
     /** A context without write-tool approvals (no agent write tool can be published). */
@@ -62,7 +126,7 @@ public record CompileContext(
     /** @return the same facts with these write-tool approvals */
     public CompileContext withWriteToolApprovals(Set<WriteToolApproval> approvals) {
         return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
-                adapters, approvals);
+                adapters, approvals, aiSkills);
     }
 
     /** A context without adapter facts (no adapter step can be valid). */
@@ -75,7 +139,7 @@ public record CompileContext(
     /** @return the same facts with these adapters */
     public CompileContext withAdapters(Map<String, AdapterInfo> adapters) {
         return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
-                adapters, writeToolApprovals);
+                adapters, writeToolApprovals, aiSkills);
     }
 
     /**

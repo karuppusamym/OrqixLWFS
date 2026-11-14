@@ -3,6 +3,7 @@ import type { components } from '@/api/schema'
 import { isRunParticipant, currentRelease, toRun } from './engine'
 import { getCurrentUser } from './handlers'
 import { buildRunPath } from './runPath'
+import { createAnalyticsHandlers } from './analytics'
 import { WORKSPACES, db, isMember, newId, permissionsOf, type MockRun } from './state'
 
 type S = components['schemas']
@@ -335,5 +336,7 @@ export function createInsightsHandlers(): HttpHandler[] {
     insights('summary'),
     insights('throughput'),
     insights('steps'),
+    // S145: the analytics read model (heatmaps, KPI targets, human work).
+    ...createAnalyticsHandlers(),
   ]
 }

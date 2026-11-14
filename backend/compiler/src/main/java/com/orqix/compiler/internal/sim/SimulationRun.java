@@ -82,6 +82,8 @@ final class SimulationRun {
     private final int depth;
     private final ValidationReport report;
     private final List<ValidationIssue> tolerated;
+    /** The compiler's analysis: the types expressions are checked against (S137). */
+    private final com.orqix.compiler.internal.rules.RuleContext analysis;
 
     private final Map<String, Map<String, Object>> steps = new HashMap<>();
     private final List<ObjectNode> trace = new ArrayList<>();
@@ -91,6 +93,12 @@ final class SimulationRun {
     private final List<ObjectNode> warnings = new ArrayList<>();
     private String lane;
     private Node endNode;
+    /** CG-E01 (S138): bounded loops, times each bounded path was taken and the visit number of each step. */
+    private final com.orqix.compiler.internal.model.Loops loops;
+    private final Map<String, Integer> traversals = new HashMap<>();
+    private final Map<String, Integer> occurrences = new HashMap<>();
+    /** CG-E06 (S138): the item a for-each step is running for (resolved for /input/<list>/* references). */
+    private JsonNode currentItem;
     /** Where a raised error continues (S59); consumed by the walk. */
     private Node jump;
     private ObjectNode attention;
@@ -102,6 +110,7 @@ final class SimulationRun {
         this.budget = budget;
         this.def = outcome.definition();
         this.graph = outcome.analysis().graph();
+        this.analysis = outcome.analysis();
         this.connections = outcome.analysis().connections();
         this.definitionJson = definitionJson;
         this.inputValues = input;
@@ -113,6 +122,7 @@ final class SimulationRun {
         this.depth = depth;
         this.report = report;
         this.tolerated = tolerated;
+        this.loops = new com.orqix.compiler.internal.model.Loops(def);
     }
 
     // ------------------------------------------------------------------ run
@@ -190,7 +200,17 @@ final class SimulationRun {
                 return Flow.ARRIVED;
             }
             visited.add(node.id());
-            Transition next = step(node);
+            int occurrence = occurrences.merge(node.id(), 1, Integer::sum);
+            int before = trace.size();
+            Transition next = def.execution().forEachOf(node.id()) != null ? forEach(node) : step(node);
+            next = bounded(node, next);
+            if (occurrence > 1) {
+                for (int i = before; i < trace.size(); i++) {
+                    if (node.id().equals(trace.get(i).path("stepId").asString(null))) {
+                        trace.get(i).put("occurrence", occurrence);
+                    }
+                }
+            }
             if (next == null && jump != null) {
                 // A raised error continues where its section or handler says (S59).
                 node = jump;
@@ -203,6 +223,110 @@ final class SimulationRun {
             taken.add(next.id());
             node = graph.node(next.to());
         }
+    }
+
+    /**
+     * A bounded loop path (CG-E01, S138): taken while it was taken fewer than maxTraversals times, then the step's
+     * limitReached path instead, as the generated guard does at runtime.
+     */
+    private Transition bounded(Node node, Transition next) {
+        com.orqix.compiler.internal.model.Loops.Loop loop = next == null ? null : loops.of(next);
+        if (loop == null) {
+            return next;
+        }
+        int used = traversals.getOrDefault(next.id(), 0);
+        ObjectNode d = F.objectNode();
+        d.put("maxTraversals", loop.maxTraversals());
+        if (used < loop.maxTraversals()) {
+            traversals.put(next.id(), used + 1);
+            d.put("traversal", used + 1);
+            Node to = graph.node(next.to());
+            add(node, Text.quote(node.label()) + " sends the request back to " + Text.quote(to.label()) + " (time "
+                    + (used + 1) + " of at most " + loop.maxTraversals() + ").", d, null, next);
+            return next;
+        }
+        d.put("limitReached", true);
+        d.put("traversal", used);
+        Transition limit = loop.limit();
+        add(node, Text.quote(node.label()) + " would send the request back again, but it already did so "
+                + loop.maxTraversals() + " time" + (loop.maxTraversals() == 1 ? "" : "s") + ": the limit is reached and"
+                + " the request continues on the limitReached path.", d, null, limit);
+        return limit;
+    }
+
+    /**
+     * A for-each step (CG-E06, S138): runs the step once per item of the request list (in item order; parallel items
+     * run in the same order in a test), stops early when the completion condition holds, and writes the collected
+     * outputs. A failure of one item takes the step's failed path, as at runtime.
+     */
+    private Transition forEach(Node node) {
+        com.orqix.compiler.internal.model.StepForEach f = def.execution().forEachOf(node.id());
+        JsonNode list = inputValues.path(f.itemsField());
+        List<JsonNode> items = new ArrayList<>();
+        list.forEach(items::add);
+        if (items.size() > f.maxItems()) {
+            stallWith(node, Text.quote(node.label()) + " can run for at most " + f.maxItems() + " items, but the"
+                    + " sample request has " + items.size() + ".", F.objectNode(), "TEST_FOR_EACH_LIMIT",
+                    "The list is longer than the step's limit.");
+            return null;
+        }
+        Map<String, List<Object>> collected = new java.util.TreeMap<>();
+        f.collect().keySet().forEach(k -> collected.put(k, new ArrayList<>()));
+        int completed = 0;
+        int succeeded = 0;
+        Transition failed = null;
+        for (int i = 0; i < items.size(); i++) {
+            if (f.target() > 0 && succeeded >= f.target()) {
+                break;
+            }
+            currentItem = items.get(i);
+            ObjectNode before = attention;
+            int at = trace.size();
+            Transition t = step(node);
+            for (int k = at; k < trace.size(); k++) {
+                trace.get(k).put("itemIndex", i);
+            }
+            currentItem = null;
+            if (attention != before) {
+                return null; // the item stalled; the request needs attention
+            }
+            if (t != null && t.on() == Route.FAILED) {
+                failed = t;
+                break;
+            }
+            Map<String, Object> out = steps.getOrDefault(node.id(), Map.of());
+            completed++;
+            if (!(node instanceof Node.AiTask) || "decided".equals(out.get("status"))) {
+                succeeded++;
+            }
+            for (Map.Entry<String, String> c : f.collect().entrySet()) {
+                collected.get(c.getKey()).add(out.get(c.getValue()));
+            }
+        }
+        for (List<Object> values : collected.values()) {
+            while (values.size() < items.size()) {
+                values.add(null);
+            }
+        }
+        if (failed != null) {
+            return failed;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(com.orqix.compiler.internal.model.StepForEach.ITEM_COUNT, java.math.BigDecimal.valueOf(items.size()));
+        out.put(com.orqix.compiler.internal.model.StepForEach.COMPLETED_COUNT, java.math.BigDecimal.valueOf(completed));
+        out.put(com.orqix.compiler.internal.model.StepForEach.STOPPED_EARLY, completed < items.size());
+        out.putAll(collected);
+        steps.put(node.id(), out);
+        Transition t = next(node, Route.NEXT);
+        ObjectNode d = F.objectNode();
+        d.put("items", items.size());
+        d.put("completed", completed);
+        d.put("succeeded", succeeded);
+        d.put("mode", f.parallel() ? "parallel" : "sequential");
+        add(node, Text.quote(node.label()) + " ran for " + completed + " of " + items.size() + " item"
+                + (items.size() == 1 ? "" : "s") + (completed < items.size() ? " and stopped early because enough"
+                + " items succeeded" : "") + ".", d, out, t);
+        return t;
     }
 
     /** @return the transition taken, or null when the run ended or stalled here */
@@ -237,6 +361,8 @@ final class SimulationRun {
             }
             case Node.ExternalTask n -> externalTask(n);
             case Node.SendAdapter n -> sendAdapter(n);
+            case Node.AiTask n -> aiTask(n);
+            case Node.Calculate n -> calculate(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -246,6 +372,7 @@ final class SimulationRun {
             }
             case Node.Wait n -> wait(n);
             case Node.WaitForMessage n -> waitForMessage(n);
+            case Node.WaitForFirst n -> waitForFirst(n);
             case Node.StartWorkflow n -> startWorkflow(n);
             case Node.RaiseError n -> raiseError(n);
             case Node.SendSignal n -> {
@@ -295,6 +422,11 @@ final class SimulationRun {
     private Transition approval(Node.Approval n) {
         JsonNode s = scenario.path("approvals").path(n.id());
         String choice = s.path("outcome").asString("approve");
+        if (s.path("outcomes").isArray() && !s.path("outcomes").isEmpty()) {
+            // S138: one outcome per visit of a step inside a loop; the last one repeats.
+            int visit = occurrences.getOrDefault(n.id(), 1);
+            choice = s.path("outcomes").get(Math.min(visit, s.path("outcomes").size()) - 1).asString("approve");
+        }
         if (!Set.of("approve", "reject", "timeout").contains(choice)) {
             throw new IllegalArgumentException("approvals." + n.id() + ".outcome must be approve, reject or timeout");
         }
@@ -450,6 +582,8 @@ final class SimulationRun {
             case INTEGER -> f.minimum() != null ? f.minimum().setScale(0, java.math.RoundingMode.CEILING).longValueExact() : 1L;
             case NUMBER -> f.minimum() != null ? f.minimum() : java.math.BigDecimal.ONE;
             case DATE -> f.formatMinimum() != null && f.formatMinimum().matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") ? f.formatMinimum() : "2026-01-01";
+            case TIME -> f.formatMinimum() != null ? f.formatMinimum() : "09:00";
+            case DATETIME -> f.formatMinimum() != null ? f.formatMinimum() : "2026-01-01T09:00:00Z";
             default -> f.enumValues() != null && !f.enumValues().isEmpty() ? f.enumValues().get(0)
                     : "Sample " + f.title().toLowerCase(java.util.Locale.ROOT);
         };
@@ -477,6 +611,9 @@ final class SimulationRun {
         java.time.LocalDate asOf = table.dated() ? context.today() : null;
         if (asOf != null) {
             d.put("asOf", asOf.toString());
+        }
+        if (table.usesExpressions()) {
+            return expressionDecision(n, table, d, asOf);
         }
         ArrayNode inputs = d.putArray("inputs");
         for (DecisionTable.Row row : table.rows()) {
@@ -585,6 +722,127 @@ final class SimulationRun {
         return t;
     }
 
+    /**
+     * A table with Orqix expression entries (S146): the engine's canonical evaluation with the compiler's types, every
+     * test's result per row ({@code expressions}) and the computed results ({@code outputExpressions}).
+     */
+    private Transition expressionDecision(Node.Decision n, DecisionTable table, ObjectNode d, java.time.LocalDate asOf) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        ArrayNode inputs = d.putArray("inputs");
+        for (String ref : com.orqix.compiler.internal.eval.ExpressionTable.fields(table)) {
+            Object v = resolve(ref);
+            values.put(ref, v);
+            ObjectNode in = inputs.addObject();
+            in.put("fieldRef", ref);
+            in.put("label", info(ref).label());
+            in.set("value", DefaultWorkflowSimulator.json(v));
+            in.put("shown", v == null ? "no value" : Text.value(v, info(ref).money()));
+        }
+        DecisionEvaluator.Result result;
+        try {
+            Map<String, Object> evaluated = new LinkedHashMap<>(values);
+            if (asOf != null) {
+                evaluated.put(com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.AS_OF, asOf);
+            }
+            evaluated.put(com.orqix.compiler.internal.eval.ExpressionTable.NOW, now(null));
+            result = com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.evaluate(table, evaluated,
+                    com.orqix.compiler.internal.rules.ExpressionRules.decisionTypes(analysis, table));
+        } catch (IllegalArgumentException e) {
+            String message = Text.quote(n.label()) + " stops: " + e.getMessage();
+            stallWith(n, message, d, "DECISION_FAILED", e.getMessage());
+            return null;
+        }
+        ArrayNode rows = d.putArray("rows");
+        for (DecisionTable.Row row : table.rows()) {
+            ObjectNode r = rows.addObject();
+            r.put("row", row.index() + 1);
+            r.put("condition", conditionText(row.when(), false, null));
+            if (row.effective() != null) {
+                r.put("effective", (row.effective().from() == null ? "until " : "from " + row.effective().from()
+                        + (row.effective().to() == null ? "" : " to ")) + (row.effective().to() == null ? ""
+                        : row.effective().to().toString()));
+            }
+            boolean any = row.when().isAny();
+            Boolean matched = !any;
+            ArrayNode tests = F.arrayNode();
+            List<Condition> terms = row.terms();
+            for (int i = 0; i < terms.size(); i++) {
+                Condition term = terms.get(i);
+                Boolean hit;
+                if (term.isExpression()) {
+                    final int at = i;
+                    Object value = result.expressions().stream().filter(e -> e.row() == row.index() && e.term() == at)
+                            .map(DecisionEvaluator.Entry::value).findFirst().orElse(null);
+                    hit = Boolean.TRUE.equals(value);
+                    ObjectNode t = tests.addObject();
+                    t.put("term", i);
+                    t.put("fieldRef", term.fieldRef());
+                    t.put("expression", term.expression());
+                    t.set("result", DefaultWorkflowSimulator.json(value));
+                } else {
+                    hit = Boolean.TRUE.equals(matches(term, values.get(term.fieldRef())));
+                }
+                matched = any ? matched || hit : matched && hit;
+            }
+            if (asOf != null && !row.appliesOn(asOf)) {
+                matched = Boolean.FALSE;
+            }
+            r.put("matched", matched);
+            r.put("selected", result.matchedRows().contains(row.index()));
+            ObjectNode outputs = (ObjectNode) literalMap(row.then());
+            ArrayNode computed = F.arrayNode();
+            for (DecisionEvaluator.Entry e : result.expressions()) {
+                if (e.row() == row.index() && e.term() < 0) {
+                    outputs.set(e.target(), DefaultWorkflowSimulator.json(e.value()));
+                    ObjectNode o = computed.addObject();
+                    o.put("output", e.target());
+                    o.put("expression", e.expression());
+                    o.set("value", DefaultWorkflowSimulator.json(e.value()));
+                }
+            }
+            row.thenExpressions().keySet().forEach(k -> { if (!outputs.has(k)) outputs.putNull(k); });
+            r.set("outputs", outputs);
+            if (!tests.isEmpty()) r.set("expressions", tests);
+            if (!computed.isEmpty()) r.set("outputExpressions", computed);
+        }
+        if (table.collect()) {
+            ArrayNode matchedRows = d.putArray("matchedRows");
+            result.matchedRows().forEach(i -> matchedRows.add(i + 1));
+            d.put("aggregation", table.aggregation());
+        }
+        d.put("usedDefault", result.usedDefault());
+        if (result.matchedRow() == null) {
+            d.putNull("matchedRow");
+        } else {
+            d.put("matchedRow", result.matchedRow() + 1);
+        }
+        d.set("outputs", DefaultWorkflowSimulator.json(result.output()));
+        if (result.matchedRows().isEmpty()) {
+            matchedRules.add(table.key() + "#default");
+        } else {
+            for (Integer i : result.matchedRows()) matchedRules.add(table.key() + "#" + i);
+        }
+        Map<String, Object> out = new LinkedHashMap<>(result.output());
+        steps.put(n.id(), out);
+        String outputsText = outputsText(out);
+        String sentence;
+        if (result.matchedRow() == null) {
+            sentence = Text.quote(n.label()) + ": no rule applies, so the \"otherwise\" result is used: " + outputsText + ".";
+        } else if (table.collect()) {
+            List<String> numbers = new ArrayList<>();
+            result.matchedRows().forEach(i -> numbers.add(String.valueOf(i + 1)));
+            sentence = Text.quote(n.label()) + ": " + (numbers.size() == 1 ? "rule " : "rules ") + String.join(", ", numbers)
+                    + " apply, combined as " + aggregationWords(table.aggregation()) + ", so " + outputsText + ".";
+        } else {
+            DecisionTable.Row row = table.rows().get(result.matchedRow());
+            sentence = Text.quote(n.label()) + ": rule " + (row.index() + 1) + " applies because "
+                    + conditionText(row.when(), true, null) + ", so " + outputsText + ".";
+        }
+        Transition t = next(n, Route.NEXT);
+        add(n, sentence, d, out, t);
+        return t;
+    }
+
     private static String aggregationWords(String aggregation) {
         return switch (aggregation) {
             case "SUM" -> "the sum";
@@ -679,6 +937,9 @@ final class SimulationRun {
 
     /** Evaluates a condition with the runtime's short-circuit rules; throws IllegalArgumentException for a missing value. */
     private boolean evaluate(Condition c, ArrayNode terms) {
+        if (c.isExpression()) {
+            return Boolean.TRUE.equals(expression(c.expression()));
+        }
         if (!c.compound()) {
             return atom(c, null);
         }
@@ -703,6 +964,55 @@ final class SimulationRun {
             }
         }
         return result;
+    }
+
+    /** The value of an expression condition (S137) over this test's request and step results; null when none. */
+    private Object expression(String source) {
+        try {
+            var scope = com.orqix.compiler.internal.rules.ExpressionRules.scope(analysis, graph.starts().get(0), Map.of());
+            return com.orqix.compiler.expr.Expression.compile(source, scope).evaluate(com.orqix.compiler.expr.Values.of(
+                    inputValues, id -> steps.containsKey(id) ? DefaultWorkflowSimulator.json(steps.get(id)) : null,
+                    Map.of(), now(null), null));
+        } catch (com.orqix.compiler.expr.ExpressionException e) {
+            throw new IllegalArgumentException("the condition " + Text.quote(source) + " cannot be evaluated: " + e.getMessage());
+        }
+    }
+
+    /** Noon of the test's day in the calendar's zone, so today() is the test's day there. */
+    private java.time.Instant now(com.orqix.compiler.BusinessCalendar calendar) {
+        java.time.ZoneId zone = calendar == null ? java.time.ZoneOffset.UTC : calendar.zone();
+        return context.today().atTime(12, 0).atZone(zone).toInstant();
+    }
+
+    // ------------------------------------------------------------------ calculate
+
+    /** Calculate (CG-X01, S137): the outputs with the engine's own evaluation. */
+    private Transition calculate(Node.Calculate n) {
+        ObjectNode d = F.objectNode();
+        var config = com.orqix.compiler.internal.bpmn.BpmnGenerator.calculateConfig(n);
+        try {
+            var types = com.orqix.compiler.internal.rules.ExpressionRules.pinnedTypesOf(analysis, n);
+            ObjectNode out = com.orqix.compiler.expr.Calculation.run(config, types, inputValues,
+                    id -> steps.containsKey(id) ? DefaultWorkflowSimulator.json(steps.get(id)) : null,
+                    now(com.orqix.compiler.expr.Values.calendar(n.calendar())));
+            Map<String, Object> wrote = new LinkedHashMap<>();
+            List<String> parts = new ArrayList<>();
+            out.properties().forEach(e -> {
+                Object value = DefaultWorkflowSimulator.plain(e.getValue());
+                wrote.put(e.getKey(), value);
+                parts.add(e.getKey() + " = " + (value == null ? "no value" : Text.value(value, false)));
+            });
+            d.set("outputs", out);
+            steps.put(n.id(), wrote);
+            Transition t = next(n, Route.NEXT);
+            add(n, Text.quote(n.label()) + ": " + String.join("; ", parts) + ".", d, wrote, t);
+            return t;
+        } catch (com.orqix.compiler.expr.Calculation.Failure f) {
+            d.put("output", f.output());
+            d.put("code", f.code());
+            stallWith(n, Text.quote(n.label()) + " stops: " + f.getMessage(), d, "CALCULATION_FAILED", f.getMessage());
+            return null;
+        }
     }
 
     private boolean atom(Condition c, ObjectNode record) {
@@ -744,6 +1054,9 @@ final class SimulationRun {
     // ------------------------------------------------------------------ http
 
     private Transition http(Node.Http n) {
+        if (n.polls()) {
+            return polled(n);
+        }
         JsonNode s = scenario.path("calls").path(n.id());
         String failure = s.path("failure").asString(null);
         if (failure != null && !Set.of("rejected", "unavailable", "unknownOutcome", "timeout").contains(failure)) {
@@ -1028,6 +1341,229 @@ final class SimulationRun {
         return t;
     }
 
+    /** Checks listed in the trace details; later ones are only counted. */
+    private static final int LISTED_CHECKS = 50;
+
+    /**
+     * A call that keeps checking until done (S129). The test may give a sequence of answers under
+     * {@code calls.<id>.checks} (each {@code {result}} or {@code {failure: "unavailable"|"rejected"}}); the last one
+     * repeats. Without a sequence the single answer ({@code result} or a sample) repeats. The checks follow the same
+     * jitter-free schedule as the runtime ({@link com.orqix.compiler.PollSchedule}) and report their simulated time.
+     */
+    private Transition polled(Node.Http n) {
+        Node.Poll p = n.poll();
+        JsonNode s = scenario.path("calls").path(n.id());
+        JsonNode checks = s.path("checks");
+        if (!checks.isMissingNode() && (!checks.isArray() || checks.isEmpty() || checks.size() > 100)) {
+            throw new IllegalArgumentException("calls." + n.id() + ".checks must list 1 to 100 answers");
+        }
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        Connections.Pinned pinned = connections.pinned(n.connectionRef());
+        String connName = pinned != null && pinned.status() == Connections.Status.OK
+                ? pinned.definition().path("name").asString(n.connectionRef()) : n.connectionRef();
+        com.orqix.compiler.PollSchedule schedule = schedule(p);
+        java.util.List<Long> offsets = schedule.offsets(Math.max(1, schedule.maxChecks()));
+        ObjectNode d = F.objectNode();
+        d.put("connection", n.connectionRef());
+        d.put("connectionName", connName);
+        d.put("operation", n.operation());
+        d.put("polling", true);
+        d.put("plannedChecks", offsets.size());
+        ArrayNode listed = d.putArray("checks");
+        String callText = Text.quote(n.label()) + " checks " + connName + " ("
+                + (op == null ? n.operation() : op.path("label").asString(n.operation())) + ")";
+        int errors = 0;
+        for (int i = 0; i < offsets.size(); i++) {
+            long at = offsets.get(i);
+            JsonNode answer = checks.isArray() ? checks.get(Math.min(i, checks.size() - 1)) : s;
+            String failure = answer.path("failure").asString(null);
+            ObjectNode entry = i < LISTED_CHECKS ? listed.addObject() : F.objectNode();
+            entry.put("check", i + 1);
+            entry.put("atSeconds", at);
+            Map<String, Object> out = failure == null ? mapped(n, answer, op) : null;
+            if (failure != null || out == null) {
+                String kind = failure == null ? "invalidResponse" : failure;
+                if (!Set.of("unavailable", "rejected", "invalidResponse").contains(kind)) {
+                    throw new IllegalArgumentException("calls." + n.id() + ".checks[" + i + "].failure must be"
+                            + " unavailable or rejected");
+                }
+                entry.put("outcome", kind);
+                if (!"unavailable".equals(kind)) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; at " + clock(at)
+                            + ("rejected".equals(kind) ? " the system refuses the request."
+                            : " the answer cannot be used.");
+                    String reason = "rejected".equals(kind) ? "EFFECT_REJECTED" : "RESPONSE_INVALID";
+                    if (next(n, Route.FAILED) != null) {
+                        return knownFailure(n, d, what, reason);
+                    }
+                    stallWith(n, what + " The request needs attention.", d, reason,
+                            "The checks stopped on an answer that cannot be used. Someone must fix the cause and retry.");
+                    return null;
+                }
+                errors++;
+                if (errors >= p.maxConsecutiveErrors()) {
+                    d.put("checksMade", i + 1);
+                    String what = callText + " " + Text.count(i + 1, "time") + "; the last "
+                            + Text.count(errors, "check") + " could not reach it.";
+                    if (p.errorsTimeOut()) {
+                        Transition t = next(n, Route.TIMED_OUT);
+                        add(n, what + " It gives up and takes the timed-out path.", d, null, t);
+                        return t;
+                    }
+                    stallWith(n, what + " The request needs attention until someone checks again.", d,
+                            "POLL_CHECKS_FAILING", "The checks failed " + errors + " times in a row.");
+                    return null;
+                }
+                continue;
+            }
+            errors = 0;
+            entry.set("values", DefaultWorkflowSimulator.json(out));
+            // The conditions read this answer as the step's own values; they become outputs only when done.
+            steps.put(n.id(), out);
+            boolean done = evaluate(p.until(), F.arrayNode());
+            boolean failed = !done && p.failWhen() != null && evaluate(p.failWhen(), F.arrayNode());
+            if (!done && !failed) {
+                entry.put("outcome", "pending");
+                steps.remove(n.id());
+                continue;
+            }
+            entry.put("outcome", done ? "done" : "failed");
+            d.put("checksMade", i + 1);
+            d.set("result", DefaultWorkflowSimulator.json(out));
+            String when = callText + " " + Text.count(i + 1, "time") + (i == 0 ? "" : " (" + pendingText(i) + ")")
+                    + ". At " + clock(at) + " the answer " + (done ? "says the work is done" : "says the work failed")
+                    + (out.isEmpty() ? "" : " and returns " + outputsText(out)) + ".";
+            if (done) {
+                Transition t = next(n, Route.NEXT);
+                add(n, when, d, out, t);
+                return t;
+            }
+            Map<String, Object> failure2 = new LinkedHashMap<>(out);
+            failure2.put("failureKind", "remoteFailed");
+            failure2.put("failureHttpStatus", 0);
+            failure2.put("failureMessage", "The other system reports that the work failed.");
+            steps.put(n.id(), failure2);
+            Transition t = next(n, Route.FAILED);
+            add(n, when + " The request takes the failed path.", d, failure2, t);
+            return t;
+        }
+        d.put("checksMade", offsets.size());
+        Transition t = next(n, Route.TIMED_OUT);
+        long deadline = offsets.isEmpty() ? 0 : offsets.get(offsets.size() - 1);
+        add(n, callText + " " + Text.count(offsets.size(), "time") + " until " + clock(deadline)
+                + "; the work is never done in this test, so it gives up and takes the timed-out path.", d, null, t);
+        return t;
+    }
+
+    /** @return the schedule the runtime would use for these settings */
+    static com.orqix.compiler.PollSchedule schedule(Node.Poll p) {
+        long every = com.orqix.compiler.PollSchedule.seconds(p.every());
+        long cap = com.orqix.compiler.PollSchedule.seconds(p.maxInterval());
+        long deadline = com.orqix.compiler.PollSchedule.seconds(p.giveUpAfter());
+        int worst = com.orqix.compiler.PollSchedule.worstCase(every, p.multiplier(), cap, deadline,
+                p.firstCheckImmediate(), p.finalCheckAtDeadline());
+        int max = Math.min(com.orqix.compiler.PollSchedule.CHECK_LIMIT, p.maxChecks() == null ? worst
+                : Math.min(worst, p.maxChecks()));
+        return new com.orqix.compiler.PollSchedule(every, p.multiplier(), cap, deadline, p.firstCheckImmediate(),
+                p.finalCheckAtDeadline(), max);
+    }
+
+    private static String pendingText(int pending) {
+        return pending == 1 ? "the first answer says not done yet" : "the first " + pending + " answers say not done yet";
+    }
+
+    /** @return elapsed simulated time as h:mm, or d days h:mm beyond a day */
+    private static String clock(long seconds) {
+        long days = seconds / 86_400;
+        long hours = seconds % 86_400 / 3600;
+        long minutes = seconds % 3600 / 60;
+        long secs = seconds % 60;
+        String hm = hours + ":" + (minutes < 10 ? "0" : "") + minutes + (secs == 0 ? "" : ":" + (secs < 10 ? "0" : "") + secs);
+        return days == 0 ? hm : Text.count(days, "day") + " " + hm;
+    }
+
+    /** @return the mapped values of one answer, or null when one is missing or not a single value */
+    private Map<String, Object> mapped(Node.Http n, JsonNode answer, JsonNode op) {
+        JsonNode response = answer.path("result");
+        if (!response.isObject()) {
+            response = op != null && op.path("responseSchema").isObject() ? sample(op.path("responseSchema"), "") : null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
+            JsonNode value = response == null ? null : pointer(response, e.getValue());
+            if (response == null) {
+                out.put(e.getKey(), "sample-" + e.getKey());
+            } else if ((value == null || value.isNull()) && n.poll().optional(e.getKey())) {
+                continue; // S129: an optional result is not there yet
+            } else if (value == null || value.isNull() || value.isObject() || value.isArray()) {
+                return null;
+            } else {
+                out.put(e.getKey(), DefaultWorkflowSimulator.plain(value));
+            }
+        }
+        return out;
+    }
+
+    /** @return the business code a v1 connection maps this status to (S130), else empty */
+    private static String mappedErrorCode(JsonNode op, Integer httpStatus) {
+        if (httpStatus == null) {
+            return "";
+        }
+        for (JsonNode error : op.path("errors")) {
+            if (error.path("status").asInt() == httpStatus) {
+                return error.path("code").asString("");
+            }
+        }
+        return "";
+    }
+
+    /**
+     * A worker reports a business error (S132, CG-E10): the step's failed route with the failure facts, or its
+     * section's error route when the step raises an error on failure; otherwise the request needs attention.
+     */
+    private Transition workerBusinessError(Node.ExternalTask n, JsonNode setting, ObjectNode d, String intro) {
+        String code = setting.path("errorCode").asString("WORKER_ERROR");
+        if (!code.matches("^[A-Z][A-Z0-9_]{1,39}$") || code.startsWith("ORQIX_")) {
+            throw new IllegalArgumentException("workers." + n.id() + ".errorCode must be an error code such as ADDRESS_UNKNOWN");
+        }
+        String message = setting.path("message").asString("The worker reported a business error.");
+        d.put("mocked", true);
+        d.put("failure", "businessError");
+        d.put("errorCode", code);
+        String description = intro + " and reports the business error " + Text.quote(code) + ".";
+        Transition failed = next(n, Route.FAILED);
+        if (failed != null) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("failureKind", "workerError");
+            out.put("failureCode", code);
+            out.put("failureMessage", message);
+            steps.put(n.id(), out);
+            d.put("routed", true);
+            add(n, description + " The workflow takes its authored failure path.", d, out, failed);
+            return failed;
+        }
+        if (n.raiseOnFailure() != null) {
+            WorkflowDefinition.Subprocess scope = graph.scopeOf(n);
+            Node target = scope == null || scope.errorTo() == null ? null : graph.node(scope.errorTo());
+            d.put("raisedError", n.raiseOnFailure());
+            if (target == null) {
+                stallWith(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ", which nothing"
+                        + " catches.", d, "ERROR_NOT_CAUGHT", "The raised error is not caught.");
+                return null;
+            }
+            d.put("continuesAt", target.id());
+            add(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ": the section "
+                    + Text.quote(scope.label()) + " stops and the request continues at " + Text.quote(target.label())
+                    + ".", d, null, null);
+            jump = target;
+            return null;
+        }
+        String attention = "The step has no path for when it fails, so the request needs attention.";
+        stallWith(n, description + " " + attention, d, "RETRIES_EXHAUSTED", attention);
+        return null;
+    }
+
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
         return knownFailure(n, details, description, reason, null);
@@ -1042,6 +1578,11 @@ final class SimulationRun {
         out.put("failureKind", kind);
         out.put("failureHttpStatus", httpStatus != null ? httpStatus : "rejected".equals(kind) ? 400 : 0);
         out.put("failureMessage", message);
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        if (op != null && op.has("errors")) {
+            // v1 error mapping (S130); v0 traces keep their shape.
+            out.put("failureCode", mappedErrorCode(op, httpStatus));
+        }
         steps.put(n.id(), out);
         details.put("routed", true);
         Transition route = next(n, Route.FAILED);
@@ -1072,8 +1613,13 @@ final class SimulationRun {
     }
 
     private static JsonNode pointer(JsonNode body, String pointer) {
+        List<String> tokens = JsonPointers.parse(pointer);
+        if (tokens.size() == 2 && com.orqix.compiler.ConnectionContracts.ASYNC_SEGMENT.equals(tokens.get(0))) {
+            // CG-W02: a dry run has no status location; the status reference is a sample value.
+            return F.textNode("sample-" + tokens.get(1));
+        }
         JsonNode current = body;
-        for (String token : JsonPointers.parse(pointer)) {
+        for (String token : tokens) {
             current = current == null ? null : current.get(token);
         }
         return current;
@@ -1114,6 +1660,12 @@ final class SimulationRun {
                 }
                 if ("date".equals(schema.path("format").asString(""))) {
                     return F.stringNode("2026-01-15");
+                }
+                if ("time".equals(schema.path("format").asString(""))) {
+                    return F.stringNode(schema.path("formatMinimum").asString("09:00"));
+                }
+                if ("date-time".equals(schema.path("format").asString(""))) {
+                    return F.stringNode(schema.path("formatMinimum").asString("2026-01-15T09:00:00Z"));
                 }
                 if (schema.path("pattern").isString()) {
                     String example = com.orqix.compiler.FormPattern.problem(schema.get("pattern").asString()) == null
@@ -1228,6 +1780,15 @@ final class SimulationRun {
                 sentence = Text.quote(n.label()) + ": would wait until a date that the test does not have. The test"
                         + " skips the wait.";
             }
+        } else if (def.waits().working(n.id()) != null) {
+            // S139: working time of a shared calendar.
+            var working = def.waits().working(n.id());
+            long minutes = Durations.minutes(working.duration());
+            d.put("workingDuration", working.duration());
+            d.put("calendarRef", working.calendarRef());
+            sentence = Text.quote(n.label()) + ": would wait " + (minutes > 0 ? Durations.describe(minutes)
+                    : String.valueOf(working.duration())) + " of working time in the calendar "
+                    + Text.quote(working.calendarRef()) + ". The test skips the wait.";
         } else {
             long minutes = Durations.minutes(n.duration());
             d.put("duration", n.duration());
@@ -1242,6 +1803,110 @@ final class SimulationRun {
     // ------------------------------------------------------------------ message wait
 
     /** A worker is not simulated: the test supplies its result in the settings, otherwise declared fields get sample values. */
+    /**
+     * An AI task is never run by a test (S134): no model is called. The answer comes from {@code ai.<stepId>} in the
+     * test settings ({@code label}, {@code confidence}, {@code fields}, {@code score}, {@code recommendation},
+     * {@code summary}, or {@code unavailable: true}); without settings a classify task answers its first label with
+     * confidence 0.95. The route then follows the runtime rules: shadow always continues, suggest goes to a person,
+     * a confidence below the threshold takes lowConfidence (classify) or needsReview (extract). Workspace policy
+     * downgrades (low-risk labels, regulated workspaces) are applied by the runtime only.
+     */
+    private Transition aiTask(Node.AiTask n) {
+        for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
+            if (resolve(entry.getValue()) == null && !n.shadow()) {
+                stall(n, "TEST_AI_INPUT_MISSING", "A value this AI task sends is missing from this sample request.");
+                return null;
+            }
+        }
+        CompileContext.AiSkillVersion v = com.orqix.compiler.internal.rules.AiTaskRules.pinned(workspace, n);
+        JsonNode setting = scenario.path("ai").path(n.id());
+        ObjectNode d = F.objectNode();
+        d.put("skill", n.skillRef());
+        d.put("mode", n.mode());
+        d.put("autonomy", n.autonomy());
+        d.put("mocked", true);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("skillVersion", BigDecimal.valueOf(v == null ? 0 : v.version()));
+        String intro = Text.quote(n.label()) + " runs the AI skill " + Text.quote(n.skillRef());
+        if (setting.path("unavailable").asBoolean(false) || v == null) {
+            out.put("status", n.shadow() ? "shadow" : "unavailable");
+            steps.put(n.id(), out);
+            Transition t = next(n, n.shadow() ? Route.NEXT : Route.AI_UNAVAILABLE);
+            add(n, intro + ". In this test AI is unavailable, so " + (n.shadow() ? "the request continues unchanged."
+                    : "the request takes the path for when AI is unavailable."), d, out, t);
+            return t;
+        }
+        BigDecimal confidence = setting.has("confidence") ? setting.get("confidence").decimalValue()
+                : new BigDecimal("0.95");
+        out.put("confidence", confidence);
+        out.put("modelUsed", "test-mock");
+        String chosen = null;
+        switch (n.mode()) {
+            case "classify" -> {
+                chosen = setting.path("label").asString(v.labels().isEmpty() ? "" : v.labels().get(0).key());
+                String label = chosen;
+                if (v.labels().stream().noneMatch(l -> l.key().equals(label))) {
+                    throw new IllegalArgumentException("ai." + n.id() + ".label must be one of the skill's labels");
+                }
+                out.put("label", chosen);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "extract" -> {
+                Map<String, Object> fields = new LinkedHashMap<>();
+                setting.path("fields").properties().forEach(e -> fields.put(e.getKey(), Mocks.plainField(e.getValue())));
+                out.putAll(fields);
+            }
+            case "score" -> {
+                BigDecimal score = setting.has("score") ? setting.get("score").decimalValue()
+                        : v.scoreMin().add(v.scoreMax()).divide(BigDecimal.valueOf(2));
+                out.put("score", score);
+                out.put("reasons", List.of("Test answer"));
+            }
+            case "recommend" -> {
+                out.put("recommendation", setting.path("recommendation").asString(v.outcomes().get(0)));
+                out.put("rationale", "Test answer");
+            }
+            default -> out.put("summary", setting.path("summary").asString("Test summary."));
+        }
+        Route route;
+        String status;
+        if (n.shadow()) {
+            route = Route.NEXT;
+            status = "shadow";
+        } else if (("classify".equals(n.mode()) || "extract".equals(n.mode()))
+                && confidence.compareTo(n.minConfidence()) < 0) {
+            route = "classify".equals(n.mode()) ? Route.LOW_CONFIDENCE : Route.NEEDS_REVIEW;
+            status = "classify".equals(n.mode()) ? "lowConfidence" : "needsReview";
+        } else if ("classify".equals(n.mode()) && !n.routes()) {
+            route = next(n, Route.NEEDS_REVIEW) != null ? Route.NEEDS_REVIEW : Route.LOW_CONFIDENCE;
+            status = "needsReview";
+        } else if ("extract".equals(n.mode()) && (!n.routes()
+                || v.requiredFields().stream().anyMatch(f -> !out.containsKey(f)))) {
+            route = Route.NEEDS_REVIEW;
+            status = "needsReview";
+        } else {
+            route = "classify".equals(n.mode()) ? Route.AI_LABEL : Route.NEXT;
+            status = "decided";
+        }
+        out.put("status", status);
+        steps.put(n.id(), out);
+        Transition t = null;
+        if (route == Route.AI_LABEL) {
+            for (Transition candidate : graph.outgoing(n)) {
+                if (candidate.on() == Route.AI_LABEL && chosen.equals(candidate.aiLabel())) {
+                    t = candidate;
+                }
+            }
+        } else {
+            t = next(n, route);
+        }
+        d.put("route", route == Route.AI_LABEL ? "label:" + chosen : route.json());
+        add(n, intro + " (" + (setting.isObject() ? "answer from the test settings" : "sample answer")
+                + "). No model is called in a test; the request continues on " + d.path("route").asString() + ".", d,
+                out, t);
+        return t;
+    }
+
     private Transition externalTask(Node.ExternalTask n) {
         ObjectNode inputs = F.objectNode();
         for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
@@ -1255,8 +1920,8 @@ final class SimulationRun {
         JsonNode setting = scenario.path("workers").path(n.id());
         JsonNode given = setting.path("result");
         String failure = setting.path("failure").asString(null);
-        if (failure != null && !"failed".equals(failure)) {
-            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed");
+        if (failure != null && !"failed".equals(failure) && !"businessError".equals(failure)) {
+            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed or businessError");
         }
         Integer delay = setting.isObject() ? Mocks.delay("workers." + n.id(), setting) : null;
         ObjectNode d = F.objectNode();
@@ -1273,6 +1938,9 @@ final class SimulationRun {
                     + " until someone retries.";
             stallWith(n, intro + ". " + message, d, "RETRIES_EXHAUSTED", message);
             return null;
+        }
+        if ("businessError".equals(failure)) {
+            return workerBusinessError(n, setting, d, intro);
         }
         if (given.isObject()) {
             String problem = Mocks.fieldProblem(n.result(), given);
@@ -1380,8 +2048,14 @@ final class SimulationRun {
         JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
         Integer delay = setting.isObject() ? Mocks.delay("messages." + n.id(), setting) : null;
         String choice = setting.isObject() ? setting.path("outcome").asString("arrives") : setting.asString("arrives");
-        if (!Set.of("arrives", "timeout").contains(choice)) {
-            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout");
+        if (!Set.of("arrives", "timeout").contains(choice) && !("fallback".equals(choice) && n.fallbackCheck() != null)) {
+            throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout"
+                    + (n.fallbackCheck() != null ? ", or fallback for the safety-net check" : ""));
+        }
+        // S129: the safety-net check finds the work done before the message arrives; it completes the wait the same way.
+        boolean fallback = "fallback".equals(choice);
+        if (fallback) {
+            choice = "arrives";
         }
         if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
             throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
@@ -1443,14 +2117,82 @@ final class SimulationRun {
             d.put("arrived", true);
             d.set("payload", DefaultWorkflowSimulator.json(out));
             t = next(n, Route.NEXT);
-            sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
-                    + d.get("correlation").asString() + "."
-                    + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            if (fallback) {
+                d.put("resumedBy", "fallbackCheck");
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " does not come, but"
+                        + " the safety-net check every " + com.orqix.compiler.PollSchedule.describe(
+                                com.orqix.compiler.PollSchedule.seconds(n.fallbackCheck().every()))
+                        + " finds the work done, so the wait ends."
+                        + (out.isEmpty() ? "" : " The check returns " + outputsText(out) + ".");
+            } else {
+                sentence = Text.quote(n.label()) + ": the message " + Text.quote(n.message()) + " arrives for "
+                        + d.get("correlation").asString() + "."
+                        + (out.isEmpty() ? "" : " In this test it carries " + outputsText(out) + ".");
+            }
         }
         if (note != null) {
             d.put("note", note);
             sentence += " " + note;
         }
+        steps.put(n.id(), out);
+        add(n, sentence, d, out, t);
+        return t;
+    }
+
+    // ------------------------------------------------------------------ wait for the first (S139)
+
+    /**
+     * The scenario chooses the branch that happens first: {@code messages.<step>} is a branch id, or an object
+     * {@code {branch, payload}}; without a choice the first branch wins.
+     */
+    private Transition waitForFirst(Node.WaitForFirst n) {
+        JsonNode setting = scenario.path("messages").path(n.id());
+        String chosen = setting.isObject() ? setting.path("branch").asString(null)
+                : setting.isString() ? setting.asString() : null;
+        Node.FirstBranch branch = chosen == null ? n.branches().get(0) : n.branch(chosen);
+        if (branch == null) {
+            throw new IllegalArgumentException("messages." + n.id() + " must name a branch: "
+                    + String.join(", ", n.branches().stream().map(Node.FirstBranch::id).toList()));
+        }
+        JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
+        if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
+            throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
+        }
+        if (payloadMock.isObject()) {
+            String problem = Mocks.fieldProblem(branch.payload(), payloadMock);
+            if (problem != null) {
+                String message = "The test values of " + Text.quote(branch.label()) + " do not fit its declared"
+                        + " values: " + problem + ".";
+                stallWith(n, Text.quote(n.label()) + ": " + message, F.objectNode().put("branch", branch.id()),
+                        "TEST_MOCK_INVALID", message);
+                return null;
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(Node.WaitForFirst.BRANCH_OUTPUT, branch.id());
+        for (Node.PayloadField field : branch.payload()) {
+            JsonNode supplied = payloadMock.path(field.name());
+            out.put(field.name(), !supplied.isMissingNode() && !supplied.isNull() ? Mocks.plainField(supplied)
+                    : Mocks.sampleField(field));
+        }
+        ObjectNode d = F.objectNode();
+        d.put("branch", branch.id());
+        d.put("branchKind", branch.kind());
+        d.put("branches", n.branches().size());
+        if (setting.isObject() || setting.isString()) {
+            d.put("mocked", true);
+        }
+        Transition t = null;
+        for (Transition candidate : graph.outgoing(n)) {
+            if (candidate.on() == Route.BRANCH && branch.id().equals(candidate.branch())) {
+                t = candidate;
+            }
+        }
+        String others = String.join(", ", n.branches().stream().filter(b -> b != branch)
+                .map(b -> Text.quote(b.label())).toList());
+        String sentence = Text.quote(n.label()) + ": " + Text.quote(branch.label()) + " happens first, so the"
+                + " request takes its path and stops waiting for " + others + "."
+                + (out.size() > 1 ? " It brings " + outputsText(out) + "." : "");
         steps.put(n.id(), out);
         add(n, sentence, d, out, t);
         return t;
@@ -1837,6 +2579,14 @@ final class SimulationRun {
         } catch (IllegalArgumentException e) {
             return null;
         }
+        if (tokens.size() >= 3 && "input".equals(tokens.get(0)) && "*".equals(tokens.get(2))) {
+            // S138: the item a for-each step is running for, or one column of it.
+            if (currentItem == null) {
+                return null;
+            }
+            JsonNode value = tokens.size() == 4 ? currentItem.path(tokens.get(3)) : currentItem;
+            return value.isMissingNode() || value.isNull() ? null : DefaultWorkflowSimulator.plain(value);
+        }
         if (tokens.size() >= 2 && "input".equals(tokens.get(0))) {
             return DefaultWorkflowSimulator.plain(com.orqix.compiler.InputValues.resolve(inputValues, ref));
         }
@@ -1852,6 +2602,9 @@ final class SimulationRun {
      * value to show when it is already known (otherwise it is looked up).
      */
     private String conditionText(Condition c, boolean withValue, Object known) {
+        if (c.isExpression()) {
+            return c.expression();
+        }
         if (c.compound()) {
             List<String> parts = new ArrayList<>();
             c.terms().forEach(t -> parts.add(conditionText(t, withValue, null)));
@@ -1926,7 +2679,7 @@ final class SimulationRun {
 
     /** @return why a condition on a request answer can never be true, or null */
     private String impossible(Condition c) {
-        if (c.compound()) {
+        if (c.compound() || c.isExpression()) {
             return null;
         }
         List<String> tokens;
@@ -1972,15 +2725,16 @@ final class SimulationRun {
     }
 
     private void scenarioWarnings() {
-        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters")) {
+        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters", "ai")) {
             for (String id : scenario.path(group).propertyNames()) {
                 Node n = graph.node(id);
                 boolean right = n != null && switch (group) {
                     case "approvals" -> n.kind() == NodeKind.APPROVAL;
                     case "calls" -> n.kind() == NodeKind.HTTP;
-                    case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
+                    case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE || n.kind() == NodeKind.WAIT_FOR_FIRST;
                     case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
                     case "adapters" -> n.kind() == NodeKind.SEND_ADAPTER;
+                    case "ai" -> n.kind() == NodeKind.AI_TASK;
                     default -> n.kind() == NodeKind.START_WORKFLOW;
                 };
                 if (!right) {
@@ -2072,6 +2826,8 @@ final class SimulationRun {
             case TIMED_OUT -> "when the time limit fires";
             case DEFAULT -> "otherwise";
             case CONDITION -> "when " + routeName(t);
+            case BRANCH -> from instanceof Node.WaitForFirst w && w.branch(t.branch()) != null
+                    ? "when " + w.branch(t.branch()).label() + " happens first" : "for the branch " + t.branch();
             default -> "next";
         };
         return from.label() + ", " + when + ", goes to " + to.label();

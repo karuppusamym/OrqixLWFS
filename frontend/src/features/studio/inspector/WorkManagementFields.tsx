@@ -6,6 +6,7 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
 import { guaranteedBefore, reachableFrom, startNode } from '../model/graph'
 import { CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
+import { EscalationPolicyFields } from './EscalationPolicyFields'
 
 type Calendar = { revision?: string; validFrom?: string; intervals?: { start: string; end: string }[]; zone: string; weekdays: number[]; holidays?: string[]; start: string; end: string }
 type Escalation = { intervalHours: number; maxNotices: number }
@@ -107,5 +108,6 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
       <FormField label="Maximum notices" id={`escalation-cap-${node.id}`}>{ids => <CommitNumber id={ids.input} integer value={escalation.maxNotices} disabled={readOnly}
         onCommit={value => set({ escalation: { ...escalation, maxNotices: Math.max(1,Math.min(20,value ?? 3)) } })} />}</FormField>
     </> : null}
+    <EscalationPolicyFields node={node} groups={groups} />
   </InspectorSection>
 }

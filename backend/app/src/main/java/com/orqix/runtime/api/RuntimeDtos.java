@@ -131,7 +131,9 @@ public final class RuntimeDtos {
             Instant startedAt, Instant endedAt, int iteration) {
     }
 
-    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since) {
+    /** {@code errorCode} (S142): the error code of the failed step when it reported one; omitted otherwise. */
+    public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String errorCode) {
     }
 
     public record ActionAvailability(boolean allowed, String reasonCode) {
@@ -169,7 +171,22 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode input, Map<String, String> inputLabels,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
             List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
-            List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension) {
+            List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension,
+            List<String> protectedFields) {
+
+        /** Without CG-I05 protected fields (S151). */
+        public RunDetail(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey,
+                String requestTitle, SubjectRef initiator, String lifecycle, String outcome, String outcomeKind,
+                List<CurrentStep> currentSteps, Attention attention, Instant createdAt, Instant updatedAt,
+                Instant endedAt, boolean isTest, int version, JsonNode input, Map<String, String> inputLabels,
+                JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
+                List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
+                List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension) {
+            this(id, reference, workflow, release, businessKey, requestTitle, initiator, lifecycle, outcome,
+                    outcomeKind, currentSteps, attention, createdAt, updatedAt, endedAt, isTest, version, input,
+                    inputLabels, output, tasks, effects, completedEffectsNotReversed, allowedActions, parentRun,
+                    children, stage, stages, suspension, List.of());
+        }
     }
 
     /**
@@ -211,9 +228,31 @@ public final class RuntimeDtos {
     public record GroupRef(String key, String name) {
     }
 
+    /**
+     * {@code decidedBy} is {@code person} or {@code aiReviewer} (S152). For the AI reviewer, {@code actor} is the fixed
+     * reference {@code AI reviewer} (no person) and {@code aiReview} names the skill and the AI decision record.
+     */
     public record TaskDecision(UUID id, String taskId, UUID runId, String nodeId,
             @JsonInclude(JsonInclude.Include.NON_NULL) String label, SubjectRef actor, String action, String reason,
-            String comment, Instant decidedAt, List<String> policyFlags) {
+            String comment, Instant decidedAt, List<String> policyFlags, String decidedBy,
+            @JsonInclude(JsonInclude.Include.NON_NULL) AiReviewRef aiReview) {
+    }
+
+    /** The AI reviewer behind a decision (S152). */
+    public record AiReviewRef(String skillKey, int skillVersion, UUID decisionId) {
+    }
+
+    /**
+     * The AI review of a task (S152). {@code status}: pending (AI is working), suggested (AI answered, a person decides),
+     * decided (AI decided the task), unavailable (AI could not answer, a person decides) or cancelled (a person decided
+     * first). {@code heldFor} says why a confident answer did not decide: suggest, lowConfidence, notADecision,
+     * adverseRegulated, notLowRisk, notPromoted, drift, policy or personActed. Recommendation, rationale and reasons are
+     * shown only to callers who may see the request data.
+     */
+    public record AiReview(String status, String skillKey, int skillVersion, String autonomy, String effectiveAutonomy,
+            String recommendation, java.math.BigDecimal confidence, java.math.BigDecimal threshold, String rationale,
+            List<String> reasons, boolean decidedByAi, String heldFor, String unavailableReason, UUID decisionId,
+            String humanOutcome) {
     }
 
     public record TaskSummary(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
@@ -286,7 +325,8 @@ public final class RuntimeDtos {
     public record TaskDetail(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
             String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision, TaskRequest request,
-            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy, JsonNode approvalView) {
+            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy, JsonNode approvalView,
+            AiReview aiReview) {
     }
 
     public record TaskCounts(int assigned, int claimable) {

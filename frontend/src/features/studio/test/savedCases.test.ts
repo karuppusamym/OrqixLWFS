@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { emptyAssertions, emptySettings } from './scenarioModel'
-import { exportCases, importCases, loadCases, MAX_CASES, parseCase, storeCases, upsertCase, type SavedCase } from './savedCases'
+import { exportCases, exportTestFile, importCases, loadCases, MAX_CASES, parseCase, storeCases, TEST_FILE_FORMAT, upsertCase, type SavedCase } from './savedCases'
 
 const make = (name: string, expectOutcome: string | null = 'Fulfilled'): SavedCase => ({ version: 3, id: `id-${name}`, name, values: { amount: '1800', rush: false, items: ['a'] }, settings: emptySettings(), expect: expectOutcome, assertions: emptyAssertions() })
 
@@ -115,5 +115,19 @@ describe('saved case resource bounds', () => {
     expect(importCases(' '.repeat(1048577), []).error).toBeTruthy()
     expect(importCases(JSON.stringify({ format: 'orqix-test-cases', version: 99, cases: [] }), []).error).toBeTruthy()
     expect(importCases(JSON.stringify({ format: 'orqix-test-cases', cases: Array.from({ length: 101 }, (_, i) => make(String(i))) }), []).error).toBeTruthy()
+  })
+
+  it('writes and reads the shared test file format (S148): server cases plus the Test tab state', () => {
+    const c = parseCase({ id: 'a', name: 'Big order', values: { amount: '5000' }, settings: { approvals: { manager: { outcome: 'reject', reason: 'Too much' } } }, expect: 'Rejected', assertions: { path: { steps: ['start', 'manager'], match: 'inOrder' } } })!
+    const text = exportTestFile('purchase', [{ saved: c, server: { id: 'a', name: 'Big order', input: { amount: 5000 }, scenario: { approvals: { manager: 'rejected' } }, expect: 'Rejected' } }], { routes: 80 })
+    const file = JSON.parse(text)
+    expect(file).toMatchObject({ schemaVersion: TEST_FILE_FORMAT, workflowKey: 'purchase', coverageMinimum: { routes: 80 } })
+    expect(file.cases[0]).toMatchObject({ id: 'a', input: { amount: 5000 }, expect: 'Rejected', studio: { values: { amount: '5000' } } })
+    const back = importCases(text, [])
+    expect(back.error).toBeNull()
+    expect(back.cases[0]).toMatchObject({ name: 'Big order', expect: 'Rejected', values: { amount: '5000' }, settings: c.settings, assertions: c.assertions })
+    const handWritten = JSON.stringify({ schemaVersion: TEST_FILE_FORMAT, cases: [{ id: 'x', name: 'From CI', input: {}, expect: 'Fulfilled' }, file.cases[0]] })
+    expect(importCases(handWritten, [])).toMatchObject({ withoutStudio: 1, skipped: 0 })
+    expect(importCases(JSON.stringify({ schemaVersion: TEST_FILE_FORMAT }), []).error).toBeTruthy()
   })
 })

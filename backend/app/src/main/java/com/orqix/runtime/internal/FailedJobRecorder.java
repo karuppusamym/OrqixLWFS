@@ -51,6 +51,27 @@ public class FailedJobRecorder {
         this.clock = clock;
     }
 
+    /**
+     * A call that waits for its connection's circuit or request rate (CG-W04, S131): no attempt was used, so the run
+     * stays running and only {@code EFFECT_DEFERRED} is written.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deferred(UUID workspaceId, UUID runId, String nodeId, String reason, String connectionKey,
+            Instant until) {
+        if (AgentLoops.TURN.equals(reason)) {
+            return; // CG-M03 (S135): the next turn of a durable agent, not a delay worth a timeline entry
+        }
+        RunStore.RunRow run = runs.find(workspaceId, runId).orElse(null);
+        if (run == null || !run.isActive()) {
+            return;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("reason", reason);
+        data.put("connectionKey", connectionKey);
+        data.put("until", until.toString());
+        events.append(workspaceId, runId, "EFFECT_DEFERRED", nodeId, null, data);
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(Failure f) {
         JobFailure failure = f.failure();
@@ -102,6 +123,9 @@ public class FailedJobRecorder {
         }
         attention.put("message", message == null ? reason : message);
         attention.put("since", now.toString());
+        if (failure != null && failure.errorCode() != null) {
+            attention.put("errorCode", failure.errorCode()); // CG-O04 (S142): the run list filters by it
+        }
         runs.mutate(f.workspaceId(), f.runId(), m -> {
             m.lifecycle = RunStore.NEEDS_ATTENTION;
             m.attention = attention;

@@ -19,7 +19,8 @@ dependencies {
 // The JSON Schemas in /contracts are the single source; they are packaged, not copied by hand.
 processResources {
     from(new File(repoRoot, 'contracts')) {
-        include 'workflow-v0.schema.json', 'connection-definition-v0.schema.json', 'bpmn-shape-sizes.json'
+        include 'workflow-v0.schema.json', 'connection-definition-v0.schema.json', 'connection-definition-v1.schema.json', 'ai-skill-v1.schema.json',
+                'bpmn-shape-sizes.json'
         into 'orqix/schemas'
     }
 }

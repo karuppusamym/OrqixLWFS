@@ -60,7 +60,10 @@ public final class OpenApiConverter {
     private static final Pattern HEADER = Pattern.compile("^[A-Za-z][A-Za-z0-9-]{0,63}$");
     private static final Pattern NESTED_QUANTIFIER = Pattern.compile("\\([^)]*[+*][^)]*\\)\\s*[+*{]");
     private static final List<String> METHODS = List.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
-    private static final Set<String> SUPPORTED_METHODS = Set.of("GET", "POST", "PUT", "PATCH");
+    private static final Set<String> SUPPORTED_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
+    /** Path parameters without a pattern in the file get this conservative one (one URL segment). */
+    static final String DEFAULT_SEGMENT_PATTERN = "^[A-Za-z0-9._~-]{1,200}$";
+    private static final Set<String> FORBIDDEN_HEADERS = com.orqix.compiler.ConnectionContracts.FORBIDDEN_REQUEST_HEADERS;
     private static final Set<String> IGNORED_HEADERS = Set.of("accept", "content-type", "authorization");
     private static final Set<String> PAGING = Set.of("page", "pagenumber", "pagesize", "page_size", "per_page", "perpage",
             "limit", "offset", "cursor", "pagetoken", "page_token", "nexttoken", "next_token", "skip", "top", "after");
@@ -91,6 +94,11 @@ public final class OpenApiConverter {
         }
         op.put("method", template.path("method").asString());
         op.put("path", template.path("path").asString());
+        for (String part : List.of("pathParams", "query", "headers")) {
+            if (template.has(part)) {
+                op.set(part, template.get(part).deepCopy()); // connection definition v1 (S130)
+            }
+        }
         if (template.has("requestSchema")) {
             op.set("requestSchema", template.get("requestSchema").deepCopy());
         }
@@ -108,7 +116,9 @@ public final class OpenApiConverter {
     public static ObjectNode definition(String key, int version, String name, String description,
             Map<String, ObjectNode> operations) {
         ObjectNode definition = MAPPER.createObjectNode();
-        definition.put("schemaVersion", "0.1");
+        // v1 (S130) only when an operation needs it: path or query parameters, headers, DELETE or idempotentNatural.
+        boolean v1 = operations.values().stream().anyMatch(OpenApiConverter::needsV1);
+        definition.put("schemaVersion", v1 ? "1.0" : "0.1");
         definition.put("key", key);
         definition.put("version", version);
         definition.put("name", name);
@@ -118,6 +128,13 @@ public final class OpenApiConverter {
         ObjectNode ops = definition.putObject("operations");
         operations.forEach(ops::set);
         return definition;
+    }
+
+    /** @return true when a finished operation uses a connection definition v1 feature */
+    public static boolean needsV1(JsonNode operation) {
+        return operation.has("pathParams") || operation.has("query") || operation.has("headers")
+                || "DELETE".equals(operation.path("method").asString())
+                || "idempotentNatural".equals(operation.path("effectClass").asString());
     }
 
     /** A connection key from a document title: lower case words joined by hyphens. */
@@ -782,6 +799,13 @@ public final class OpenApiConverter {
         String idempotencyHeader;
         boolean deprecated;
         ObjectNode template;
+        /** v1 parts (S130): path with input names, path parameters, query and header inputs. */
+        String v1Path;
+        final ObjectNode pathParams = MAPPER.createObjectNode();
+        final ObjectNode query = MAPPER.createObjectNode();
+        final ObjectNode headerInputs = MAPPER.createObjectNode();
+        final ObjectNode parameterFields = MAPPER.createObjectNode();
+        final Set<String> requiredParameterFields = new LinkedHashSet<>();
 
         OperationRun(Run run, String sourcePath, String method, JsonNode pathItem, JsonNode op,
                 Map<String, Scheme> schemes) {
@@ -801,9 +825,12 @@ public final class OpenApiConverter {
             ObjectNode requestSchema = null;
             Set<String> active = Set.of();
             parameters();
-            if (SUPPORTED_METHODS.contains(method)) {
+            if (SUPPORTED_METHODS.contains(method) && !"DELETE".equals(method)) {
                 requestSchema = requestBody(active);
+            } else if ("DELETE".equals(method) && op.has("requestBody")) {
+                notes.add("The request body of this DELETE is not sent.");
             }
+            requestSchema = withParameterFields(requestSchema);
             List<Integer> statuses = new ArrayList<>();
             ObjectNode responseSchema = responses(active, statuses);
             security();
@@ -822,8 +849,18 @@ public final class OpenApiConverter {
                 template.put("description", description);
             }
             template.put("method", method);
-            template.put("path", sourcePath);
-            if (!"GET".equals(method)) {
+            template.put("path", v1Path != null ? v1Path : sourcePath);
+            if (!pathParams.isEmpty()) {
+                template.set("pathParams", pathParams);
+            }
+            if (!query.isEmpty()) {
+                template.set("query", query);
+            }
+            if (!headerInputs.isEmpty()) {
+                template.set("headers", headerInputs);
+            }
+            if (requestSchema != null && (!"GET".equals(method) && !"DELETE".equals(method)
+                    || requestSchema.path("properties").size() > 0)) {
                 template.set("requestSchema", requestSchema);
             }
             template.set("responseSchema", responseSchema);
@@ -894,15 +931,17 @@ public final class OpenApiConverter {
         void checkMethodAndPath() {
             if (!SUPPORTED_METHODS.contains(method)) {
                 blockers.add(switch (method) {
-                    case "DELETE" -> "Removing records (DELETE) is not available in connections yet.";
                     case "HEAD", "OPTIONS", "TRACE" -> method + " calls are not available in connections.";
                     default -> method + " calls are not supported.";
                 });
             }
             if (sourcePath.contains("{")) {
-                blockers.add("The address contains a variable part (" + truncate(sourcePath, 80) + "). Connections call fixed "
-                        + "addresses today, so an operation that puts an identifier in the address cannot be imported. "
-                        + "Ask for an operation that takes the identifier in the request body, or raise a platform change.");
+                // v1 path template (S130): each {name} becomes a typed path parameter with an input name.
+                String stripped = sourcePath.replaceAll("\\{[^{}/]+\\}", "x");
+                if (!STATIC_PATH.matcher(stripped).matches() || sourcePath.length() > 300) {
+                    blockers.add("The address " + truncate(sourcePath, 80)
+                            + " uses characters connections do not allow (letters, digits and . _ ~ - / only).");
+                }
             } else if (!STATIC_PATH.matcher(sourcePath).matches()) {
                 blockers.add("The address " + truncate(sourcePath, 80)
                         + " uses characters connections do not allow (letters, digits and . _ ~ - / only, 200 at most).");
@@ -946,23 +985,175 @@ public final class OpenApiConverter {
                     paging.add(name);
                 }
                 if ("path".equals(in)) {
-                    continue; // reported through the address check
+                    pathParameter(p, name);
+                    continue;
+                }
+                if ("query".equals(in) || "header".equals(in)) {
+                    String problem = "header".equals(in) && (FORBIDDEN_HEADERS.contains(name.toLowerCase(Locale.ROOT))
+                            || !HEADER.matcher(name).matches()) ? "Orqix controls this header" : null;
+                    if (problem == null) {
+                        problem = parameterInput(p, name, in, required);
+                    }
+                    if (problem == null) {
+                        continue;
+                    }
+                    if (required) {
+                        blockers.add("It needs the " + in + " parameter " + name + ", which cannot be sent: " + problem
+                                + ".");
+                    } else {
+                        ignored.add(name);
+                    }
+                    continue;
                 }
                 if (required) {
                     blockers.add("It needs the " + in + " parameter " + name
-                            + ", which connections cannot send (they send the request body only).");
+                            + ", which connections cannot send (cookies are never sent).");
                 } else {
                     ignored.add(name);
                 }
             }
+            if (sourcePath.contains("{")) {
+                StringBuilder path = new StringBuilder();
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\{([^{}/]+)\\}").matcher(sourcePath);
+                int last = 0;
+                while (m.find()) {
+                    path.append(sourcePath, last, m.start());
+                    String input = pathNames.get(m.group(1));
+                    if (input == null) {
+                        blockers.add("The address uses {" + truncate(m.group(1), 64)
+                                + "}, but the file does not describe that parameter.");
+                        input = "x";
+                    }
+                    path.append('{').append(input).append('}');
+                    last = m.end();
+                }
+                path.append(sourcePath.substring(last));
+                v1Path = path.toString();
+            }
             if (!ignored.isEmpty()) {
                 notes.add("Optional parameters are not sent: " + String.join(", ", limit(ignored, 8))
-                        + ". Connections send the request body only.");
+                        + ". Only simple query and header values can be sent.");
             }
             if (!paging.isEmpty()) {
                 notes.add("The API appears to page its results (" + String.join(", ", limit(paging, 4))
                         + "). Orqix reads the first page only.");
             }
+        }
+
+        final Map<String, String> pathNames = new LinkedHashMap<>();
+
+        /** A path parameter becomes a v1 pathParams entry with a safe input name and a pattern or enum. */
+        void pathParameter(JsonNode p, String name) {
+            String input = inputName(name);
+            if (input == null) {
+                blockers.add("The path parameter " + name + " has no usable name.");
+                return;
+            }
+            Classified c = run.classify(p.path("schema"), Set.of());
+            ObjectNode param = MAPPER.createObjectNode();
+            String type = c.kind == Kind.SCALAR && "integer".equals(c.type) ? "integer" : "string";
+            if (c.kind != Kind.SCALAR || !("string".equals(c.type) || "integer".equals(c.type))) {
+                notes.add("The path parameter " + name + " is sent as text.");
+            }
+            param.put("type", type);
+            if ("string".equals(type)) {
+                if (c.field != null && c.field.has("enum")) {
+                    param.set("enum", c.field.get("enum").deepCopy());
+                } else if (c.field != null && c.field.has("pattern")) {
+                    param.put("pattern", c.field.get("pattern").asString());
+                } else {
+                    param.put("pattern", DEFAULT_SEGMENT_PATTERN);
+                    notes.add("The path parameter " + name + " has no pattern in the file; Orqix allows one URL segment"
+                            + " of letters, digits and . _ ~ - (adjust the pattern if the system needs more).");
+                }
+            }
+            if (c.field != null && c.field.has("description")) {
+                param.put("description", c.field.get("description").asString());
+            }
+            pathParams.set(input, param);
+            pathNames.put(name, input);
+            inputs.add(input);
+        }
+
+        /** @return null when the query or header parameter became an input, else why it cannot be sent */
+        String parameterInput(JsonNode p, String name, String in, boolean required) {
+            String input = inputName(name);
+            if (input == null) {
+                return "its name cannot be turned into an input name";
+            }
+            if (parameterFields.has(input) || pathParams.has(input)) {
+                return "another parameter has the same input name " + input;
+            }
+            Classified c = run.classify(p.path("schema"), Set.of());
+            if (c.kind != Kind.SCALAR) {
+                return c.kind == Kind.ARRAY ? "it is a list" : c.kind == Kind.OBJECT ? "it is an object"
+                        : c.error != null ? c.error : "it is not a simple value";
+            }
+            if ("query".equals(in) && !java.util.regex.Pattern.matches("^[A-Za-z0-9_.\\-\\[\\]]{1,64}$", name)) {
+                return "its name uses characters a query parameter cannot have here";
+            }
+            ObjectNode field = c.field.deepCopy();
+            field.remove("format");
+            parameterFields.set(input, field);
+            if (required) {
+                requiredParameterFields.add(input);
+            }
+            ObjectNode ref = MAPPER.createObjectNode().put("input", input);
+            if ("query".equals(in)) {
+                query.set(name, ref);
+            } else {
+                headerInputs.set(name, ref);
+            }
+            inputs.add(input);
+            return null;
+        }
+
+        /** @return the request schema with the query and header inputs added, or null when there are no fields */
+        ObjectNode withParameterFields(ObjectNode requestSchema) {
+            if (parameterFields.isEmpty()) {
+                return requestSchema;
+            }
+            ObjectNode schema = requestSchema == null ? MAPPER.createObjectNode().put("type", "object") : requestSchema;
+            ObjectNode properties = schema.has("properties") ? (ObjectNode) schema.get("properties")
+                    : MAPPER.createObjectNode();
+            Set<String> required = new LinkedHashSet<>();
+            schema.path("required").forEach(r -> required.add(r.asString()));
+            for (String name : parameterFields.propertyNames()) {
+                if (properties.has(name)) {
+                    blockers.add("The parameter input " + name + " has the same name as a body field.");
+                    continue;
+                }
+                properties.set(name, parameterFields.get(name));
+            }
+            required.addAll(requiredParameterFields);
+            ObjectNode ordered = MAPPER.createObjectNode();
+            ordered.put("type", "object");
+            if (!required.isEmpty()) {
+                ArrayNode list = ordered.putArray("required");
+                required.forEach(list::add);
+            }
+            ordered.set("properties", properties);
+            ordered.put("additionalProperties", false);
+            return ordered;
+        }
+
+        /** @return a camelCase input name (letters and digits, starting lower case), or null */
+        static String inputName(String raw) {
+            StringBuilder out = new StringBuilder();
+            boolean up = false;
+            for (char ch : raw.toCharArray()) {
+                if (Character.isLetterOrDigit(ch) && ch < 128) {
+                    out.append(out.length() == 0 ? Character.toLowerCase(ch) : up ? Character.toUpperCase(ch) : ch);
+                    up = false;
+                } else {
+                    up = true;
+                }
+            }
+            String value = out.toString();
+            if (value.isEmpty() || !Character.isLetter(value.charAt(0))) {
+                return null;
+            }
+            return value.length() > 64 ? value.substring(0, 64) : value;
         }
 
         static List<String> limit(Collection<String> values, int max) {
@@ -1264,7 +1455,12 @@ public final class OpenApiConverter {
         }
 
         void suggestEffect() {
-            if ("GET".equals(method)) {
+            if ("DELETE".equals(method)) {
+                effectClass = "nonIdempotent";
+                effectReason = "DELETE removes a record. If deleting it twice is harmless, choose idempotentNatural;"
+                        + " otherwise Orqix stops and asks an operator when an answer is lost.";
+                idempotencyHeader = null;
+            } else if ("GET".equals(method)) {
                 effectClass = "readOnly";
                 effectReason = "Reads data; a GET call has no side effect by HTTP rules. Orqix may retry and test it freely.";
                 idempotencyHeader = null;

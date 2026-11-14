@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ViewDefinition } from '@/features/views/model'
 import { viewGrid } from '@/features/views/presentation'
 import { AlertCircle } from 'lucide-react'
@@ -9,9 +10,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { buildFields } from '@/lib/form/schema'
 import { Button } from '@/components/ui/button'
 import { FileField } from './FileField'
+import { LookupField, type LookupContext } from './LookupField'
+import { fromZoned, toZoned } from '@/lib/form/zoned'
+import { formatZoned } from '@/lib/form/values'
 import type { FieldDef } from '@/lib/form/schema'
 import type { FieldErrors, RawValue, RawValues } from '@/lib/form/values'
-import { emptyValues, rowFields, type RowRawValue } from '@/lib/form/values'
+import { computedPreview, emptyValues, rowFields, type RowRawValue } from '@/lib/form/values'
 import { visibleFields } from '@/lib/form/visibility'
 
 export function fieldDomId(prefix: string, key: string): string {
@@ -30,6 +34,8 @@ export interface FormRendererProps {
   /** Show the values as read-only text boxes (case data without edit access, docs/build/S125). */
   readOnly?: boolean
   onFileBusyChange?: (key: string, busy: boolean) => void
+  /** Where lookup questions search (the start form of a published workflow, docs/build/S140). */
+  lookup?: LookupContext
 }
 
 /**
@@ -37,9 +43,13 @@ export interface FormRendererProps {
  * `title` is the label, `description` is help text linked with aria-describedby, required fields are marked in text,
  * and client or server errors render on the same field.
  */
-export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, readOnly, onFileBusyChange,view }: FormRendererProps) {
+export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, readOnly, onFileBusyChange,view, lookup }: FormRendererProps) {
   const shown = visibleFields(fields, values)
-  const render = (f: FieldDef) => readOnly ? <ReadOnlyControl key={f.key} field={f} value={values[f.key]} id={fieldDomId(idPrefix, f.key)} /> : <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
+  // CG-F04 (S137): computed answers are shown as they are calculated, never typed.
+  const computed = computedPreview(fields, values)
+  const render = (f: FieldDef) => f.computed !== undefined
+    ? <ReadOnlyControl key={f.key} field={{ ...f, description: f.description ?? 'Calculated from your other answers.' }} value={computed[f.key] ?? ''} id={fieldDomId(idPrefix, f.key)} />
+    : readOnly ? <ReadOnlyControl key={f.key} field={f} value={values[f.key]} id={fieldDomId(idPrefix, f.key)} /> : <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} lookup={lookup} />
   const sectionIds = [...new Set(shown.flatMap(f => f.section ? [f.section.id] : []))]
   return (
     <div className="space-y-5">
@@ -61,6 +71,7 @@ function FieldControl({
   id,
   disabled,
   onFileBusyChange,
+  lookup,
 }: {
   field: FieldDef
   value: RawValue | undefined
@@ -69,8 +80,34 @@ function FieldControl({
   id: string
   disabled: boolean | undefined
   onFileBusyChange?: (key: string, busy: boolean) => void
+  lookup?: LookupContext
 }) {
   const text = typeof value === 'string' ? value : ''
+
+  if (f.widget === 'checklist' && f.schema.items?.enum) {
+    // Checklist (S140): one checkbox per choice; the value is the list of ticked choices in their listed order.
+    const choices = f.schema.items.enum
+    const ticked = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+    const errId = `${id}-error`
+    return (
+      <fieldset className="space-y-2" id={id} disabled={disabled} aria-describedby={error ? errId : undefined}>
+        <legend className="text-sm font-semibold">{f.label}{f.required ? <>{' '}<span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span></> : null}</legend>
+        {f.description ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
+        {choices.map((option) => (
+          <div key={option} className="flex items-center gap-3">
+            <Checkbox id={`${id}-${option}`} checked={ticked.includes(option)} disabled={disabled}
+              onCheckedChange={(checked) => onChange(choices.filter((o) => (o === option ? checked === true : ticked.includes(o))))} />
+            <Label htmlFor={`${id}-${option}`} className="font-medium">{f.optionLabels?.[option] ?? option}</Label>
+          </div>
+        ))}
+        {error ? <FieldError id={errId} message={error} /> : null}
+      </fieldset>
+    )
+  }
+
+  if (f.widget === 'tags') {
+    return <TagListControl field={f} value={Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []} onChange={onChange} error={error} id={id} disabled={disabled} />
+  }
 
   if (f.widget === 'collection' && f.schema.items) {
     const entries = Array.isArray(value) ? value : []
@@ -210,6 +247,19 @@ function FieldControl({
           case 'date':
             // A native date input: it shows the browser's own calendar, and its value is always YYYY-MM-DD.
             return <Input {...common} type="date" value={text} min={f.schema.formatMinimum} max={f.schema.formatMaximum} onChange={(e) => onChange(e.target.value)} />
+          case 'time':
+            // HH:MM in 24-hour form (S140); the native control follows the browser's language.
+            return <Input {...common} type="time" step={60} value={text} min={f.schema.formatMinimum} max={f.schema.formatMaximum} onChange={(e) => onChange(e.target.value)} />
+          case 'dateTime':
+            // Typed in the question's zone (or the browser's); stored with the offset of that moment (S140).
+            return (
+              <>
+                <Input {...common} type="datetime-local" step={60} value={fromZoned(text, f.schema.timeZone)} onChange={(e) => onChange(toZoned(e.target.value, f.schema.timeZone))} />
+                <p className="text-xs text-muted-foreground">{f.schema.timeZone ? `Time zone: ${f.schema.timeZone}.` : "Your browser's time zone."}{text ? ` Saved as ${formatZoned(text, f.schema.timeZone)}.` : ''}</p>
+              </>
+            )
+          case 'lookup':
+            return <LookupField field={f} value={text} onChange={onChange} id={ids.input} describedBy={ids.describedBy} invalid={!!error} disabled={disabled} context={lookup} />
           case 'select':
             return (
               <Select {...common} value={text} onChange={(e) => onChange(e.target.value)}>
@@ -250,6 +300,40 @@ function ReadOnlyControl({ field: f, value, id }: { field: FieldDef; value: RawV
     <FormField label={f.label} description={f.description} required={f.required} id={id}>
       {(ids) => <Input id={ids.input} readOnly value={text} aria-describedby={ids.describedBy} />}
     </FormField>
+  )
+}
+
+/** Tag list (S140): free text values added one by one, each at most once. */
+function TagListControl({ field: f, value, onChange, error, id, disabled }: { field: FieldDef; value: string[]; onChange: (value: RawValue) => void; error: string | undefined; id: string; disabled: boolean | undefined }) {
+  const [draft, setDraft] = useState('')
+  const max = f.schema.maxItems ?? 25
+  const add = () => {
+    const tag = draft.trim()
+    if (value.includes(tag)) { setDraft(''); return } // already listed: each tag once
+    if (!tag || value.length >= max) return
+    onChange([...value, tag])
+    setDraft('')
+  }
+  const errId = `${id}-error`
+  return (
+    <fieldset className="space-y-2" id={id} disabled={disabled} aria-describedby={error ? errId : undefined}>
+      <legend className="text-sm font-semibold">{f.label}{f.required ? <>{' '}<span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span></> : null}</legend>
+      {f.description ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
+      <ul className="flex flex-wrap gap-2" aria-label={`${f.label}: ${value.length} of at most ${max}`}>
+        {value.map((tag) => (
+          <li key={tag} className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-sm">
+            <span>{tag}</span>
+            <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${tag}`} onClick={() => onChange(value.filter((t) => t !== tag))}>×</Button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Input id={`${id}-input`} aria-label={`Add to ${f.label}`} value={draft} maxLength={f.schema.items?.maxLength} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add() } }} />
+        <Button type="button" variant="secondary" disabled={disabled || value.length >= max || !draft.trim()} onClick={add}>Add</Button>
+      </div>
+      {error ? <FieldError id={errId} message={error} /> : null}
+    </fieldset>
   )
 }
 

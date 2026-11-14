@@ -104,6 +104,12 @@ public final class DmnGenerator {
             .map(Condition::fieldRef).distinct().sorted().toList();
     }
 
+    /** @see ExpressionDmn#engineVariables */
+    public static Map<String, Object> engineVariables(DecisionTable table, Map<String, Object> values,
+            com.orqix.compiler.DecisionEvaluator.Result result) {
+        return ExpressionDmn.engineVariables(table, values, result);
+    }
+
     /** @return true for tables the one-column form above cannot hold */
     private static boolean multiColumn(DecisionTable table) {
         return table.rows().stream().anyMatch(r -> r.when().compound()) || table.dated() || table.collect()
@@ -112,6 +118,8 @@ public final class DmnGenerator {
 
     /** Flat conjunctions become one DMN input column per distinct canonical field. */
     public static String generate(DecisionTable table, Map<String,FieldKind> kinds) {
+        // S146: only tables with expression entries take the new form; every other table keeps its bytes.
+        if(table.usesExpressions()) return ExpressionDmn.generate(table, kinds);
         if(!multiColumn(table)) return generate(table,kinds.get(table.rows().get(0).when().fieldRef()));
         var fields=inputFields(table);
         String key=table.key();
@@ -188,7 +196,7 @@ public final class DmnGenerator {
             case STRING -> "string";
             case NUMBER, INTEGER -> "number";
             case BOOLEAN -> "boolean";
-            case ARRAY, OBJECT, DATE, ATTACHMENT -> throw new IllegalArgumentException("Collection, object, date and file conditions are not supported");
+            case ARRAY, OBJECT, DATE, TIME, DATETIME, ATTACHMENT -> throw new IllegalArgumentException("Collection, object, date, time and file conditions are not supported");
         };
     }
 

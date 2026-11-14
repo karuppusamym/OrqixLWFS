@@ -23,8 +23,18 @@ import tools.jackson.databind.JsonNode;
 @Repository
 public class TaskQueries {
 
+    /**
+     * A decision of a task. {@code actor} is the person who decided; it is null when the AI reviewer of the step decided
+     * (S152), and then {@code actorKind} is {@code aiReviewer} and the skill and AI decision record are named.
+     */
     public record DecisionRow(UUID id, String taskId, UUID runId, String nodeId, UUID actor, String action,
-            String reason, String comment, JsonNode policyFlags, java.time.Instant decidedAt) {
+            String reason, String comment, JsonNode policyFlags, java.time.Instant decidedAt, String actorKind,
+            UUID aiDecisionId, String aiSkillKey, Integer aiSkillVersion) {
+
+        /** @return true when the AI reviewer of the step decided (S152) */
+        public boolean byAi() {
+            return "aiReviewer".equals(actorKind);
+        }
     }
 
     private static final String T_COLUMNS = """
@@ -190,7 +200,8 @@ public class TaskQueries {
     public Optional<DecisionRow> decisionForTask(UUID workspaceId, String taskId) {
         return jdbc.sql("""
                 SELECT id, engine_task_id, run_id, node_id, actor_subject_id, action, reason, comment,
-                       policy_flags::text AS policy_flags, decided_at
+                       policy_flags::text AS policy_flags, decided_at, actor_kind, ai_decision_id, ai_skill_key,
+                       ai_skill_version
                 FROM task_decision WHERE workspace_id = :ws AND engine_task_id = :task
                 """)
                 .param("ws", workspaceId).param("task", taskId).query(this::mapDecision).optional();
@@ -200,7 +211,8 @@ public class TaskQueries {
     public List<DecisionRow> decisionsForRun(UUID workspaceId, UUID runId) {
         return jdbc.sql("""
                 SELECT id, engine_task_id, run_id, node_id, actor_subject_id, action, reason, comment,
-                       policy_flags::text AS policy_flags, decided_at
+                       policy_flags::text AS policy_flags, decided_at, actor_kind, ai_decision_id, ai_skill_key,
+                       ai_skill_version
                 FROM task_decision WHERE workspace_id = :ws AND run_id = :run ORDER BY decided_at, id
                 """)
                 .param("ws", workspaceId).param("run", runId).query(this::mapDecision).list();
@@ -210,7 +222,8 @@ public class TaskQueries {
     public Optional<DecisionRow> decision(UUID workspaceId, UUID decisionId) {
         return jdbc.sql("""
                 SELECT id, engine_task_id, run_id, node_id, actor_subject_id, action, reason, comment,
-                       policy_flags::text AS policy_flags, decided_at
+                       policy_flags::text AS policy_flags, decided_at, actor_kind, ai_decision_id, ai_skill_key,
+                       ai_skill_version
                 FROM task_decision WHERE workspace_id = :ws AND id = :id
                 """)
                 .param("ws", workspaceId).param("id", decisionId).query(this::mapDecision).optional();
@@ -261,11 +274,37 @@ public class TaskQueries {
         return inserted == 1 ? id : null;
     }
 
+    /**
+     * The decision of the AI reviewer of the step (S152): no subject, the skill and the AI decision record instead.
+     * Never part of a person's separation of duties and never a self-approval.
+     *
+     * @return the decision id, or null when the task was already decided
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID insertAgentDecision(UUID workspaceId, String taskId, UUID runId, String nodeId, String action,
+            String reason, java.time.Instant decidedAt, UUID aiDecisionId, String skillKey, int skillVersion) {
+        UUID id = Ids.newId();
+        int inserted = jdbc.sql("""
+                INSERT INTO task_decision (id, workspace_id, engine_task_id, run_id, node_id, actor_subject_id, action,
+                                           reason, comment, policy_flags, decided_at, distinct_actor, actor_kind,
+                                           ai_decision_id, ai_skill_key, ai_skill_version)
+                VALUES (:id, :ws, :task, :run, :node, NULL, :action, :reason, NULL, '[]'::jsonb, :at, false, 'aiReviewer',
+                        :decision, :skill, :version)
+                ON CONFLICT (engine_task_id) DO NOTHING
+                """)
+                .param("id", id).param("ws", workspaceId).param("task", taskId).param("run", runId).param("node", nodeId)
+                .param("action", action).param("reason", reason).param("at", Sql.ts(decidedAt))
+                .param("decision", aiDecisionId).param("skill", skillKey).param("version", skillVersion)
+                .update();
+        return inserted == 1 ? id : null;
+    }
+
     private DecisionRow mapDecision(ResultSet rs, int n) throws SQLException {
         return new DecisionRow(Sql.uuid(rs, "id"), rs.getString("engine_task_id"), Sql.uuid(rs, "run_id"),
                 rs.getString("node_id"), Sql.uuid(rs, "actor_subject_id"), rs.getString("action"),
                 rs.getString("reason"), rs.getString("comment"), json.parse(rs.getString("policy_flags")),
-                Sql.instant(rs, "decided_at"));
+                Sql.instant(rs, "decided_at"), rs.getString("actor_kind"), Sql.uuid(rs, "ai_decision_id"),
+                rs.getString("ai_skill_key"), (Integer) rs.getObject("ai_skill_version"));
     }
 
     // ---------------------------------------------------------------- send-backs (S116)

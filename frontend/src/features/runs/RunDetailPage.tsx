@@ -1,7 +1,16 @@
-import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock, Eye, Pause, Play, RadioTower, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import * as endpoints from '@/api/endpoints'
+import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
+import { Badge } from '@/components/ui/badge'
 import { CallbackWaitsPanel } from './CallbackWaitsPanel'
+import { GuestLinksPanel } from './GuestLinksPanel'
+import { WaitingForPanel } from './WaitingForPanel'
+import { AiDecisionsPanel } from './AiDecisionsPanel'
+import { ExplainRunPanel, type ExplainAction } from './ExplainRunPanel'
+import { DocumentVerificationsPanel } from './DocumentVerificationsPanel'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
 import { useConsistencyFindings, useMe, useRelease, useRun, useRunEvents } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
@@ -16,7 +25,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { dueInfo, formatDateTime, formatTime } from '@/lib/dates'
 import { cn } from '@/lib/cn'
 import { attentionNextStep, describeEvent, eventTone, timelineEvents, type EventContext, type EventTone } from '@/lib/events'
-import { displayJsonValue } from '@/lib/form/display'
+import { displayJsonValue, MASKED_VALUE } from '@/lib/form/display'
 import { orderedRequestRows } from '@/lib/form/rows'
 import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
 import { ownReference, requestId, runTitle, stepOwnerText } from '@/lib/runText'
@@ -24,7 +33,9 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
-import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
+import { MappedMigrateDialog, MoveStepDialog } from './MigrationAndMoveDialogs'
+import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SendSignalDialog, SuspendDialog } from './OperatorDialogs'
+import { signalChoices } from './signals'
 import { CaseControlsPanel } from './CaseControlsPanel'
 import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 import { RunCommentsPanel } from './RunCommentsPanel'
@@ -46,7 +57,7 @@ const TONE_DOT: Record<EventTone, string> = {
   danger: 'bg-danger',
 }
 
-type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'repair' | null
+type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'migrateMapped' | 'moveStep' | 'repair' | 'signal' | null
 
 /**
  * Run detail for requesters, approvers and operators (docs/build/S7-frontend.md section 4).
@@ -63,15 +74,16 @@ export function RunDetailPage() {
 
   if (run.isPending) return <LoadingBlock rows={5} label="Loading the request" />
   if (run.isError) return <QueryError error={run.error} onRetry={() => void run.refetch()} what="this request" backTo={can('run.read') ? { to: `/w/${ws}/runs`, label: 'Back to Runs' } : { to: `/w/${ws}/requests`, label: 'Back to My requests' }} />
-  return <RunView run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
+  return <RunView key={run.data.id} run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
 }
 
-function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown } | undefined }) {
+function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown; nodes?: unknown; subprocesses?: unknown } | undefined }) {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const me = useMe()
   const [dialog, setDialog] = useState<DialogName>(null)
   const [reconcileId, setReconcileId] = useState<string | undefined>()
+  const navigate = useNavigate()
   const [view, setViewState] = useState<RunView>(() => (readStorage('orqix.runView') === 'diagram' ? 'diagram' : 'timeline'))
   const setView = (next: RunView) => {
     setViewState(next)
@@ -103,8 +115,18 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
     return { initiatorName: run.initiator.displayName, labels, groupNames }
   }, [run, events])
 
-  const input = run.input ? asRecord(run.input) : null
-  const rawRequestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>) : []
+  // CG-I05: personal and sensitive answers arrive masked. Revealed answers live only in this component's state (never cached
+  // or stored), so they disappear when the person leaves the page.
+  const protectedFields = run.protectedFields ?? []
+  const [revealed, setRevealed] = useState<Record<string, unknown>>({})
+  const stillMasked = protectedFields.filter((f) => !(f in revealed))
+  const reveal = useMutation({
+    mutationFn: () => endpoints.revealRunData(ws, run.id, stillMasked),
+    onSuccess: (data) => setRevealed((prev) => ({ ...prev, ...(data.values as Record<string, unknown>) })),
+  })
+  const input = run.input ? { ...asRecord(run.input), ...revealed } : null
+  const rawRequestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>).map((row) =>
+    stillMasked.includes(row.key) ? { ...row, value: MASKED_VALUE } : row) : []
   // A file question stores the id of the attached file; show the file's name instead (ids that are not known files stay as they are).
   const fileNames = new Map((requestFiles.data?.items ?? []).map((f) => [f.id, f.name] as [string, string]))
   const requestRows = fileNames.size === 0 ? rawRequestRows : rawRequestRows.map((row) =>
@@ -116,6 +138,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const effects = run.effects ?? []
   const reconcileCandidates = candidateEffects(effects)
   const notReversed = run.completedEffectsNotReversed ?? []
+  const signals = signalChoices(run, events, releaseDefinition)
+  const waitingForSignal = run.currentSteps.some((s) => s.kind === 'waitForSignal')
   // Lead with the next safe action. An unknown outcome is checked before anything is retried; a definite failure or used-up
   // retries are retried; only a stuck request with nothing to retry points at the task owner. A request that is simply
   // waiting needs no recommendation.
@@ -126,6 +150,23 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       : allowed.retry.allowed ? 'retry'
         : allowed.reconcile.allowed ? 'reconcile'
           : openTasks.length > 0 ? 'reassign' : null
+
+  // CG-A07: a suggested action of "Explain this request" opens the existing dialog or place; it never acts by itself.
+  const onExplainAction = (action: ExplainAction) => {
+    const operation = action.operationId ?? ''
+    const dialogs: Record<string, DialogName> = { retryRun: 'retry', cancelRun: 'cancel', resumeRun: 'resume', repairRun: 'repair', reassignTask: 'reassign' }
+    if (operation === 'reconcileEffect') {
+      setReconcileId(action.targetId ?? undefined)
+      setDialog('reconcile')
+    } else if (dialogs[operation]) {
+      setDialog(dialogs[operation])
+    } else if (operation === 'putConnectionBinding') {
+      void navigate(`/w/${ws}/settings`)
+    } else {
+      const target = operation === 'correctRunInput' ? 'input-correction-heading' : 'waiting-for-heading'
+      document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   return (
     <>
@@ -234,6 +275,12 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0} title="Give the open approval task to another eligible person">
               Reassign task
             </Button>
+            {/* Only where signals are in play: a "Wait for a signal" step is open or the workflow has signal handlers. */}
+            {!isTerminal(run.lifecycle) && (waitingForSignal || signals.length > 0) ? (
+              <Button variant="secondary" onClick={() => setDialog('signal')} disabled={!!run.suspension} title={run.suspension ? 'Resume the request before sending a signal' : 'Send a signal that this request waits for'}>
+                <RadioTower aria-hidden="true" /> Send signal
+              </Button>
+            ) : null}
             {run.suspension ? (
               <Button variant="primary" onClick={() => setDialog('resume')} disabled={!allowed.resume.allowed} title="Let this request continue where it stopped">
                 <Play aria-hidden="true" /> Resume request
@@ -248,6 +295,14 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                 Move to another version
               </Button>
             ) : null}
+            <Button variant="secondary" onClick={() => setDialog('migrateMapped')} title="Continue this request on another version, mapping waiting steps that were renamed">
+              Move with step mapping
+            </Button>
+            {!run.suspension ? (
+              <Button variant="secondary" onClick={() => setDialog('moveStep')} title="Skip the current step, run a step again or move to another step, without repeating what already happened">
+                Move to another step
+              </Button>
+            ) : null}
             {!run.suspension ? (
               <Button variant="secondary" onClick={() => setDialog('repair')} title="Compare this request with the workflow engine and rebuild missing steps">
                 Check consistency
@@ -260,10 +315,13 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
             {!allowed.retry.allowed && needsAttention ? <li>Retry: {reasonText(allowed.retry.reasonCode)}</li> : null}
             {!allowed.cancel.allowed ? <li>Cancel: {reasonText(allowed.cancel.reasonCode)}</li> : null}
+            {waitingForSignal && !run.suspension ? <li data-testid="signal-hint">This request is waiting for a signal{signals[0] ? <> (<span className="font-mono">{signals[0].signal}</span>)</> : null}. If nothing else will send it, use Send signal.</li> : null}
             {!run.suspension && !allowed.suspend.allowed && run.lifecycle !== 'cancelled' && run.lifecycle !== 'completed' ? <li>Suspend: {reasonText(allowed.suspend.reasonCode)}</li> : null}
           </ul>
         </section>
       ) : null}
+
+      {can('run.operate') ? <ExplainRunPanel ws={ws} runId={run.id} onAction={onExplainAction} /> : null}
 
       <StageProgress stage={run.stage} stages={run.stages} />
 
@@ -277,14 +335,35 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
               {input === null ? (
                 <p className="text-sm text-muted-foreground">You can see where this request stands, but not what was requested.</p>
               ) : (
-                <dl className="divide-y divide-border rounded-card border border-border" data-testid="request-values">
-                  {requestRows.map((row) => (
-                    <div key={row.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[12rem_1fr]">
-                      <dt className="text-sm font-semibold text-muted-foreground">{row.label}</dt>
-                      <dd className="wrap-anywhere whitespace-pre-wrap">{row.value}</dd>
+                <>
+                  {protectedFields.length > 0 ? (
+                    <div className="mb-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-muted-foreground">
+                          {stillMasked.length === 0 ? 'Masked answers are shown until you leave this page. Your reveal was recorded.'
+                            : can('data.reveal') ? 'Some answers are personal or sensitive and are masked. Revealing them is recorded.'
+                              : 'Some answers are personal or sensitive and are masked. Only people allowed to reveal them can see them.'}
+                        </p>
+                        {stillMasked.length > 0 && can('data.reveal') ? (
+                          <Button size="sm" variant="secondary" loading={reveal.isPending} onClick={() => reveal.mutate()}><Eye aria-hidden="true" /> Reveal</Button>
+                        ) : null}
+                      </div>
+                      {reveal.isError ? <ProblemAlert error={toProblem(reveal.error)} context={{ action: 'reveal the masked answers' }} /> : null}
                     </div>
-                  ))}
-                </dl>
+                  ) : null}
+                  <dl className="divide-y divide-border rounded-card border border-border" data-testid="request-values">
+                    {requestRows.map((row) => (
+                      <div key={row.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[12rem_1fr]">
+                        <dt className="text-sm font-semibold text-muted-foreground">{row.label}</dt>
+                        <dd className="wrap-anywhere whitespace-pre-wrap">
+                          {row.value}
+                          {stillMasked.includes(row.key) ? <Badge className="ml-2 align-middle">Masked</Badge> : null}
+                          {protectedFields.includes(row.key) && !stillMasked.includes(row.key) ? <span className="ml-2 text-xs text-muted-foreground">Revealed</span> : null}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
               )}
               {run.output && Object.keys(asRecord(run.output)).length > 0 ? (
                 <div className="mt-4">
@@ -360,7 +439,11 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             </Card>
           ) : null}
 
+          {run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention' || run.lifecycle === 'running' ? <WaitingForPanel ws={ws} runId={run.id} /> : null}
+          {input ? <DocumentVerificationsPanel ws={ws} runId={run.id} /> : null}
+          <AiDecisionsPanel ws={ws} runId={run.id} canRecord={can('run.operate') || can('task.act') || can('ai.evaluate')} />
           {can('run.operate') ? <CallbackWaitsPanel ws={ws} runId={run.id} /> : null}
+          {can('run.operate') ? <GuestLinksPanel ws={ws} runId={run.id} /> : null}
           {input ? <RunFiles ws={ws} runId={run.id} /> : null}
           {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
 
@@ -381,11 +464,17 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                     ) : (
                       <ol className="relative space-y-4 border-l-2 border-border pl-5" data-testid="timeline">
                         {timelineEvents(events).map((e) => (
-                          <li key={e.seq} className="relative">
+                          <li key={e.seq} id={`event-${e.seq}`} className="relative scroll-mt-20">
                             <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
                             <p className="text-sm">{describeEvent(e, ctx)}</p>
                             <DecisionEvidence event={e} />
                             <IncidentCorrectionEvidence event={e} />
+                            {/* S135: an agent step links to its conversation trace (shown when the workspace keeps traces). */}
+                            {e.type === 'EFFECT_SUCCEEDED' && e.data.agent && e.nodeId && can('run.operate') ? (
+                              <Link className="text-xs" to={`/w/${ws}/agents?run=${run.id}&node=${encodeURIComponent(e.nodeId)}`}>
+                                Agent trace of this step
+                              </Link>
+                            ) : null}
                             <p className="text-xs text-muted-foreground">
                               <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
                             </p>
@@ -406,7 +495,10 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       {dialog === 'suspend' ? <SuspendDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'resume' ? <ResumeDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'migrate' ? <MigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'migrateMapped' ? <MappedMigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'moveStep' ? <MoveStepDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'reassign' ? <ReassignDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'signal' ? <SendSignalDialog open run={run} choices={signals} onClose={() => setDialog(null)} /> : null}
     </>
   )
 }

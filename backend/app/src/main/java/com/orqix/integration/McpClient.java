@@ -1,5 +1,6 @@
 package com.orqix.integration;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -8,15 +9,21 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.ByteBuffer;
 import java.nio.channels.UnresolvedAddressException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 
 import org.springframework.stereotype.Component;
 
@@ -27,23 +34,32 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Minimal MCP client for the Streamable HTTP transport (S13 section 5): JSON-RPC 2.0 over POST, replies as
- * {@code application/json} or as a single {@code text/event-stream}. It implements exactly {@code initialize},
- * {@code notifications/initialized}, {@code tools/list} and {@code tools/call}; server-initiated requests and the
- * GET stream are not used. Hard bounds that matter for safety live here: redirects are never followed, every response
- * is capped at 1 MiB, every call has a timeout derived from one execution deadline, and nothing is ever logged.
- * The caller has already applied the egress policy to the endpoint.
+ * Minimal MCP client for the Streamable HTTP transport (S13 section 5, S135): JSON-RPC 2.0 over POST, replies as
+ * {@code application/json} or as a single {@code text/event-stream}. It implements {@code initialize},
+ * {@code notifications/initialized}, {@code tools/list}, {@code tools/call} and {@code resources/read}. Server-initiated
+ * requests that arrive on a response stream are answered while the stream is still open: {@code sampling/createMessage}
+ * and every other request are refused, {@code ping} is answered, and {@code elicitation/create} is declined unless the
+ * caller allowed it, in which case it is cancelled and handed to the caller (it becomes a task for a person, CG-M03).
+ * {@code notifications/tools/list_changed} sets a flag the caller checks. Hard bounds that matter for safety live here:
+ * redirects are never followed, every response is capped at 1 MiB, every call has a timeout derived from one execution
+ * deadline, and nothing is ever logged. The caller has already applied the egress policy to the endpoint.
  */
 @Component
 public class McpClient {
 
     /** Protocol versions this client speaks, newest first. */
-    static final List<String> PROTOCOL_VERSIONS = List.of("2025-06-18", "2025-03-26");
+    static final List<String> PROTOCOL_VERSIONS = List.of("2025-11-25", "2025-06-18", "2025-03-26");
     private static final int MAX_TOOL_PAGES = 5;
     private static final Duration CALL_CAP = Duration.ofSeconds(15);
+    static final int MAX_ELICITATION_CHARS = 2000;
 
     /** @param bearerToken null for auth type none */
     public record Endpoint(String url, String bearerToken) {
+    }
+
+    /** @param elicitation true: the client declares the elicitation capability and hands requests to the caller */
+    public record Options(boolean elicitation) {
+        public static final Options NONE = new Options(false);
     }
 
     public record Tool(String name, String description, JsonNode inputSchema) {
@@ -55,6 +71,10 @@ public class McpClient {
      * @param structured {@code structuredContent} when the server sent it, else null
      */
     public record ToolResult(boolean isError, String text, JsonNode structured) {
+    }
+
+    /** An elicitation the server asked for during a call: its message and the requested (flat) schema. */
+    public record Elicitation(String message, JsonNode requestedSchema) {
     }
 
     /** One execution deadline shared by every call of that execution. */
@@ -117,7 +137,11 @@ public class McpClient {
 
     /** Opens a session: {@code initialize} then {@code notifications/initialized}. */
     public Session connect(Endpoint endpoint, Deadline deadline) {
-        Session session = new Session(endpoint, deadline);
+        return connect(endpoint, deadline, Options.NONE);
+    }
+
+    public Session connect(Endpoint endpoint, Deadline deadline, Options options) {
+        Session session = new Session(endpoint, deadline, options == null ? Options.NONE : options);
         try {
             session.initialize();
         } catch (RuntimeException e) {
@@ -127,24 +151,34 @@ public class McpClient {
         return session;
     }
 
-    /** One MCP session (one execution). Not thread safe. */
+    /** One MCP session (one execution). Not thread safe for callers; server requests are answered internally. */
     public final class Session implements AutoCloseable {
 
         private final Endpoint endpoint;
         private final Deadline deadline;
+        private final Options options;
         private long nextId = 1;
-        private String sessionId;
-        private String protocolVersion = PROTOCOL_VERSIONS.get(0);
+        private volatile String sessionId;
+        private volatile String protocolVersion = PROTOCOL_VERSIONS.get(0);
+        private JsonNode serverCapabilities;
+        private volatile boolean toolsChanged;
+        private volatile int samplingRefused;
+        private volatile Elicitation elicitation;
+        private final List<CompletableFuture<?>> replies = new CopyOnWriteArrayList<>();
 
-        private Session(Endpoint endpoint, Deadline deadline) {
+        private Session(Endpoint endpoint, Deadline deadline, Options options) {
             this.endpoint = endpoint;
             this.deadline = deadline;
+            this.options = options;
         }
 
         private void initialize() {
             ObjectNode params = json.object();
             params.put("protocolVersion", PROTOCOL_VERSIONS.get(0));
-            params.putObject("capabilities");
+            ObjectNode capabilities = params.putObject("capabilities");
+            if (options.elicitation()) {
+                capabilities.putObject("elicitation");
+            }
             params.putObject("clientInfo").put("name", "orqix").put("version", "1");
             JsonNode result = call("initialize", params);
             String negotiated = result.path("protocolVersion").asString("");
@@ -152,7 +186,38 @@ public class McpClient {
                 throw new McpException(FailureKind.INVALID, null, "Unsupported MCP protocol version");
             }
             protocolVersion = negotiated;
+            serverCapabilities = result.path("capabilities");
             send(notification("notifications/initialized"));
+        }
+
+        /** True when the server declared the given capability ({@code tools}, {@code resources}, ...). */
+        public boolean serverSupports(String capability) {
+            return serverCapabilities != null && serverCapabilities.path(capability).isObject();
+        }
+
+        public String protocolVersion() {
+            return protocolVersion;
+        }
+
+        /** True once the server sent {@code notifications/tools/list_changed}; cleared by {@link #clearToolsChanged}. */
+        public boolean toolsChanged() {
+            return toolsChanged;
+        }
+
+        public void clearToolsChanged() {
+            toolsChanged = false;
+        }
+
+        /** Sampling requests of the server that were refused in this session. */
+        public int samplingRefused() {
+            return samplingRefused;
+        }
+
+        /** The elicitation of the last call (cancelled towards the server), or null; cleared when read. */
+        public Elicitation takeElicitation() {
+            Elicitation value = elicitation;
+            elicitation = null;
+            return value;
         }
 
         /** {@code tools/list} over all pages (at most five pages). */
@@ -203,9 +268,35 @@ public class McpClient {
             return new ToolResult(result.path("isError").asBoolean(false), text.toString(), structured);
         }
 
+        /**
+         * {@code resources/read} of one fixed URI: the text contents joined, capped at {@code maxChars}.
+         *
+         * @throws McpException INVALID when the server has no resources or sends no text
+         */
+        public String readResource(String uri, int maxChars) {
+            if (!serverSupports("resources")) {
+                throw new McpException(FailureKind.INVALID, null, "The MCP server offers no resources");
+            }
+            JsonNode result = call("resources/read", json.object().put("uri", uri));
+            StringBuilder text = new StringBuilder();
+            for (JsonNode content : result.path("contents")) {
+                if (content.path("text").isString()) {
+                    if (!text.isEmpty()) {
+                        text.append('\n');
+                    }
+                    text.append(content.path("text").asString());
+                }
+            }
+            if (text.isEmpty()) {
+                throw new McpException(FailureKind.INVALID, null, "The resource has no text content");
+            }
+            return text.length() > maxChars ? text.substring(0, maxChars) + "..." : text.toString();
+        }
+
         /** Ends the session (best effort, never throws). */
         @Override
         public void close() {
+            awaitReplies();
             if (sessionId == null) {
                 return;
             }
@@ -237,7 +328,7 @@ public class McpClient {
             return message;
         }
 
-        /** Request whose JSON-RPC error is a protocol failure (initialize, tools/list). */
+        /** Request whose JSON-RPC error is a protocol failure (initialize, tools/list, resources/read). */
         private JsonNode call(String method, ObjectNode params) {
             JsonNode message = exchange(rpc(method, params));
             if (message.has("error")) {
@@ -270,7 +361,8 @@ public class McpClient {
             HttpRequest.Builder builder = base(timeout)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(payload));
-            HttpResponse<byte[]> response = await(builder.build(), timeout);
+            HttpResponse<byte[]> response = await(builder.build(), timeout, this::onStreamMessage);
+            awaitReplies();
             int status = response.statusCode();
             if (status == 202 && !message.has("id")) {
                 return new Reply(List.of());
@@ -293,19 +385,95 @@ public class McpClient {
             if (body == null) {
                 throw new McpException(FailureKind.INVALID, status, "The MCP response is too large");
             }
-            String contentType = response.headers().firstValue("Content-Type").orElse("").toLowerCase(java.util.Locale.ROOT);
+            String contentType = response.headers().firstValue("Content-Type").orElse("").toLowerCase(Locale.ROOT);
             try {
+                List<JsonNode> messages;
                 if (contentType.startsWith("text/event-stream")) {
-                    return new Reply(parseEvents(new String(body, StandardCharsets.UTF_8)));
+                    messages = parseEvents(new String(body, StandardCharsets.UTF_8));
+                } else if (body.length == 0) {
+                    messages = List.of();
+                } else {
+                    JsonNode parsed = json.parse(body);
+                    messages = parsed.isArray() ? iterable(parsed) : List.of(parsed);
+                    // A JSON reply cannot carry server requests that wait for an answer; notifications still count.
+                    messages.forEach(m -> {
+                        if ("notifications/tools/list_changed".equals(m.path("method").asString(""))) {
+                            toolsChanged = true;
+                        }
+                    });
                 }
-                if (body.length == 0) {
-                    return new Reply(List.of());
-                }
-                JsonNode parsed = json.parse(body);
-                return new Reply(parsed.isArray() ? iterable(parsed) : List.of(parsed));
+                return new Reply(messages);
             } catch (IllegalArgumentException e) {
                 throw new McpException(FailureKind.INVALID, status, "The MCP response is not valid JSON");
             }
+        }
+
+        /** Called for every complete event of a response stream, while the stream is still open. */
+        private void onStreamMessage(JsonNode message) {
+            if (!message.isObject() || !message.has("method")) {
+                return;
+            }
+            String method = message.path("method").asString("");
+            if ("notifications/tools/list_changed".equals(method)) {
+                toolsChanged = true;
+                return;
+            }
+            JsonNode id = message.get("id");
+            if (id == null || id.isNull()) {
+                return; // other notifications (progress, logging) are ignored
+            }
+            ObjectNode reply = json.object();
+            reply.put("jsonrpc", "2.0");
+            reply.set("id", id);
+            switch (method) {
+                case "ping" -> reply.putObject("result");
+                case "elicitation/create" -> {
+                    if (options.elicitation()) {
+                        JsonNode params = message.path("params");
+                        String text = params.path("message").asString("");
+                        elicitation = new Elicitation(text.length() > MAX_ELICITATION_CHARS
+                                ? text.substring(0, MAX_ELICITATION_CHARS) : text, params.path("requestedSchema"));
+                        // The person answers later through a task; the server is told now, so it never waits on us.
+                        reply.putObject("result").put("action", "cancel");
+                    } else {
+                        reply.putObject("result").put("action", "decline");
+                    }
+                }
+                case "sampling/createMessage" -> {
+                    samplingRefused++;
+                    reply.putObject("error").put("code", -32601).put("message", "Sampling is not supported");
+                }
+                default -> reply.putObject("error").put("code", -32601).put("message", "Method not supported");
+            }
+            postReply(reply);
+        }
+
+        private void postReply(ObjectNode reply) {
+            Duration timeout = min(deadline.remaining(), Duration.ofSeconds(5));
+            if (timeout.isZero()) {
+                return;
+            }
+            try {
+                HttpRequest request = base(timeout).header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json.write(reply))).build();
+                replies.add(http.sendAsync(request, HttpResponse.BodyHandlers.discarding()));
+            } catch (RuntimeException e) {
+                // best effort: the server times its request out
+            }
+        }
+
+        private void awaitReplies() {
+            for (CompletableFuture<?> reply : replies) {
+                try {
+                    reply.get(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (ExecutionException | TimeoutException e) {
+                    reply.cancel(true);
+                }
+            }
+            replies.clear();
         }
 
         private HttpRequest.Builder base(Duration timeout) {
@@ -324,9 +492,9 @@ public class McpClient {
         }
     }
 
-    private HttpResponse<byte[]> await(HttpRequest request, Duration timeout) {
-        HttpExecutor.LimitedSubscriber.Holder body = new HttpExecutor.LimitedSubscriber.Holder();
-        CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request, body.handler());
+    private HttpResponse<byte[]> await(HttpRequest request, Duration timeout, Consumer<JsonNode> onStreamMessage) {
+        WatchingHandler body = new WatchingHandler(onStreamMessage);
+        CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request, body);
         try {
             return future.get(timeout.toMillis() + 1000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -354,6 +522,100 @@ public class McpClient {
         }
     }
 
+    /**
+     * Body handler that caps the body like every HTTP call and, for an event stream, hands each complete event to the
+     * session as soon as it arrives, so server requests are answered before the server finishes the stream.
+     */
+    private final class WatchingHandler implements HttpResponse.BodyHandler<byte[]> {
+
+        private final Consumer<JsonNode> onStreamMessage;
+        private final HttpExecutor.LimitedSubscriber.Holder limited = new HttpExecutor.LimitedSubscriber.Holder();
+
+        WatchingHandler(Consumer<JsonNode> onStreamMessage) {
+            this.onStreamMessage = onStreamMessage;
+        }
+
+        boolean exceeded() {
+            return limited.exceeded();
+        }
+
+        @Override
+        public HttpResponse.BodySubscriber<byte[]> apply(HttpResponse.ResponseInfo info) {
+            HttpResponse.BodySubscriber<byte[]> delegate = limited.handler().apply(info);
+            boolean stream = info.headers().firstValue("Content-Type").orElse("").toLowerCase(Locale.ROOT)
+                    .startsWith("text/event-stream");
+            return stream ? new EventWatcher(delegate, onStreamMessage) : delegate;
+        }
+    }
+
+    /** Passes the bytes to the capped subscriber and scans them for complete events. */
+    private final class EventWatcher implements HttpResponse.BodySubscriber<byte[]> {
+
+        private final HttpResponse.BodySubscriber<byte[]> delegate;
+        private final Consumer<JsonNode> onMessage;
+        private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
+
+        EventWatcher(HttpResponse.BodySubscriber<byte[]> delegate, Consumer<JsonNode> onMessage) {
+            this.delegate = delegate;
+            this.onMessage = onMessage;
+        }
+
+        @Override
+        public CompletionStage<byte[]> getBody() {
+            return delegate.getBody();
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            delegate.onSubscribe(subscription);
+        }
+
+        @Override
+        public void onNext(List<ByteBuffer> items) {
+            for (ByteBuffer item : items) {
+                ByteBuffer copy = item.duplicate();
+                byte[] bytes = new byte[copy.remaining()];
+                copy.get(bytes);
+                if (pending.size() + bytes.length <= HttpExecutor.MAX_RESPONSE_BYTES) {
+                    pending.writeBytes(bytes);
+                }
+            }
+            drain();
+            delegate.onNext(items);
+        }
+
+        private void drain() {
+            String text = pending.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
+            int end = text.lastIndexOf("\n\n");
+            if (end < 0) {
+                return;
+            }
+            String complete = text.substring(0, end + 2);
+            String rest = text.substring(end + 2);
+            pending.reset();
+            pending.writeBytes(rest.getBytes(StandardCharsets.UTF_8));
+            for (JsonNode message : parseEvents(complete)) {
+                try {
+                    onMessage.accept(message);
+                } catch (RuntimeException e) {
+                    // a reply that cannot be sent never breaks the exchange
+                }
+            }
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+            delegate.onError(throwable);
+        }
+
+        @Override
+        public void onComplete() {
+            pending.writeBytes("\n\n".getBytes(StandardCharsets.UTF_8));
+            drain();
+            delegate.onComplete();
+        }
+    }
+
     private static boolean isConnectFailure(Throwable error) {
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof ConnectException || t instanceof UnknownHostException
@@ -369,8 +631,10 @@ public class McpClient {
 
         JsonNode find(JsonNode id) {
             for (JsonNode message : messages) {
-                // Ids are compared as text: 1 (int) and 1 (long) are the same JSON number.
-                if (message.isObject() && message.has("id") && message.get("id").asString().equals(id.asString())
+                // Ids are compared as text: 1 (int) and 1 (long) are the same JSON number. Server requests carry a
+                // method and are never a response.
+                if (message.isObject() && message.has("id") && !message.has("method")
+                        && message.get("id").asString().equals(id.asString())
                         && (message.has("result") || message.has("error"))) {
                     return message;
                 }

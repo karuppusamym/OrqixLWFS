@@ -41,6 +41,8 @@ public class RunAccess {
     public Visible require(Caller caller, UUID workspaceId, UUID runId) {
         WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
         RunStore.RunRow run = runs.find(workspaceId, runId).orElseThrow(ApiException::notFound);
+        // CG-I01 (S151): workspace-wide permissions plus run.read / run.operate granted on this request's workflow.
+        access = access.onWorkflow(run.workflowId());
         boolean initiator = run.initiator().equals(caller.subjectId());
         boolean participant = participant(access, run);
         if (!access.has(Permission.RUN_READ) && !initiator && !participant) {

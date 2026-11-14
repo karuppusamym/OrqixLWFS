@@ -39,6 +39,15 @@ final class LogicalConditions {
         return false;
     }
 
+    /** @return true when some alternative of one side and some alternative of the other can hold together */
+    static boolean overlapClauses(List<List<Typed>> a, List<List<Typed>> b) {
+        for (List<Typed> x : a) for (List<Typed> y : b) {
+            List<Typed> both = new ArrayList<>(x); both.addAll(y);
+            if (satisfiable(both)) return true;
+        }
+        return false;
+    }
+
     private static List<List<Typed>> clauses(Condition c, List<Typed> typed) {
         return "any".equals(c.group()) ? typed.stream().map(List::of).toList() : List.of(typed);
     }

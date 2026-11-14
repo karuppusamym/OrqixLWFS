@@ -73,13 +73,22 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private final Clock clock;
     private final com.orqix.runtime.internal.RunStages stages;
     private final com.orqix.runtime.internal.TaskDispatcher dispatcher;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.AiReviews> reviewers;
 
     public RuntimeProjectionListener(Json json, RunStore runs, TaskStore tasks, RunEvents events,
             ReleaseQueries releases, RuntimeMetrics metrics, @org.springframework.context.annotation.Lazy ChildRuns children,
             @org.springframework.context.annotation.Lazy MessageWaits messageWaits, Clock clock,
             @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages,
-            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher) {
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskEscalations> escalations,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.TaskActionOutbox> taskActions,
+            org.springframework.beans.factory.ObjectProvider<com.orqix.runtime.internal.AiReviews> reviewers) {
+        this.reviewers = reviewers;
         this.dispatcher = dispatcher;
+        this.escalations = escalations;
+        this.taskActions = taskActions;
         this.stages = stages;
         this.json = json;
         this.runs = runs;
@@ -211,6 +220,11 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         tasks.insert(task.getId(), workspaceId, runId, element.getId(), label, group, dueAt, now,
                 item == null ? null : item.index(), item == null ? null : item.label(),
                 item == null ? null : item.scope(), item == null ? null : item.count());
+        // S138: a task of a later visit of an approval inside a bounded loop carries that visit's number.
+        int occurrence = ProcessData.occurrence(task, element.getId());
+        if (occurrence > 1) {
+            tasks.occurrence(task.getId(), occurrence);
+        }
         runs.mutate(workspaceId, runId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
@@ -244,11 +258,41 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             data.put("itemLabel", item.label());
             data.put("itemCount", item.count());
         }
+        if (occurrence > 1) {
+            data.put("occurrence", occurrence);
+        }
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
-        if (item != null && item.proposed() != null && propose(task, element.getId(), workspaceId, runId, item)) {
+        if (item == null || item.proposed() == null || !propose(task, element.getId(), workspaceId, runId, item)) {
+            dispatch(task, element.getId(), workspaceId, runId);
+        }
+        // S141: the escalation levels of the step's policy (CG-T04) and the actionable messages (CG-T01).
+        escalations.ifAvailable(e -> e.plan(workspaceId, runId, task.getId(), element.getId(), now));
+        taskActions.ifAvailable(a -> a.enqueueOnCreate(workspaceId, task.getId()));
+        if (item == null) {
+            reviewers.ifAvailable(r -> queueReview(r, task, element.getId(), workspaceId, runId));
+        }
+    }
+
+    /** S152: the AI reviewer of the step reviews the new task (mapped values resolved now, sealed in the job). */
+    private void queueReview(com.orqix.runtime.internal.AiReviews reviewers, TaskEntity task, String nodeId,
+            UUID workspaceId, UUID runId) {
+        var run = runs.find(workspaceId, runId).orElse(null);
+        if (run == null) {
             return;
         }
-        dispatch(task, element.getId(), workspaceId, runId);
+        var spec = reviewers.spec(workspaceId, releases.require(workspaceId, run.releaseId()).node(nodeId));
+        if (spec == null) {
+            return;
+        }
+        ObjectNode input = json.object();
+        spec.inputs().forEach((name, ref) -> {
+            JsonNode value = ProcessData.resolve(task, json, ref);
+            if (!value.isMissingNode() && !value.isNull()) {
+                input.set(name, value);
+            }
+        });
+        int version = tasks.find(workspaceId, task.getId()).map(TaskStore.TaskRow::version).orElse(1);
+        reviewers.queue(workspaceId, runId, nodeId, task.getId(), version, spec, input);
     }
 
     /**
@@ -416,6 +460,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         if (element == null) {
             return;
         }
+        OrqixModel.extension(element, "first").ifPresent(first -> firstWon(event, first));
         ExtensionElement handler = OrqixModel.extension(element, "scopeEvent").orElse(null);
         ExtensionElement signal = OrqixModel.extension(element, "signal").orElse(null);
         ExtensionElement scope = OrqixModel.extension(element, "scope").orElse(null);
@@ -454,6 +499,34 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             }
             events.append(workspaceId, runId, "SECTION_LEFT", element.getId(), null, data);
         }
+    }
+
+    /**
+     * S139 (CG-W07): one branch of "Wait for the first" happened. Its values (written by the message delivery to the
+     * branch) become the step's outputs with {@code branch}; the other branches' waits close in this transaction (the
+     * engine cancels their events).
+     */
+    private void firstWon(FlowableActivityEvent event, ExtensionElement first) {
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
+        if (execution == null || execution.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        String stepId = OrqixModel.attribute(first, "step");
+        String branch = OrqixModel.attribute(first, "branch");
+        ObjectNode output = json.object();
+        Object delivered = execution.getVariable(ProcessData.stepVariable(event.getActivityId()));
+        if (delivered instanceof String text && !text.isBlank()) {
+            json.parse(text).properties().forEach(e -> output.set(e.getKey(), e.getValue()));
+        }
+        output.put("branch", branch);
+        execution.setVariable(ProcessData.stepVariable(stepId), json.write(output));
+        java.util.List<String> branches = java.util.Arrays.asList(OrqixModel.attribute(
+                OrqixModel.requireExtension(OrqixModel.flowElement(event.getProcessDefinitionId(), stepId), "waitForFirst"),
+                "branches").split(","));
+        FlowElement step = OrqixModel.flowElement(event.getProcessDefinitionId(), stepId);
+        messageWaits.firstWon(ProcessData.workspaceId(execution), ProcessData.runId(execution), stepId,
+                label(step), branch, label(OrqixModel.flowElement(event.getProcessDefinitionId(), event.getActivityId())),
+                branches);
     }
 
     /** An error was caught: remember an error handler, whose interruption carries no cause of its own. */
@@ -545,6 +618,25 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             }
             return;
         }
+        // S139: a message wait (also the message of a wait with a time limit, or a branch of "Wait for the first")
+        // stopped by a handler: its subscription, safety net and callback close with it.
+        ExtensionElement waitingMessage = OrqixModel.extension(element, "message").orElse(null);
+        ExtensionElement firstBranch = OrqixModel.extension(element, "first").orElse(null);
+        if (element instanceof IntermediateCatchEvent && (waitingMessage != null || firstBranch != null)) {
+            String waitNode = waitingMessage != null ? OrqixModel.attribute(waitingMessage, "node") : element.getId();
+            if (context.getAttribute(INTERRUPTED_ATTRIBUTE + event.getProcessInstanceId() + "." + waitNode) == null) {
+                context.addAttribute(INTERRUPTED_ATTRIBUTE + event.getProcessInstanceId() + "." + waitNode, true);
+                messageWaits.interrupted(workspaceId, runId, waitNode, waitingMessage != null);
+            }
+            String stepNode = firstBranch != null ? OrqixModel.attribute(firstBranch, "step") : waitNode;
+            String eventKey = INTERRUPTED_ATTRIBUTE + "event." + event.getProcessInstanceId() + "." + stepNode;
+            if (context.getAttribute(eventKey) == null) {
+                context.addAttribute(eventKey, true);
+                data.put("label", label(OrqixModel.flowElement(event.getProcessDefinitionId(), stepNode)));
+                events.append(workspaceId, runId, "STEP_INTERRUPTED", stepNode, null, data);
+            }
+            return;
+        }
         // Only steps of the workflow (generated helpers carry a double underscore) that can be open work.
         if (element.getId().contains("__") || !(element instanceof UserTask || element instanceof ServiceTask
                 || element instanceof IntermediateCatchEvent)) {
@@ -620,19 +712,32 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         String nodeId = OrqixModel.attribute(message, "node");
         String field = OrqixModel.attribute(message, "correlationField");
-        JsonNode value = ProcessData.resolve(execution, json, field);
-        String correlationKey = value.isString() ? value.stringValue()
-                : value.isNumber() && value.decimalValue().stripTrailingZeros().scale() <= 0
-                    ? value.decimalValue().stripTrailingZeros().toPlainString() : null;
+        String correlationKey;
+        if ("run".equals(OrqixModel.attribute(message, "correlation"))) {
+            // S139: a callback or check branch of "Wait for the first" is delivered by Orqix to this request only.
+            correlationKey = ProcessData.runId(execution).toString();
+        } else {
+            JsonNode value = ProcessData.resolve(execution, json, field);
+            correlationKey = value.isString() ? value.stringValue()
+                    : value.isNumber() && value.decimalValue().stripTrailingZeros().scale() <= 0
+                        ? value.decimalValue().stripTrailingZeros().toPlainString() : null;
+        }
         if (correlationKey == null || correlationKey.isEmpty() || correlationKey.length() > 200) {
             throw new IllegalStateException("WF_MESSAGE_CORRELATION_INVALID: " + field + " does not hold a usable key");
+        }
+        if ("true".equals(OrqixModel.attribute(message, "handler"))) {
+            // S139 (CG-E08): a message handler is armed with the request; it is not a waiting step.
+            messageWaits.handlerArmed(ProcessData.workspaceId(execution), ProcessData.runId(execution), nodeId,
+                    OrqixModel.attribute(message, "name"), correlationKey, subscription.getExecutionId());
+            return;
         }
         FlowElement node = OrqixModel.flowElement(subscription.getProcessDefinitionId(), nodeId);
         Object deadline = Context.getCommandContext().getAttribute(MESSAGE_TIMEOUT_ATTRIBUTE
                 + subscription.getProcessInstanceId() + "." + nodeId);
         messageWaits.started(ProcessData.workspaceId(execution), ProcessData.runId(execution), nodeId,
                 node.getName() == null ? nodeId : node.getName(), OrqixModel.attribute(message, "name"),
-                correlationKey, subscription.getExecutionId(), deadline instanceof Instant at ? at : null);
+                correlationKey, subscription.getExecutionId(), deadline instanceof Instant at ? at : null,
+                ref -> ProcessData.resolve(execution, json, ref));
     }
 
     // ---------------------------------------------------------------- timers (S12 section 3)

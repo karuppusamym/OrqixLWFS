@@ -43,9 +43,15 @@ describe('Test this workflow (panel)', () => {
     await within(panel).findByTestId('test-outcome')
     await user.type(within(panel).getByLabelText(/Keep this case/), 'Shared purchase')
     await user.click(within(panel).getByRole('button', { name: 'Save case' }))
+    // S148: a coverage minimum is saved with the shared suite; a value that is not a percentage is refused here.
+    const routes = await within(panel).findByLabelText('Routes')
+    await user.type(routes, '101')
+    expect(within(panel).getByTestId('coverage-minimum')).toHaveTextContent('give a whole percentage')
+    await user.clear(routes)
+    await user.type(routes, '50')
     await user.click(within(panel).getByRole('button', { name: 'Share and test for publication' }))
     await waitFor(() => expect(within(panel).getByTestId('case-notice')).toHaveTextContent('This exact draft satisfies'))
-    expect(saved).toMatchObject({ expectedVersion: 2, cases: [{ name: 'Shared purchase', expect: 'Fulfilled', input: { amount: 1000 } }] })
+    expect(saved).toMatchObject({ expectedVersion: 2, coverageMinimum: { routes: 50 }, cases: [{ name: 'Shared purchase', expect: 'Fulfilled', input: { amount: 1000 } }] })
     expect(tested).toEqual({ revision: 1, suiteVersion: 3 })
   }, 90000)
 
@@ -223,6 +229,25 @@ describe('Test this workflow (panel)', () => {
     await user.selectOptions(within(panel).getByLabelText('Expect'), 'Fulfilled')
     await user.click(within(panel).getByRole('button', { name: 'Run all saved cases' }))
     await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('1 of 1 passed'), { timeout: 20000 })
+    // CG-Q03 (S148): what the saved cases cover together.
+    const coverage = await within(panel).findByTestId('suite-coverage')
+    expect(coverage).toHaveTextContent('Together the cases cover')
+    expect(within(coverage).getByTestId('coverage-routes')).toHaveTextContent(/Routes: \d+% \(\d+ of \d+\)/)
+    // CG-Q01: Export writes the shared test file format, with the Test tab's state of each case.
+    const blobs: Blob[] = []
+    const create = URL.createObjectURL
+    const revoke = URL.revokeObjectURL
+    URL.createObjectURL = ((b: Blob) => { blobs.push(b); return 'blob:test' }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = () => {}
+    try {
+      await user.click(within(panel).getByRole('button', { name: 'Export' }))
+    } finally {
+      URL.createObjectURL = create
+      URL.revokeObjectURL = revoke
+    }
+    const text = await new Promise<string>((resolve) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.readAsText(blobs[0]!) })
+    expect(JSON.parse(text)).toMatchObject({ schemaVersion: 'orqix.workflow-tests/v1', cases: [{ name: 'Small purchase', expect: 'Fulfilled', input: { amount: 1000 }, studio: { values: { amount: '1000' } } }] })
+    expect(within(panel).getByTestId('case-notice')).toHaveTextContent('Exported 1 case as a test file (orqix.workflow-tests/v1)')
   }, 90000)
 
   it('generates a case for every path to keep or delete, and the kept cases all pass with their path checks', async () => {

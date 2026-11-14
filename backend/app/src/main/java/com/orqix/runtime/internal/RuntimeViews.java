@@ -61,7 +61,11 @@ public class RuntimeViews {
                 ids.add(t.assignee());
             }
         });
-        decisions.forEach(d -> ids.add(d.actor()));
+        decisions.forEach(d -> {
+            if (d.actor() != null) {
+                ids.add(d.actor());
+            }
+        });
         return subjects.displayNames(ids);
     }
 
@@ -134,7 +138,7 @@ public class RuntimeViews {
         String effectId = attention.path("effectId").asString(null);
         return new RuntimeDtos.Attention(attention.path("reason").asString(), attention.path("nodeId").asString(null),
                 effectId == null ? null : UUID.fromString(effectId), attention.path("message").asString(),
-                instant(attention.path("since")));
+                instant(attention.path("since")), attention.path("errorCode").asString(null));
     }
 
     public RuntimeDtos.TaskSummary task(TaskStore.TaskRow task, RunStore.RunRow run, Map<UUID, String> names,
@@ -162,9 +166,28 @@ public class RuntimeViews {
     public RuntimeDtos.TaskDecision decision(TaskQueries.DecisionRow decision, String label, Map<UUID, String> names) {
         List<String> flags = new ArrayList<>();
         decision.policyFlags().forEach(f -> flags.add(f.asString()));
+        if (decision.byAi()) {
+            return new RuntimeDtos.TaskDecision(decision.id(), decision.taskId(), decision.runId(), decision.nodeId(),
+                    label, AI_REVIEWER, decision.action(), decision.reason(), decision.comment(), decision.decidedAt(),
+                    flags, "aiReviewer", new RuntimeDtos.AiReviewRef(decision.aiSkillKey(), decision.aiSkillVersion(),
+                            decision.aiDecisionId()));
+        }
         return new RuntimeDtos.TaskDecision(decision.id(), decision.taskId(), decision.runId(), decision.nodeId(), label,
                 subjects.ref(decision.actor(), names), decision.action(), decision.reason(), decision.comment(),
-                decision.decidedAt(), flags);
+                decision.decidedAt(), flags, "person", null);
+    }
+
+    /**
+     * The fixed actor reference of AI reviewer decisions (S152): not a person and not a subject in the database; the
+     * id is constant so clients that group decisions by actor keep working.
+     */
+    public static final com.orqix.identity.SubjectService.SubjectRef AI_REVIEWER =
+            new com.orqix.identity.SubjectService.SubjectRef(UUID.fromString("00000000-0000-4000-8000-0000000a1001"),
+                    "AI reviewer");
+
+    /** The actor reference of a decision: the person, or the AI reviewer (S152). */
+    public com.orqix.identity.SubjectService.SubjectRef actor(TaskQueries.DecisionRow decision, Map<UUID, String> names) {
+        return decision.byAi() ? AI_REVIEWER : subjects.ref(decision.actor(), names);
     }
 
     public RuntimeDtos.Effect effect(EffectJournal.Effect effect, String label) {
@@ -202,6 +225,10 @@ public class RuntimeViews {
                     && schema.path("format").isMissingNode();
             if (plainText && input.path(field).isString()) {
                 String value = input.path(field).asString().strip();
+                if (!value.isEmpty() && com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), field)) {
+                    // CG-I05 (S151): a protected title field shows the mask.
+                    return com.orqix.compiler.FieldClassification.MASK;
+                }
                 if (!value.isEmpty()) {
                     return value.length() > REQUEST_TITLE_MAX ? value.substring(0, REQUEST_TITLE_MAX).stripTrailing()
                             : value;

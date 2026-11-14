@@ -154,6 +154,16 @@ export function useAccessOverview(ws: string, enabled = true) {
   return useQuery({ queryKey: keys.access(ws), queryFn: () => endpoints.getAccessOverview(ws), enabled })
 }
 
+/** Grants on single folders, workflows, decision tables and connections (CG-I01). Under the access key, so access changes refresh it. */
+export function useResourceGrants(ws: string, enabled = true) {
+  return useQuery({ queryKey: [...keys.access(ws), 'resource-grants'] as const, queryFn: () => endpoints.listResourceGrants(ws), enabled })
+}
+
+/** Latest checks of the workspace audit hash chain (CG-I06). */
+export function useAuditChainChecks(ws: string, enabled = true) {
+  return useQuery({ queryKey: ['ws', ws, 'audit', 'chain-verifications'] as const, queryFn: () => endpoints.listAuditChainChecks(ws), enabled })
+}
+
 // Start form -------------------------------------------------------------------------------------
 
 export function useStartForm(ws: string, workflowId: string) {

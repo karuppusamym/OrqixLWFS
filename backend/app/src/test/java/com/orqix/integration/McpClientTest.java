@@ -196,4 +196,60 @@ class McpClientTest {
         assertThat(messages.get(0).path("id").asInt()).isEqualTo(5);
         assertThat(messages.get(1).path("id").asInt()).isEqualTo(6);
     }
+
+    // ------------------------------------------------------------------ S135
+
+    @Test
+    void serverRequestsOnAResponseStreamAreAnsweredAndListChangedIsNoticed() {
+        McpStub.push(McpStub.Push.SAMPLING, null);
+        McpStub.push(McpStub.Push.LIST_CHANGED, "x");
+        try (Session session = connect()) {
+            assertThat(session.protocolVersion()).isEqualTo("2025-06-18");
+            assertThat(lookup(session, "Acme Ltd").isError()).isFalse();
+            assertThat(session.samplingRefused()).isEqualTo(1);
+            assertThat(session.toolsChanged()).isFalse();
+            assertThat(lookup(session, "Acme Ltd").structured().path("riskScore").asInt()).isEqualTo(72);
+            assertThat(session.toolsChanged()).isTrue();
+            session.clearToolsChanged();
+            assertThat(session.listTools().get(0).inputSchema().path("properties").has("note_x")).isTrue();
+        }
+        assertThat(McpStub.replies()).singleElement().satisfies(r ->
+                assertThat(r.body().path("error").path("code").asInt()).isEqualTo(-32601));
+    }
+
+    @Test
+    void elicitationIsDeclinedUnlessAllowedThenCancelledAndHandedToTheCaller() {
+        McpStub.push(McpStub.Push.ELICITATION, null);
+        try (Session session = connect()) {
+            lookup(session, "Acme Ltd");
+            assertThat(session.takeElicitation()).isNull();
+        }
+        assertThat(McpStub.replies().get(0).body().path("result").path("action").asString()).isEqualTo("decline");
+
+        McpStub.reset();
+        McpStub.push(McpStub.Push.ELICITATION, null);
+        try (Session session = client.connect(new Endpoint(McpStub.url(), null), new Deadline(Duration.ofSeconds(10)),
+                new McpClient.Options(true))) {
+            lookup(session, "Acme Ltd");
+            McpClient.Elicitation elicitation = session.takeElicitation();
+            assertThat(elicitation.message()).contains("cost centre");
+            assertThat(elicitation.requestedSchema().path("properties").has("costCentre")).isTrue();
+            assertThat(session.takeElicitation()).isNull();
+        }
+        assertThat(McpStub.replies().get(0).body().path("result").path("action").asString()).isEqualTo("cancel");
+        JsonNode initialize = McpStub.calls().get(0).body();
+        assertThat(initialize.path("params").path("capabilities").has("elicitation")).isTrue();
+    }
+
+    @Test
+    void resourcesAreReadOnlyFromServersThatOfferThemAndAreCapped() {
+        try (Session session = connect()) {
+            assertThatThrownBy(() -> session.readResource("orqix://policy", 100)).isInstanceOf(McpException.class);
+        }
+        McpStub.serveResources();
+        try (Session session = connect()) {
+            String text = session.readResource("orqix://policy", 100);
+            assertThat(text).startsWith("Procurement policy").hasSize(103);
+        }
+    }
 }

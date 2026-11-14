@@ -136,6 +136,9 @@ public class PolicyService {
                   OR EXISTS (SELECT 1 FROM permission_grant pg WHERE pg.workspace_id = w.id
                           AND ((pg.principal_type = 'subject' AND pg.principal_value = :subject)
                                OR (pg.principal_type = 'idpGroup' AND pg.principal_value IN (:groups))))
+                  OR EXISTS (SELECT 1 FROM resource_grant rg WHERE rg.workspace_id = w.id
+                          AND ((rg.principal_type = 'subject' AND rg.principal_value = :subject)
+                               OR (rg.principal_type = 'idpGroup' AND rg.principal_value IN (:groups))))
                   OR EXISTS (SELECT 1 FROM role_binding rb WHERE rb.scope_type = 'organization'
                           AND rb.organization_id = w.organization_id
                           AND ((rb.principal_type = 'subject' AND rb.principal_value = :subject)
@@ -233,9 +236,63 @@ public class PolicyService {
                 workflowStart.add(grant.workflowId());
             }
         }
+        WorkspaceAccess.ResourceGrants resources = resourceGrants(workspaceId, subject, groups);
+        if (!resources.isEmpty()) {
+            // A resource grant makes the caller a member, as a workspace-wide grant does (S6 section 4).
+            member = true;
+            workflowStart.addAll(resources.workflows(Permission.WORKFLOW_START));
+        }
         Set<String> groupKeys = groupKeys(workspaceId, caller.subjectId(), caller.groups());
         return Optional.of(new WorkspaceAccess(workspace.get(), caller.subjectId(), member, permissions, workflowStart,
-                groupKeys, platformAdmin));
+                groupKeys, platformAdmin, resources));
+    }
+
+    /**
+     * CG-I01 (S151): the caller's resource grants, with folder grants expanded to the workflows filed in the folder
+     * now. Rows whose permission does not fit the resource type cannot exist (V450 check).
+     */
+    private WorkspaceAccess.ResourceGrants resourceGrants(UUID workspaceId, String subject, List<String> groups) {
+        record Row(String type, String id, String permission) {
+        }
+        List<Row> rows = jdbc.sql("""
+                SELECT g.resource_type, g.resource_id, g.permission FROM resource_grant g
+                WHERE g.workspace_id = :ws AND g.resource_type <> 'folder'
+                  AND ((g.principal_type = 'subject' AND g.principal_value = :subject)
+                       OR (g.principal_type = 'idpGroup' AND g.principal_value IN (:groups)))
+                UNION
+                SELECT 'workflow', i.workflow_id::text, g.permission FROM resource_grant g
+                JOIN workflow_folder_item i ON i.workspace_id = g.workspace_id AND i.folder_id::text = g.resource_id
+                WHERE g.workspace_id = :ws AND g.resource_type = 'folder'
+                  AND ((g.principal_type = 'subject' AND g.principal_value = :subject)
+                       OR (g.principal_type = 'idpGroup' AND g.principal_value IN (:groups)))
+                """)
+                .param("ws", workspaceId).param("subject", subject).param("groups", groups)
+                .query((rs, n) -> new Row(rs.getString(1), rs.getString(2), rs.getString(3))).list();
+        if (rows.isEmpty()) {
+            return WorkspaceAccess.ResourceGrants.NONE;
+        }
+        Map<Permission, Set<UUID>> workflows = new java.util.EnumMap<>(Permission.class);
+        Map<Permission, Set<String>> decisions = new java.util.EnumMap<>(Permission.class);
+        Map<Permission, Set<String>> connections = new java.util.EnumMap<>(Permission.class);
+        for (Row row : rows) {
+            Permission permission = Permission.of(row.permission());
+            switch (row.type()) {
+                case "workflow" -> workflows.computeIfAbsent(permission, p -> new HashSet<>())
+                        .add(UUID.fromString(row.id()));
+                case "decision" -> decisions.computeIfAbsent(permission, p -> new HashSet<>()).add(row.id());
+                case "connection" -> connections.computeIfAbsent(permission, p -> new HashSet<>()).add(row.id());
+                default -> {
+                    // folder rows are expanded above; nothing else exists (V450 check)
+                }
+            }
+        }
+        Map<Permission, Set<UUID>> w = new java.util.EnumMap<>(Permission.class);
+        workflows.forEach((p, ids) -> w.put(p, Set.copyOf(ids)));
+        Map<Permission, Set<String>> d = new java.util.EnumMap<>(Permission.class);
+        decisions.forEach((p, ids) -> d.put(p, Set.copyOf(ids)));
+        Map<Permission, Set<String>> c = new java.util.EnumMap<>(Permission.class);
+        connections.forEach((p, ids) -> c.put(p, Set.copyOf(ids)));
+        return new WorkspaceAccess.ResourceGrants(w, d, c);
     }
 
     private static List<String> groupsParam(Caller caller) {

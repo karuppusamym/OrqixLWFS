@@ -394,8 +394,11 @@ public class CaseService {
             if ((Boolean) asset[3]) throw new ApiException(ProblemCode.VALIDATION_FAILED, "Shared decision \"" + asset[1] + "\" is archived.");
             var content = (tools.jackson.databind.JsonNode) asset[4];
             var fieldRefs = new java.util.TreeSet<String>(); collectFieldRefs(content.path("rows"), fieldRefs);
+            // S146: formula entries also read the fields their expressions name.
+            try { if (com.orqix.compiler.DecisionTables.usesExpressions(json.write(content))) fieldRefs.addAll(com.orqix.compiler.DecisionTables.fields(json.write(content))); }
+            catch (IllegalArgumentException malformed) { throw new ApiException(ProblemCode.VALIDATION_FAILED, "Shared decision \"" + asset[1] + "\" cannot be read: " + malformed.getMessage()); }
             var outputs = new java.util.HashMap<String,String>();
-            for (var row : content.path("rows")) row.path("then").properties().forEach(e -> outputs.putIfAbsent(e.getKey(), literalType(e.getValue())));
+            for (var row : content.path("rows")) row.path("then").properties().forEach(e -> { if (!e.getValue().isObject()) outputs.putIfAbsent(e.getKey(), literalType(e.getValue())); });
             content.path("default").properties().forEach(e -> outputs.putIfAbsent(e.getKey(), literalType(e.getValue())));
             var mapping = byTask.get(task.getKey());
             var input = mapping.inputMapping() == null ? Map.<String,String>of() : Map.copyOf(mapping.inputMapping());

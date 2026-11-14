@@ -87,7 +87,9 @@
               "money",
               "select",
               "radio",
-              "checkbox"
+              "checkbox",
+              "checklist",
+              "tags"
             ]
           }
         },
@@ -114,6 +116,25 @@
           },
           "additionalProperties": {
             "$ref": "#/$defs/condition"
+          }
+        },
+        "computed": {
+          "description": "CG-F04 (docs/build/S137): fields whose value an Orqix expression computes from the other request fields. A computed field is read-only on the form; the browser shows the value as the requester types and the server recomputes it with the same engine when the request is submitted, replacing whatever was sent. The field must exist in inputSchema with a scalar type the expression gives; computed fields may use other computed fields but never in a cycle.",
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "rules": {
+          "description": "CG-F04 (docs/build/S137): cross-field validation rules over the request fields, for example end after start or total within budget. A rule is broken only when its check is false (a check on a missing value is not broken; use required for that). The browser and the server evaluate the same expressions with identical engines; the server refuses a request that breaks a rule.",
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/formRule"
           }
         },
         "layout": {
@@ -153,6 +174,10 @@
           "api"
         ]
       }
+    },
+    "exposeAsTool": {
+      "type": "boolean",
+      "description": "CG-M04 (docs/build/S136): offer starting this workflow to AI assistants as an MCP tool start_<workflowKey>, typed from inputSchema. Only in workspaces where the MCP server is switched on, only to people who may start the workflow, and always with a confirmation. Default false. Does not change execution."
     },
     "nodes": {
       "type": "array",
@@ -216,6 +241,15 @@
           },
           {
             "$ref": "#/$defs/sendAdapterNode"
+          },
+          {
+            "$ref": "#/$defs/aiTaskNode"
+          },
+          {
+            "$ref": "#/$defs/calculateNode"
+          },
+          {
+            "$ref": "#/$defs/waitForFirstNode"
           }
         ]
       }
@@ -314,7 +348,8 @@
                 "enum": [
                   "decision",
                   "documentTemplate",
-                  "form"
+                  "form",
+                  "calendar"
                 ]
               },
               "key": {
@@ -547,6 +582,43 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "stepRetry": {
+      "description": "This step's own retry policy (CG-W04, docs/build/S131); it overrides execution.maxAttempts and retryDelaySeconds for this step only. Attempt n waits min(maxDelay, delay x multiplier^(n-1)) with 10 percent jitter. With honorRetryAfter (the default) a 429 or 503 Retry-After (seconds or an HTTP date) is used instead when it is not longer than maxDelay, otherwise maxDelay. Outcomes that are unknown are never retried automatically. The compiler checks delay PT5S-PT1H and maxDelay from delay to PT6H (WF_RETRY_*).",
+      "type": "object",
+      "properties": {
+        "maxAttempts": {
+          "description": "Total attempts, the first included.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "delay": {
+          "description": "Delay before the second attempt: hours, minutes and seconds, for example PT10S.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "multiplier": {
+          "description": "Each later delay is the previous one times this (1 keeps the delay constant).",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "maxDelay": {
+          "description": "Longest delay between attempts and the cap of Retry-After; at most PT6H. Unset means PT6H.",
+          "type": "string",
+          "pattern": "^PT(?=\\d)(?:\\d{1,2}H)?(?:\\d{1,4}M)?(?:\\d{1,5}S)?$"
+        },
+        "honorRetryAfter": {
+          "description": "Use the Retry-After of a 429 or 503 response for the next attempt (default true).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "maxAttempts",
+        "delay"
+      ],
+      "additionalProperties": false
+    },
     "key": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
@@ -585,6 +657,64 @@
       "type": "string",
       "pattern": "^(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}$"
     },
+    "stepForEach": {
+      "description": "CG-E06 for each (docs/build/S138): run this step once per item of a request list (1 to 500 items), one at a time or in parallel batches. For a list of single values itemInput names the input that receives the item; for a list of rows itemMapping copies columns of the current row into inputs (exactly one of the two). Outputs at /steps/<id>/: itemCount, completedCount, stoppedEarly and one list per collect entry, in item order.",
+      "type": "object",
+      "properties": {
+        "itemsRef": {
+          "type": "string",
+          "pattern": "^/input/[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "itemInput": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "itemMapping": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 10,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "$ref": "#/$defs/fieldKey" }
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "mode": {
+          "enum": ["sequential", "parallel"],
+          "default": "sequential"
+        },
+        "batchSize": {
+          "description": "Parallel only: how many items run at the same time (default 25).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "completion": {
+          "description": "When the step is done: after every item (all, the default), after the first item that succeeded (firstSuccess), or once atLeast items succeeded.",
+          "type": "object",
+          "properties": {
+            "when": { "enum": ["all", "firstSuccess", "atLeast"] },
+            "count": { "type": "integer", "minimum": 1, "maximum": 500 }
+          },
+          "required": ["when"],
+          "additionalProperties": false
+        },
+        "collect": {
+          "description": "Collected output name -> result of one item. The collected output is a list in item order.",
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": { "$ref": "#/$defs/fieldKey" },
+          "additionalProperties": { "$ref": "#/$defs/fieldKey" }
+        }
+      },
+      "required": ["itemsRef", "maxItems"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["itemInput"], "not": { "required": ["itemMapping"] } },
+        { "required": ["itemMapping"], "not": { "required": ["itemInput"] } }
+      ]
+    },
     "fieldKey": {
       "type": "string",
       "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
@@ -607,39 +737,215 @@
         "boolean"
       ]
     },
+    "expression": {
+      "description": "An Orqix expression (CG-X01, docs/build/S137): a total, side-effect-free, FEEL-like formula over input.<field>, steps.<stepId>.<output> and, in a Calculate step, earlier outputs by name. Decimal arithmetic (+ - * /, 34 significant digits), comparisons (= != < <= > >=, in), and/or, if then else, null, and the functions abs floor ceiling round number, length upper lower trim substring contains startsWith endsWith replace string, date today addDays addMonths addYears daysBetween year month day weekday addWorkingDays workingDaysBetween isWorkingDay, count sum average min max filter any all (with item), coalesce isEmpty not. No loops, recursion or I/O; at most 2000 characters and 300 parts; evaluation work is bounded. The compiler type checks it (WF_EXPRESSION_INVALID).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "expressionCondition": {
+      "description": "A condition written as an Orqix expression that must give true or false (docs/build/S137), for example input.endDate > addWorkingDays(input.startDate, 5). The path is taken only when it is true; false or a missing value is not taken.",
+      "type": "object",
+      "properties": {
+        "expression": {
+          "$ref": "#/$defs/expression"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "additionalProperties": false
+    },
+    "mappingSource": {
+      "description": "A field reference, or = followed by an Orqix expression (docs/build/S137), for example = round(input.amount * 1.2, 2).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/fieldRef"
+        },
+        {
+          "type": "string",
+          "pattern": "^=",
+          "minLength": 2,
+          "maxLength": 2001
+        }
+      ]
+    },
+    "expressionCalendar": {
+      "description": "Working calendar of working-day functions and today() in an expression (the S27 calendar shape; opening hours are not used by day arithmetic). Without it: Monday to Friday, UTC, no holidays.",
+      "type": "object",
+      "properties": {
+        "zone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "weekdays": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 7
+          }
+        },
+        "holidays": {
+          "type": "array",
+          "maxItems": 366,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/calendarDate"
+          }
+        }
+      },
+      "required": [
+        "zone",
+        "weekdays"
+      ],
+      "additionalProperties": false
+    },
+    "calculateOutput": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        },
+        "type": {
+          "description": "Declared type of the result; the compiler checks the expression gives it (WF_CALCULATE_TYPE).",
+          "enum": [
+            "number",
+            "integer",
+            "string",
+            "boolean",
+            "date"
+          ]
+        },
+        "scale": {
+          "description": "Numbers only: decimal places the stored result is rounded to with rounding (default halfUp). integer means scale 0.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "rounding": {
+          "description": "Numbers only: how the result is rounded to scale. halfUp rounds .5 away from zero; halfEven to the even neighbour (banker's); down towards zero; up away from zero; floor and ceiling towards minus or plus infinity.",
+          "enum": [
+            "halfUp",
+            "halfEven",
+            "down",
+            "up",
+            "floor",
+            "ceiling"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "optional": {
+          "description": "true when the output may have no value (null); by default an output without a value stops the request with an incident, so later steps can rely on it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "expression",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "calculateNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "calculate"
+        },
+        "config": {
+          "description": "Calculate (CG-X01, docs/build/S137): named outputs computed from request fields and earlier step results with Orqix expressions, in order; a later output may use an earlier one by name. Outputs at /steps/<id>/<key> with their declared types. Runs inside the engine, never calls out, and cannot fail except when an expression exceeds its bounded work, which stops the request with an incident.",
+          "type": "object",
+          "properties": {
+            "outputs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "$ref": "#/$defs/calculateOutput"
+              }
+            },
+            "calendar": {
+              "$ref": "#/$defs/expressionCalendar"
+            }
+          },
+          "required": [
+            "outputs"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "formRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
+        },
+        "check": {
+          "description": "An Orqix expression over input.<field> that must give true or false; the rule is broken when it is false.",
+          "$ref": "#/$defs/expression"
+        },
+        "message": {
+          "description": "Plain text shown when the rule is broken, for example 'The end date must be after the start date.'",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "fields": {
+          "description": "Fields the message is shown at (default: the request as a whole).",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "check",
+        "message"
+      ],
+      "additionalProperties": false
+    },
     "condition": {
       "if": {
         "required": [
-          "all"
+          "expression"
         ]
       },
       "then": {
-        "type": "object",
-        "properties": {
-          "all": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 8,
-            "items": {
-              "$ref": "#/$defs/atomicCondition"
-            }
-          }
-        },
-        "required": [
-          "all"
-        ],
-        "additionalProperties": false
+        "$ref": "#/$defs/expressionCondition"
       },
       "else": {
         "if": {
           "required": [
-            "any"
+            "all"
           ]
         },
         "then": {
           "type": "object",
           "properties": {
-            "any": {
+            "all": {
               "type": "array",
               "minItems": 2,
               "maxItems": 8,
@@ -649,12 +955,36 @@
             }
           },
           "required": [
-            "any"
+            "all"
           ],
           "additionalProperties": false
         },
         "else": {
-          "$ref": "#/$defs/atomicCondition"
+          "if": {
+            "required": [
+              "any"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "any": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                  "$ref": "#/$defs/atomicCondition"
+                }
+              }
+            },
+            "required": [
+              "any"
+            ],
+            "additionalProperties": false
+          },
+          "else": {
+            "$ref": "#/$defs/atomicCondition"
+          }
         }
       }
     },
@@ -770,7 +1100,7 @@
       "additionalProperties": false
     },
     "rowsFormField": {
-      "description": "A list of rows (up to 50), each with the scalar fields of rowSchema.",
+      "description": "A list of rows (up to 500 since S138; per-item approvals and child for-each keep their own lower limits), each with the scalar fields of rowSchema.",
       "type": "object",
       "properties": {
         "type": {
@@ -789,12 +1119,12 @@
         "minItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 500
         },
         "maxItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 500
         }
       },
       "required": [
@@ -1062,6 +1392,84 @@
                 "$ref": "#/$defs/fieldKey"
               }
             },
+            "aiReviewer": {
+              "description": "AI reviewer (docs/build/S152): an approved AI skill reviews each task of this step and approves or rejects it instead of a person when it is confident and the autonomy allows; otherwise the task stays with people and shows the suggestion. The skill must be a classify or recommend skill with the labels (or outcomes) approve and reject. Not combined with several approvers, a list of items or fields that must be filled in when approving. The workspace AI policy can lower the autonomy, never raise it. When AI decides, the outputs are decision, reason (the AI rationale), decidedBy = ai-reviewer, decidedAt and aiReview.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "skill",
+                "inputs"
+              ],
+              "properties": {
+                "skill": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "version"
+                  ],
+                  "properties": {
+                    "key": {
+                      "description": "Key of the shared AI skill.",
+                      "$ref": "#/$defs/key"
+                    },
+                    "version": {
+                      "description": "Approved version of the skill.",
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                },
+                "autonomy": {
+                  "description": "suggest (default): the AI suggestion is shown and a person decides; autoWithReview: AI decides when confident and a sample is reviewed afterwards; auto: AI decides when confident, only for answers the workspace policy marks low-risk.",
+                  "enum": [
+                    "suggest",
+                    "autoWithReview",
+                    "auto"
+                  ]
+                },
+                "minConfidence": {
+                  "description": "Calibrated confidence below which a person decides. Default 0.85.",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "reviewSamplePercent": {
+                  "description": "autoWithReview only: share of AI decisions queued for after-the-fact review (default 10).",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "inputs": {
+                  "description": "Skill input name to request or earlier-step value. Only mapped values are sent.",
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 30,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+                  },
+                  "additionalProperties": {
+                    "$ref": "#/$defs/fieldRef"
+                  }
+                },
+                "redaction": {
+                  "description": "Per input: how the value is minimized before it is sent, on top of the field classification policy.",
+                  "type": "object",
+                  "maxProperties": 30,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+                  },
+                  "additionalProperties": {
+                    "enum": [
+                      "maskCardNumbersAndEmails",
+                      "maskDigits",
+                      "hash",
+                      "drop"
+                    ]
+                  }
+                }
+              }
+            },
             "fieldAccess": {
               "description": "Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving.",
               "type": "object",
@@ -1116,6 +1524,46 @@
                     "leastLoaded",
                     "roundRobin"
                   ]
+                }
+              }
+            },
+            "escalationPolicy": {
+              "description": "CG-T04 (S141): escalation levels counted from task creation, in working hours of the step's calendar when it has one, otherwise elapsed hours. notify tells the eligible members of a group, reassign moves the task to a group's queue, alertOperators tells the workspace's operators. The due date (SLA) is not changed.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "levels"
+              ],
+              "properties": {
+                "levels": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "afterHours",
+                      "action"
+                    ],
+                    "properties": {
+                      "afterHours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2160
+                      },
+                      "action": {
+                        "enum": [
+                          "notify",
+                          "reassign",
+                          "alertOperators"
+                        ]
+                      },
+                      "groupRef": {
+                        "$ref": "#/$defs/key"
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -1271,6 +1719,9 @@
           "type": "object",
           "description": "Effect class, idempotency header and success statuses come from the pinned connection operation, never from the workflow.",
           "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
             "connectionRef": {
               "$ref": "#/$defs/key"
             },
@@ -1285,7 +1736,7 @@
                 "$ref": "#/$defs/fieldKey"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/fieldRef"
+                "$ref": "#/$defs/mappingSource"
               }
             },
             "resultMapping": {
@@ -1300,10 +1751,14 @@
                 "pattern": "^(/([^~/]|~[01])*)+$"
               }
             },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
+            },
             "timeoutSeconds": {
+              "description": "Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long).",
               "type": "integer",
               "minimum": 1,
-              "maximum": 30
+              "maximum": 120
             },
             "compensates": {
               "description": "This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request.",
@@ -1319,6 +1774,14 @@
             "raiseErrorOnFailure": {
               "description": "Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it.",
               "$ref": "#/$defs/errorCode"
+            },
+            "poll": {
+              "description": "Keep checking until done (docs/build/S129, CG-W01). The read-only operation is called repeatedly until 'until' holds (route next), 'failWhen' holds (route failed) or the deadline or check limit is reached (route timedOut). A timedOut route is required; a failed route is required when failWhen is set.",
+              "$ref": "#/$defs/pollSettings"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while a check-until call waits. Only with poll.",
+              "$ref": "#/$defs/whileWaiting"
             }
           },
           "required": [
@@ -1368,6 +1831,386 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "pollInterval": {
+      "description": "ISO-8601 duration in days, hours, minutes and seconds (for example PT30S, PT15M, PT2H, P1D). Bounds are compiler rules (WF_POLL_INTERVAL, WF_POLL_BACKOFF, WF_POLL_DEADLINE).",
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^P(?=\\d|T\\d)(\\d{1,3}D)?(T(?=\\d)(\\d{1,4}H)?(\\d{1,5}M)?(\\d{1,6}S)?)?$"
+    },
+    "pollSettings": {
+      "type": "object",
+      "properties": {
+        "firstCheck": {
+          "description": "immediate (default): the first check runs when the step starts; afterInterval: after 'every'.",
+          "enum": [
+            "immediate",
+            "afterInterval"
+          ]
+        },
+        "every": {
+          "description": "Interval before the second check, PT10S to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "backoff": {
+          "type": "object",
+          "properties": {
+            "multiplier": {
+              "description": "Each interval is the previous one times this, 1 to 4.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "maxInterval": {
+              "description": "Cap of the interval: at least 'every', at most P1D (WF_POLL_BACKOFF).",
+              "$ref": "#/$defs/pollInterval"
+            }
+          },
+          "required": [
+            "multiplier",
+            "maxInterval"
+          ],
+          "additionalProperties": false
+        },
+        "jitterPercent": {
+          "description": "Random spread of each interval, 0 to 30 percent; default 10.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "until": {
+          "description": "True means the remote work is done (route next). Over this step's mapped result fields (/steps/<this step>/<field>) and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "failWhen": {
+          "description": "Optional: true means the remote work failed for good (route failed). Must not overlap 'until' (WF_POLL_OVERLAP).",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "giveUpAfter": {
+          "description": "Deadline counted from when the step starts, PT1M to P90D and at least 'every' (WF_POLL_DEADLINE).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "timeoutCalendarRef": {
+          "description": "S139 (CG-W05): count giveUpAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar). One working day is the calendar's working hours of one day.",
+          "$ref": "#/$defs/key"
+        },
+        "maxChecks": {
+          "description": "Hard cap on checks, 1 to 1000 (WF_POLL_TOO_MANY_CHECKS). Defaults to the computed worst case.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "onCheckError": {
+          "type": "object",
+          "properties": {
+            "maxConsecutive": {
+              "description": "Consecutive failing checks (timeouts, 5xx, 429, unreachable) tolerated, 1 to 20; default 5.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "then": {
+              "description": "needsAttention (default): the request stops for an operator. timedOut: take the timedOut route.",
+              "enum": [
+                "needsAttention",
+                "timedOut"
+              ]
+            }
+          },
+          "required": [
+            "maxConsecutive"
+          ],
+          "additionalProperties": false
+        },
+        "finalCheckAtDeadline": {
+          "description": "One last check exactly at the deadline (default true).",
+          "type": "boolean"
+        },
+        "optionalResults": {
+          "description": "Mapped result fields that may be missing in an answer, for example a ticket number that appears only when the work is done. A missing value leaves the check pending instead of making the answer unusable; the field is an optional output of the step (WF_POLL_OPTIONAL).",
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        },
+        "showWhileWaiting": {
+          "description": "Up to 3 mapped result fields shown on the request page while waiting (WF_POLL_SHOW).",
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      },
+      "required": [
+        "every",
+        "until",
+        "giveUpAfter"
+      ],
+      "additionalProperties": false
+    },
+    "fallbackCheck": {
+      "description": "Safety-net check of a message wait (CG-W03). resultMapping names must be declared payload fields and every required payload field must be mapped (WF_POLL_FALLBACK_MAPPING). The deadline is the step's timeoutAfter, or P90D.",
+      "type": "object",
+      "properties": {
+        "connectionRef": {
+          "$ref": "#/$defs/key"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "inputMapping": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        },
+        "resultMapping": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "description": "JSON Pointer (RFC 6901) into the response body.",
+            "type": "string",
+            "pattern": "^(/([^~/]|~[01])*)+$"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "every": {
+          "description": "Check interval, PT1M to P1D (WF_POLL_INTERVAL).",
+          "$ref": "#/$defs/pollInterval"
+        },
+        "until": {
+          "description": "True means the work is done; over the mapped fields as /steps/<this step>/<field> and request fields.",
+          "$ref": "#/$defs/decisionCondition"
+        },
+        "jitterPercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "maxChecks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "connectionRef",
+        "operation",
+        "inputMapping",
+        "resultMapping",
+        "timeoutSeconds",
+        "every",
+        "until"
+      ],
+      "additionalProperties": false
+    },
+    "whileWaiting": {
+      "description": "While the step waits (docs/build/S139, CG-W06).",
+      "type": "object",
+      "properties": {
+        "remind": {
+          "$ref": "#/$defs/waitReminder"
+        }
+      },
+      "required": [
+        "remind"
+      ],
+      "additionalProperties": false
+    },
+    "waitReminder": {
+      "description": "Reminders while waiting: every 'every' (wall-clock, PT1H to P30D, from the start of the wait) at most maxTimes (1 to 10, default 3) a message through the adapter (email or Teams). Each reminder is one journaled send with a stable id, so a retry never sends two copies. Email recipients are the literals in 'to' (on the adapter's allowlist) or one request field toField whose address is checked against the adapter's approved domains when each reminder is sent (D-CG7). Texts may use {{reference}}, {{workflow}}, {{step}}, {{since}}, {{count}}, {{maxTimes}} and the names of inputMapping.",
+      "type": "object",
+      "properties": {
+        "every": {
+          "$ref": "#/$defs/duration"
+        },
+        "maxTimes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "adapter": {
+          "$ref": "#/$defs/key"
+        },
+        "to": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254
+          }
+        },
+        "toField": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "additionalProperties": false
+        },
+        "inputMapping": {
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldRef"
+          }
+        }
+      },
+      "required": [
+        "every",
+        "adapter",
+        "template"
+      ],
+      "additionalProperties": false
+    },
+    "waitForFirstNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "waitForFirst"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait for the first of several events (docs/build/S139, CG-W07). 2 to 5 branches, each with exactly one path (on: branch, branch: <id>). The first branch to fire wins, the others are cancelled. Outputs: branch (the winning branch id) and the declared values of the message, callback and check branches (a required value only on its own branch's path).",
+          "properties": {
+            "branches": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/firstBranch"
+              }
+            }
+          },
+          "required": [
+            "branches"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "firstBranch": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,19}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "enum": [
+            "message",
+            "signal",
+            "callback",
+            "timer",
+            "check"
+          ]
+        },
+        "message": {
+          "description": "message: the message name.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+        },
+        "correlationField": {
+          "description": "message: the field whose value identifies the request.",
+          "$ref": "#/$defs/fieldRef"
+        },
+        "payload": {
+          "description": "message, callback and check: values the branch delivers.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/messagePayloadField"
+          }
+        },
+        "signal": {
+          "description": "signal: a signal of this request.",
+          "$ref": "#/$defs/signalName"
+        },
+        "tokenValidFor": {
+          "description": "callback: how long an issued callback token is valid (PT1M to P30D).",
+          "$ref": "#/$defs/duration"
+        },
+        "after": {
+          "description": "timer: a fixed time.",
+          "$ref": "#/$defs/duration"
+        },
+        "untilField": {
+          "description": "timer: a date field to wait until.",
+          "$ref": "#/$defs/fieldRef"
+        },
+        "atTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "workingDuration": {
+          "description": "timer: working time of calendarRef.",
+          "$ref": "#/$defs/duration"
+        },
+        "calendarRef": {
+          "$ref": "#/$defs/key"
+        },
+        "check": {
+          "description": "check: keep checking a read-only operation until 'until' holds; the mapped results fill the branch's payload.",
+          "$ref": "#/$defs/fallbackCheck"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
       "additionalProperties": false
     },
     "duration": {
@@ -1457,11 +2300,25 @@
               "description": "Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField.",
               "type": "string",
               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "workingDuration": {
+              "description": "S139 (CG-W05): wait this much working time of calendarRef, for example P3D for three working days. One working day is the calendar's working hours of one day; hours and minutes are working hours and minutes. Instead of duration or untilField (WF_WAIT_CHOICE).",
+              "$ref": "#/$defs/duration"
+            },
+            "calendarRef": {
+              "description": "S139: key of the shared working calendar of workingDuration, pinned in dependencies.assets (kind calendar).",
+              "$ref": "#/$defs/key"
             }
           },
           "dependentRequired": {
             "atTime": [
               "untilField"
+            ],
+            "workingDuration": [
+              "calendarRef"
+            ],
+            "calendarRef": [
+              "workingDuration"
             ]
           },
           "additionalProperties": false
@@ -1648,7 +2505,92 @@
                 "tokenValidFor"
               ],
               "additionalProperties": false
+            },
+            "guestResponse": {
+              "description": "Answered by a person outside the organization through a guest response form (docs/build/S140, CG-F05). When the request reaches this step a one-time link that expires after linkValidFor (PT1H to P30D) can be issued by an operator with run.operate, or is emailed to the address in recipientFrom when that address is in the workspace's approved guest domains (checked when it is sent). The form asks for the declared payload fields and, with attachments, files; submitting it resumes the wait like a message. One answer per link.",
+              "type": "object",
+              "properties": {
+                "linkValidFor": {
+                  "$ref": "#/$defs/duration"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "instructions": {
+                  "description": "Plain text shown above the form (no HTML or links).",
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "recipientFrom": {
+                  "description": "A request text field or guaranteed earlier text output holding the guest's email address.",
+                  "$ref": "#/$defs/fieldRef"
+                },
+                "attachments": {
+                  "type": "object",
+                  "properties": {
+                    "maxFiles": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 5
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "acceptTypes": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 8,
+                      "uniqueItems": true,
+                      "items": {
+                        "enum": [
+                          "pdf",
+                          "png",
+                          "jpeg",
+                          "txt",
+                          "csv",
+                          "docx",
+                          "xlsx",
+                          "pptx"
+                        ]
+                      }
+                    },
+                    "maxFileBytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10485760
+                    }
+                  },
+                  "required": [
+                    "maxFiles"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "linkValidFor",
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "fallbackCheck": {
+              "description": "Callback with a polling safety net (docs/build/S129, CG-W03). While the step waits for the message, a read-only operation is checked at a slow interval; when its 'until' holds the wait completes with the mapped fields as the message payload. Whichever comes first wins; the other is closed.",
+              "$ref": "#/$defs/fallbackCheck"
+            },
+            "timeoutCalendarRef": {
+              "description": "S139 (CG-W05): count timeoutAfter in working time of this shared calendar (pinned in dependencies.assets, kind calendar).",
+              "$ref": "#/$defs/key"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while the step waits for the message or the callback.",
+              "$ref": "#/$defs/whileWaiting"
             }
+          },
+          "dependentRequired": {
+            "timeoutCalendarRef": [
+              "timeoutAfter"
+            ]
           },
           "required": [
             "message",
@@ -1748,8 +2690,30 @@
             "timedOut",
             "failed",
             "condition",
-            "default"
+            "default",
+            "aiLabel",
+            "lowConfidence",
+            "needsReview",
+            "aiUnavailable",
+            "limitReached",
+            "branch"
           ]
+        },
+        "maxTraversals": {
+          "description": "CG-E01 bounded loop (docs/build/S138): this path leads back to an earlier step and may be taken at most this many times per request. The step it leaves must also have one limitReached path, taken instead once the limit is used up.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "branch": {
+          "description": "Wait for the first only (docs/build/S139): the id of the branch this path is for; required when on is branch.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,19}$"
+        },
+        "aiLabel": {
+          "description": "AI task routes only (docs/build/S134): the label of the AI skill this path is for; required when on is aiLabel.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,39}$"
         },
         "label": {
           "description": "Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'.",
@@ -1768,6 +2732,56 @@
         "on"
       ],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "on": {
+                "const": "aiLabel"
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "then": {
+            "required": [
+              "aiLabel"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "aiLabel"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "on": {
+                "const": "branch"
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "then": {
+            "required": [
+              "branch"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "branch"
+              ]
+            }
+          }
+        }
+      ],
       "if": {
         "properties": {
           "on": {
@@ -1834,7 +2848,7 @@
       ]
     },
     "decisionTerm": {
-      "description": "One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121).",
+      "description": "One test of a decision row: a plain comparison, a list (in), a number range (between) or a formula in a column (docs/build/S146-parts/A-decision-expressions.md). Lists, ranges and formulas are accepted in decision rows only (docs/build/S121).",
       "oneOf": [
         {
           "$ref": "#/$defs/atomicCondition"
@@ -1844,8 +2858,28 @@
         },
         {
           "$ref": "#/$defs/betweenCondition"
+        },
+        {
+          "$ref": "#/$defs/decisionExpressionTerm"
         }
       ]
+    },
+    "decisionExpressionTerm": {
+      "description": "An input entry written as an Orqix expression in the column fieldRef (S146, CG-D04). It must give true or false and use the column's field, for example input.amount > input.limit or input.due < date(\"2026-06-30\"). It matches only when true; false or no value does not match. Only single-value fields (number, text, true or false, date) can be used; time and date-time fields are not available.",
+      "type": "object",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        }
+      },
+      "required": [
+        "fieldRef",
+        "expression"
+      ],
+      "additionalProperties": false
     },
     "inCondition": {
       "type": "object",
@@ -1980,7 +3014,7 @@
                 "$ref": "#/$defs/decisionCondition"
               },
               "then": {
-                "$ref": "#/$defs/decisionOutput"
+                "$ref": "#/$defs/decisionRowOutput"
               },
               "effective": {
                 "description": "Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date.",
@@ -2028,12 +3062,53 @@
         "$ref": "#/$defs/literal"
       }
     },
+    "decisionRowOutput": {
+      "description": "The results of a row: literals as in the default, or an Orqix expression (docs/build/S146-parts/A-decision-expressions.md) giving a value of the default's type. It may use request fields and earlier step results, not other results.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 10,
+      "propertyNames": {
+        "$ref": "#/$defs/fieldKey"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/literal"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "$ref": "#/$defs/expression"
+              }
+            },
+            "required": [
+              "expression"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "scalarFormField": {
       "type": "object",
       "properties": {
+        "classification": {
+          "description": "CG-I05 (docs/build/S151): how protected the answer is. public and internal are shown as before. personal and sensitive answers are masked in every screen, API response, export and evidence pack; people with data.reveal can reveal them one request at a time, and every reveal is audited. sensitive answers are also encrypted at rest. Request questions only; personal and sensitive questions cannot be searchable or files.",
+          "enum": [
+            "public",
+            "internal",
+            "personal",
+            "sensitive"
+          ]
+        },
         "incidentEditable": {
           "const": true,
           "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only."
+        },
+        "searchable": {
+          "const": true,
+          "description": "CG-O04 (docs/build/S142): operators with run.read-data can filter this workflow's requests by this field on the Runs page and in bulk operations. Request fields of type text (not files or times), number, whole number, yes/no or date only; at most 10 per workflow. Indexed when the request starts and whenever its data is corrected; text longer than 200 characters is not indexed. Does not change execution."
         },
         "type": {
           "enum": [
@@ -2053,11 +3128,82 @@
           "maxLength": 500
         },
         "format": {
-          "description": "date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.",
+          "description": "date: a calendar date written YYYY-MM-DD, without time or time zone. time: a time of day written HH:MM or HH:MM:SS (24-hour, no zone). date-time: an instant written as RFC 3339 with its offset, for example 2026-11-06T14:30:00+01:00 (docs/build/S140). attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.",
           "enum": [
             "date",
+            "time",
+            "date-time",
             "attachment"
           ]
+        },
+        "timeZone": {
+          "description": "Only with format date-time: the IANA time zone the form uses to enter and show the value, for example Europe/Berlin (docs/build/S140). The stored value always carries its offset.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$"
+        },
+        "lookup": {
+          "description": "Options from a pinned read-only connection operation (docs/build/S140, CG-F02). Request form text fields only. The form searches as the person types; the server runs the operation with the requester's access, keeps no answers at rest and checks the chosen value again when the request is submitted.",
+          "type": "object",
+          "properties": {
+            "connection": {
+              "description": "Key of a connection declared in dependencies.connections (its pinned version is used).",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "searchInput": {
+              "description": "The operation input that receives the typed search text.",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+            },
+            "valueInput": {
+              "description": "The operation input that receives the chosen value when the server checks it at submit (default: searchInput).",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+            },
+            "rows": {
+              "description": "Result pointer of the operation's rows, for example /result/[*].",
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 200
+            },
+            "valueColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "labelColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "detailColumn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "minSearchLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            }
+          },
+          "required": [
+            "connection",
+            "operation",
+            "searchInput",
+            "rows",
+            "valueColumn",
+            "labelColumn"
+          ],
+          "additionalProperties": false
         },
         "acceptTypes": {
           "description": "Only with format attachment: the file types this field accepts (default: all allowed types).",
@@ -2085,12 +3231,12 @@
           "maximum": 10485760
         },
         "formatMinimum": {
-          "description": "Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
-          "$ref": "#/$defs/calendarDate"
+          "description": "Earliest allowed value (inclusive), written like the field: a date YYYY-MM-DD, a time HH:MM[:SS] or a date-time with offset. Only with format date, time or date-time.",
+          "$ref": "#/$defs/formatBound"
         },
         "formatMaximum": {
-          "description": "Latest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
-          "$ref": "#/$defs/calendarDate"
+          "description": "Latest allowed value (inclusive), written like the field. Only with format date, time or date-time.",
+          "$ref": "#/$defs/formatBound"
         },
         "enum": {
           "type": "array",
@@ -2154,7 +3300,11 @@
           "if": {
             "properties": {
               "format": {
-                "const": "date"
+                "enum": [
+                  "date",
+                  "time",
+                  "date-time"
+                ]
               }
             },
             "required": [
@@ -2194,6 +3344,9 @@
         ],
         "patternMessage": [
           "pattern"
+        ],
+        "timeZone": [
+          "format"
         ]
       },
       "required": [
@@ -2201,6 +3354,11 @@
         "title"
       ],
       "additionalProperties": false
+    },
+    "formatBound": {
+      "description": "A bound of a date, time or date-time field (docs/build/S140); the compiler checks that it is written like the field (WF_FORM_INVALID).",
+      "type": "string",
+      "pattern": "^([0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9]))?|([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?)$"
     },
     "calendarDate": {
       "description": "A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID).",
@@ -2223,6 +3381,9 @@
           "description": "Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention.",
           "type": "object",
           "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
             "topic": {
               "description": "The kind of job. Workers ask for the topics they serve.",
               "$ref": "#/$defs/key"
@@ -2246,11 +3407,22 @@
                 "$ref": "#/$defs/messagePayloadField"
               }
             },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
+            },
             "leaseSeconds": {
               "description": "How long a worker holds a job before it must extend the lease or lose it.",
               "type": "integer",
               "minimum": 30,
               "maximum": 3600
+            },
+            "raiseErrorOnFailure": {
+              "description": "Opt-in (docs/build/S132): when the worker reports a business error (fail with an errorCode), raise this business error so that the error route of the section holding the step catches it. The step must be in a section whose error route catches this code and cannot also have a failed path. Unset (the default): a business error takes the failed path when drawn, otherwise the request needs attention. Retryable failures and lost leases never raise it.",
+              "$ref": "#/$defs/errorCode"
+            },
+            "whileWaiting": {
+              "description": "S139 (CG-W06): reminders while the job is open.",
+              "$ref": "#/$defs/whileWaiting"
             }
           },
           "required": [
@@ -2285,12 +3457,16 @@
         "minItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 25
+          "maximum": 500
         },
         "maxItems": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 25
+          "maximum": 500
+        },
+        "uniqueItems": {
+          "description": "Each value at most once (checklists and tag lists, docs/build/S140). Scalar items only.",
+          "const": true
         }
       },
       "required": [
@@ -2436,8 +3612,28 @@
               "enum": [
                 "error",
                 "signal",
-                "timer"
+                "timer",
+                "message"
               ]
+            },
+            "message": {
+              "description": "message (docs/build/S139, CG-E08): the message name that starts the handler, for example customer-cancelled.",
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+            },
+            "correlationField": {
+              "description": "message: the required request field whose value identifies the request (/input/<key>).",
+              "$ref": "#/$defs/fieldRef"
+            },
+            "payload": {
+              "description": "message: values the message may carry; the handler's steps use them as /steps/<handler id>/<name>.",
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/messagePayloadField"
+              }
             },
             "errorCode": {
               "$ref": "#/$defs/errorCode"
@@ -2567,6 +3763,104 @@
         "config": {
           "type": "object",
           "description": "Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues.",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "aiTaskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "aiTask"
+        },
+        "config": {
+          "description": "AI task (docs/build/S134, doc 29 section 7.3): runs an approved, evaluated AI skill on mapped request values. AI proposes; decision tables and people decide where it matters. Outputs at /steps/<id>/: status, label, confidence, reasons, skillVersion, modelUsed, plus score, recommendation/rationale, summary or the extracted fields by mode.",
+          "type": "object",
+          "properties": {
+            "forEach": {
+              "$ref": "#/$defs/stepForEach"
+            },
+            "skillRef": {
+              "description": "Key of the shared AI skill.",
+              "$ref": "#/$defs/key"
+            },
+            "skillVersion": {
+              "description": "Approved version to pin; publishing pins the latest approved version when absent.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "mode": {
+              "description": "Must equal the skill's mode.",
+              "enum": [
+                "classify",
+                "extract",
+                "score",
+                "recommend",
+                "summarize"
+              ]
+            },
+            "inputMapping": {
+              "description": "Skill input name to request or earlier-step value. Only mapped values are sent.",
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "autonomy": {
+              "description": "shadow: runs beside the existing decision and never routes; suggest (default): a person decides; autoWithReview: AI routes and a sample is reviewed afterwards; auto: AI routes within the threshold, only for labels the workspace policy marks low-risk.",
+              "enum": [
+                "shadow",
+                "suggest",
+                "autoWithReview",
+                "auto"
+              ]
+            },
+            "minConfidence": {
+              "description": "Calibrated confidence below which the step takes lowConfidence (classify) or needsReview (extract). Default 0.8.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reviewSamplePercent": {
+              "description": "autoWithReview only: share of automatic decisions queued for after-the-fact review (default 10).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "redaction": {
+              "description": "Per input: how the value is minimized before it is sent, on top of the field classification policy.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "maskCardNumbersAndEmails",
+                  "maskDigits",
+                  "hash",
+                  "drop"
+                ]
+              }
+            }
+          },
+          "required": [
+            "skillRef",
+            "mode",
+            "inputMapping"
+          ],
           "additionalProperties": false
         }
       },
@@ -2739,6 +4033,9 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "retry": {
+              "$ref": "#/$defs/stepRetry"
             },
             "inputMapping": {
               "description": "Request or earlier-step values used by this step, by name.",

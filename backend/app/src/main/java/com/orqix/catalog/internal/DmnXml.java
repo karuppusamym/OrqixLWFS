@@ -60,6 +60,11 @@ final class DmnXml {
             return attributes.get(local);
         }
 
+        /** @return the text exactly as written (S146: an Orqix expression entry is taken verbatim) */
+        String rawText() {
+            return text.toString();
+        }
+
         String text() {
             return text.toString().trim();
         }

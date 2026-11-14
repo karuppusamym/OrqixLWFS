@@ -12,8 +12,10 @@ import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
 import { ApprovalViewPicker } from './ApprovalViewPicker'
 import { ListApprovalFields } from './ListApprovalFields'
+import { AiReviewerFields } from './AiReviewerFields'
 import { StagesInspector } from './StagesInspector'
 import { SubprocessesInspector } from './ScopeInspectors'
+import { SchedulesPanel } from '@/features/settings/SchedulesPanel'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -126,6 +128,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
         </FormField>
         {cfg<string>(node, 'timeoutAfter') ? <DurationPreview text={cfg<string>(node, 'timeoutAfter') ?? ''} verb="allows" /> : null}
       </InspectorSection>
+      <AiReviewerFields node={node} />
       <WorkManagementFields node={node} groups={items} />
       <StageEmailFields node={node} />
       <Advanced>
@@ -283,7 +286,38 @@ export function WorkflowInspector() {
           </div>
         </div>
       </Advanced>
+      <Advanced label="AI assistants">
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="wf-settings-mcp"
+            checked={def.exposeAsTool === true}
+            disabled={readOnly}
+            onCheckedChange={(v) => store.getState().apply((d) => {
+              const next = { ...d }
+              if (v === true) next.exposeAsTool = true
+              else delete next.exposeAsTool
+              return next
+            })}
+          />
+          <div>
+            <Label htmlFor="wf-settings-mcp">Offer to AI assistants</Label>
+            <p className="text-xs text-muted-foreground">
+              People who may start this workflow can start it from an AI assistant (MCP), after confirming a summary.
+              Only where a workspace administrator has switched on the MCP server; form fields for files stay in Orqix.
+            </p>
+          </div>
+        </div>
+      </Advanced>
       <Tier1Settings />
+      <WorkflowSchedules />
     </div>
   )
+}
+
+/** S139 (CG-E02): this workflow's scheduled starts, below the workflow settings. */
+function WorkflowSchedules() {
+  const { workflowId } = useStudioContext()
+  const { can } = useWorkspace()
+  if (!can('workflow.read')) return null
+  return <InspectorSection title="Scheduled starts"><SchedulesPanel workflowId={workflowId} /></InspectorSection>
 }

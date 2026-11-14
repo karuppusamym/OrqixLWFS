@@ -3,7 +3,7 @@ import { chipFor, fieldInfo, type ConnectionLookup } from './fieldRefs'
 import { nodeById } from './graph'
 import { KINDS, ROUTE_LABEL } from './kinds'
 import { conditionValueText } from './decisionLogic'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
+import { conditionTerms, isAtomicCondition, tableUsesExpressions, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
 
 export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'at least', gt: 'greater than', lt: 'less than', lte: 'at most', in: 'is one of', between: 'between' }
 
@@ -15,6 +15,16 @@ export function describeCondition(def: Definition, c: Condition, lookup?: Connec
 
 /** Short route text used on edges and in the Steps tab. */
 export function routeText(def: Definition, t: Transition, lookup?: ConnectionLookup): string {
+  const base = routeBaseText(def, t, lookup)
+  if (t.maxTraversals) {
+    // S138: a bounded "send back to" path.
+    const limit = `send back, at most ${t.maxTraversals} ${t.maxTraversals === 1 ? 'time' : 'times'}`
+    return base ? `${base} (${limit})` : limit.charAt(0).toUpperCase() + limit.slice(1)
+  }
+  return base
+}
+
+function routeBaseText(def: Definition, t: Transition, lookup?: ConnectionLookup): string {
   switch (t.on) {
     case 'approved':
       return 'Approved'
@@ -30,7 +40,26 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return t.label || (t.condition && conditionTerms(t.condition).length ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)')
     case 'next':
       return t.label ?? ''
+    case 'aiLabel':
+      return t.label || (t.aiLabel ? `Label ${t.aiLabel}` : 'Label (not set)')
+    case 'lowConfidence':
+      return t.label || 'Low confidence'
+    case 'needsReview':
+      return t.label || 'Needs review'
+    case 'aiUnavailable':
+      return t.label || 'AI unavailable'
+    case 'limitReached':
+      return t.label || 'Limit reached'
+    case 'branch':
+      return t.label || branchLabel(def, t) || 'Branch (not set)'
   }
+}
+
+/** S139: the label of the branch of a "Wait for the first" step that a path is for. */
+function branchLabel(def: Definition, t: Transition): string | undefined {
+  const from = def.nodes.find((n) => n.id === t.from)
+  const branches = Array.isArray(from?.config.branches) ? (from?.config.branches as Array<{ id?: string; label?: string }>) : []
+  return branches.find((b) => b.id === t.branch)?.label
 }
 
 /** Label used in a route select: "When approved", "Otherwise", "Next". */
@@ -40,6 +69,12 @@ export function routeSlotLabel(def: Definition, t: Transition | undefined, on: T
   if (on === 'failed') return 'When failed'
   if (on === 'default') return 'Otherwise'
   if (on === 'condition' && t) return t.label ? `When ${t.label}` : t.condition?.fieldRef ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)'
+  if (on === 'aiLabel') return t?.aiLabel ? `When AI says ${t.aiLabel}` : 'When AI says (label not set)'
+  if (on === 'lowConfidence') return 'When AI is not confident enough'
+  if (on === 'needsReview') return 'When a person must review'
+  if (on === 'aiUnavailable') return 'When AI is unavailable'
+  if (on === 'limitReached') return 'When the send-back limit is reached'
+  if (on === 'branch') return t ? `When ${branchLabel(def, t) ?? t.branch ?? 'a branch'} happens first` : 'When a branch happens first'
   return ROUTE_LABEL[on]
 }
 
@@ -58,7 +93,9 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
     case 'decision': {
       const table = def.decisions.find((d) => d.key === c.decisionRef)
       const ref = table?.rows[0]?.when.fieldRef
-      return ref ? `Based on ${fieldInfo(def, ref)?.label ?? ref}` : 'Rule table'
+      // S146: a table with formulas in its rows says so.
+      const formulas = table && tableUsesExpressions(table) ? ', with formulas' : ''
+      return ref ? `Based on ${fieldInfo(def, ref)?.label ?? ref}${formulas}` : 'Rule table'
     }
     case 'branch':
       return `${def.transitions.filter((t) => t.from === node.id).length} paths`
@@ -76,6 +113,10 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return waitSummary(def, c)
     case 'waitForMessage':
       return messageSummary(def, c)
+    case 'waitForFirst': {
+      const branches = Array.isArray(c.branches) ? (c.branches as Array<{ label?: string }>) : []
+      return branches.length ? `First of: ${branches.map((b) => b.label || 'a branch').join(', ')}` : 'Add the events to wait for'
+    }
     case 'raiseError':
       return `Raises ${String(c.errorCode ?? 'an error')}`
     case 'sendSignal':
@@ -90,6 +131,12 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
     case 'sendAdapter':
       return (c.adapter as string) ? `Through ${c.adapter as string} (${String(c.kind ?? '')})` : 'No adapter chosen'
+    case 'calculate': {
+      const outputs = (Array.isArray(c.outputs) ? c.outputs : []) as Array<{ key?: string }>
+      return outputs.length === 0 ? 'No outputs yet' : `Works out ${outputs.map(o => o.key).filter(Boolean).join(', ')}`
+    }
+    case 'aiTask':
+      return (c.skillRef as string) ? `${String(c.mode ?? 'classify')} with ${c.skillRef as string} (${String(c.autonomy ?? 'suggest')})` : 'No AI skill chosen'
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':

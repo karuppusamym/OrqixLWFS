@@ -86,6 +86,7 @@ class WorkspaceExitExportApiTest extends com.orqix.support.RuntimeTestBase {
         String release = "workflows/" + key + "/releases/1/";
         assertThat(files.keySet()).contains("README.md", "workspace.json", "manifest.json", "SHA256SUMS",
                 "schemas/workflow-v0.schema.json", "schemas/connection-definition-v0.schema.json",
+                "schemas/connection-definition-v1.schema.json",
                 "workflows/" + key + "/workflow.json", "workflows/" + key + "/draft.json",
                 release + "workflow.json", release + "process.bpmn20.xml", release + "decisions/amount-policy.dmn",
                 release + "source-map.json", release + "compile-manifest.json", release + "release.json",

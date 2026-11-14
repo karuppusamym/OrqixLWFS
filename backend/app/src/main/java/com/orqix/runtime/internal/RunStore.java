@@ -57,6 +57,11 @@ public class RunStore {
     /** Step kinds that wait for something other than a job: a person, a timer or a child run. */
     private static final java.util.Set<String> WAITING_KINDS = java.util.Set.of("approval", "wait", "child", "external");
 
+    /** S129: a call that keeps checking until done waits between its checks. */
+    private static boolean waits(JsonNode step) {
+        return WAITING_KINDS.contains(step.path("kind").asString("")) || step.path("polling").asBoolean(false);
+    }
+
     /** Mutable view used by {@link #mutate}. */
     public static final class Mutation {
         public String lifecycle;
@@ -145,7 +150,7 @@ public class RunStore {
             }
             boolean onlyWaiting = steps.size() > 0;
             for (JsonNode step : steps) {
-                if (!WAITING_KINDS.contains(step.path("kind").asString(""))) {
+                if (!waits(step)) {
                     onlyWaiting = false;
                 }
             }
@@ -173,9 +178,36 @@ public class RunStore {
     private final Clock clock;
     private final org.springframework.beans.factory.ObjectProvider<RunStages> stages;
     private final RunReferences references;
+    private final org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates;
+    private final org.springframework.beans.factory.ObjectProvider<RunSearchIndex> searchIndex;
+
+    private FieldProtection protection;
+
+    /** CG-I05 (S151): sensitive answers are encrypted on write and decrypted on read (setter keeps the constructor). */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setFieldProtection(FieldProtection protection) {
+        this.protection = protection;
+    }
+
+    private JsonNode sealed(UUID workspaceId, UUID releaseId, JsonNode input) {
+        return protection == null ? input : protection.seal(workspaceId, releaseId, input);
+    }
+
+    private JsonNode sealedForRun(UUID workspaceId, UUID runId, JsonNode input) {
+        if (protection == null) {
+            return input;
+        }
+        UUID releaseId = jdbc.sql("SELECT release_id FROM workflow_run WHERE workspace_id = :ws AND id = :id")
+                .param("ws", workspaceId).param("id", runId).query(UUID.class).optional().orElse(null);
+        return releaseId == null ? input : protection.seal(workspaceId, releaseId, input);
+    }
 
     public RunStore(JdbcClient jdbc, Json json, Clock clock,
-            org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references) {
+            org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references,
+            org.springframework.beans.factory.ObjectProvider<WaitStates> waitStates,
+            org.springframework.beans.factory.ObjectProvider<RunSearchIndex> searchIndex) {
+        this.searchIndex = searchIndex;
+        this.waitStates = waitStates;
         this.references = references;
         this.jdbc = jdbc;
         this.json = json;
@@ -198,9 +230,18 @@ public class RunStore {
                 """)
                 .param("id", id).param("ws", workspaceId).param("reference", REFERENCE_PREFIX + sequence)
                 .param("wf", workflowId).param("rel", releaseId)
-                .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(input))
+                .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(sealed(workspaceId, releaseId, input)))
                 .param("now", Sql.ts(now))
                 .update();
+        reindex(workspaceId, id);
+    }
+
+    /** CG-O04 (S142): searchable request fields follow every change of the request data in the same transaction. */
+    private void reindex(UUID workspaceId, UUID runId) {
+        RunSearchIndex index = searchIndex.getIfAvailable();
+        if (index != null) {
+            index.refresh(workspaceId, runId);
+        }
     }
 
     /**
@@ -289,9 +330,11 @@ public class RunStore {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInput(UUID workspaceId,UUID runId,int version,JsonNode input) {
-        return jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle='needsAttention' RETURNING version")
-                .param("input",json.write(input)).param("now",Sql.ts(clock.instant())).param("ws",workspaceId).param("run",runId).param("version",version)
+        int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle='needsAttention' RETURNING version")
+                .param("input",json.write(sealedForRun(workspaceId,runId,input))).param("now",Sql.ts(clock.instant())).param("ws",workspaceId).param("run",runId).param("version",version)
                 .query(Integer.class).optional().orElseThrow(()->new IllegalStateException("Locked correction version changed"));
+        reindex(workspaceId, runId);
+        return next;
     }
 
     /** Points the request at another release of its workflow (docs/build/S38); the caller has migrated the engine. */
@@ -299,14 +342,17 @@ public class RunStore {
     public void setRelease(UUID workspaceId, UUID runId, UUID releaseId) {
         jdbc.sql("UPDATE workflow_run SET release_id = :release WHERE workspace_id = :ws AND id = :id")
                 .param("release", releaseId).param("ws", workspaceId).param("id", runId).update();
+        reindex(workspaceId, runId);
     }
 
     /** Corrects the request data of a running or waiting request (an approver's correction, docs/build/S42). */
     @Transactional(propagation = Propagation.MANDATORY)
     public int correctInputWhileActive(UUID workspaceId, UUID runId, int version, JsonNode input) {
-        return jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
-                .param("input", json.write(input)).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
+        int next = jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
+                .param("input", json.write(sealedForRun(workspaceId, runId, input))).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
                 .query(Integer.class).optional().orElseThrow(() -> new IllegalStateException("Locked correction version changed"));
+        reindex(workspaceId, runId);
+        return next;
     }
 
     /** Locks the run, applies {@code change} and writes the projection columns back with {@code version + 1}. */
@@ -331,6 +377,8 @@ public class RunStore {
                 .update();
         // Case stages are derived from the final steps of the transaction (docs/build/S17 section 4).
         stages.getObject().touch(workspaceId, runId, row.releaseId());
+        // What the request waits for, derived from the same steps (docs/build/S129, CG-W08).
+        waitStates.getObject().sync(workspaceId, runId, row.currentSteps(), m.steps);
         return find(workspaceId, runId).orElseThrow();
     }
 
@@ -363,10 +411,21 @@ public class RunStore {
                 rs.getString("business_key"),
                 Sql.uuid(rs, "initiator_subject_id"), rs.getString("lifecycle"), rs.getString("outcome"),
                 rs.getString("outcome_kind"), (ArrayNode) stepsNode, attention == null ? null : json.parse(attention),
-                json.parse(rs.getString("input")), output == null ? null : json.parse(output), rs.getLong("event_seq"),
+                input(Sql.uuid(rs, "workspace_id"), rs.getString("input")), output == null ? null : json.parse(output),
+                rs.getLong("event_seq"),
                 rs.getInt("version"), Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"),
                 Sql.instant(rs, "ended_at"), Sql.uuid(rs, "parent_run_id"), rs.getString("parent_node_id"),
                 (Integer) rs.getObject("parent_occurrence"), rs.getInt("call_depth"));
+    }
+
+    /** CG-I05 (S151): the engine's request variable, with sensitive answers of the release encrypted. */
+    public String engineInput(UUID workspaceId, UUID releaseId, JsonNode input) {
+        return json.write(sealed(workspaceId, releaseId, input));
+    }
+
+    private JsonNode input(UUID workspaceId, String text) {
+        JsonNode stored = json.parse(text);
+        return protection != null && FieldProtection.mayHoldSealed(text) ? protection.open(workspaceId, stored) : stored;
     }
 
     public static String columns() {

@@ -1,0 +1,981 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/connection-definition-v1.schema.json",
+  "title": "Orqix connection definition v1.0 — declarative HTTP operation contract",
+  "description": "Immutable, versioned, secret-free description of an approved HTTP integration (CG-C01, docs/build/S130-connection-definition-v1.md). Keeps every rule of v0.1 for kind http and adds path templates, query parameters with reviewed encoders, allow-listed headers, DELETE, nested and form, multipart or binary bodies, row lists and response headers in results, bounded pagination, error mapping to business codes, long operations up to 120 s, async declarations and lookup reconciliation (idempotentByLookup, CG-C02). Shape checks live here; cross-field rules (placeholders, input references, depth and leaf bounds, forbidden headers, reconcile targets) are registration rules CONN_V1_* listed in S130. Agent and Microsoft Graph connections stay on schema 0.1.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "kind": {
+      "description": "Only http in v1.",
+      "const": "http"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 40,
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "key",
+    "version",
+    "name",
+    "operations"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "fieldKey": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+    },
+    "pointer": {
+      "description": "JSON Pointer (RFC 6901), possibly empty for the whole document.",
+      "type": "string",
+      "maxLength": 300,
+      "pattern": "^(/([^~/]|~[01])*)*$"
+    },
+    "operation": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "description": "Path appended to the binding base URL. {name} segments are path parameters declared in pathParams; values are percent-encoded and may never contain '/', '..' or control characters. No query string: use query.",
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^/([A-Za-z0-9._~/-]|\\{[a-z][A-Za-z0-9]{0,63}\\})*$"
+        },
+        "pathParams": {
+          "description": "Every {name} of the path. A const parameter is fixed by the definition and cannot be mapped; any other parameter is a required input with this name.",
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/pathParam"
+          }
+        },
+        "query": {
+          "description": "Query parameters in this order. Each is a const, a mapped input or a template filled by a reviewed encoder. A mapped value that is absent leaves the parameter out.",
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.\\-\\[\\]]{1,64}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/queryParam"
+          }
+        },
+        "headers": {
+          "description": "Static non-secret headers and mapped headers. Authorization, Cookie, Host, Content-Type, Content-Length, hop-by-hop headers, the idempotency header and Orqix headers are refused (CONN_V1_HEADER_FORBIDDEN).",
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/headerValue"
+          }
+        },
+        "contentType": {
+          "description": "Request body encoding for POST, PUT and PATCH (default json; DELETE may send json). form: application/x-www-form-urlencoded from a flat body. multipart: multipart/form-data, attachment inputs become file parts. binary: the bytes of one attachment input (binaryInput).",
+          "enum": [
+            "json",
+            "form",
+            "multipart",
+            "binary"
+          ]
+        },
+        "requestSchema": {
+          "description": "The operation's inputs: flat typed scalars mapped from workflow fields, exactly like v0. Inputs are sent where path, query, headers and body reference them; without a body template, inputs no other part references form the flat JSON body (v0 behavior).",
+          "$ref": "#/$defs/requestObject"
+        },
+        "body": {
+          "description": "Body template: nested objects and arrays whose leaves are inputs or constants (depth at most 5, at most 200 leaves). For form and multipart it must be flat.",
+          "$ref": "#/$defs/templateObject"
+        },
+        "binaryInput": {
+          "description": "contentType binary only: the requestSchema field (format attachment) whose authorized request file is the body.",
+          "$ref": "#/$defs/fieldKey"
+        },
+        "responseSchema": {
+          "$ref": "#/$defs/responseObject"
+        },
+        "responseHeaders": {
+          "description": "Response headers that results may read with the pointer /@headers/<Name>. Set-Cookie, Authorization and hop-by-hop headers are refused.",
+          "type": "object",
+          "maxProperties": 10,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarField"
+          }
+        },
+        "successStatuses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 299
+          }
+        },
+        "errors": {
+          "description": "Client errors that are business outcomes. A mapped error is a known rejection: the step's failed route or raiseOnFailure receives failureCode = code. 401, 403, 408 and 429 keep their platform meaning and cannot be mapped.",
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/errorMapping"
+          }
+        },
+        "effectClass": {
+          "description": "readOnly: no remote side effect. idempotentWithKey: remote deduplicates by the idempotency header. idempotentByLookup: Orqix writes a stable key into reconcile.keyField; when the outcome is uncertain a read-only lookup decides (CG-C02). idempotentNatural: repeating the same values gives the same result (PUT, PATCH or DELETE that sets fixed values); retried like idempotentWithKey without a header. nonIdempotent: retried only when the request provably was not sent.",
+          "enum": [
+            "readOnly",
+            "idempotentWithKey",
+            "idempotentByLookup",
+            "idempotentNatural",
+            "nonIdempotent"
+          ]
+        },
+        "idempotencyHeader": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+        },
+        "maxTimeoutSeconds": {
+          "description": "Up to 30, or up to 120 for operations marked long.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "long": {
+          "description": "The operation may take more than 30 s (at most 120). The job lock is set above the timeout.",
+          "type": "boolean"
+        },
+        "testable": {
+          "description": "May be invoked from the connection test endpoint. Only allowed for readOnly operations.",
+          "type": "boolean"
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
+        },
+        "rateLimit": {
+          "description": "Declared rate hint; a binding can only lower it. Enforced by the binding rate limiter (CG-W04), not by this contract.",
+          "type": "object",
+          "properties": {
+            "requestsPerMinute": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "respectRetryAfter": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requestsPerMinute"
+          ],
+          "additionalProperties": false
+        },
+        "async": {
+          "$ref": "#/$defs/async"
+        },
+        "reconcile": {
+          "$ref": "#/$defs/reconcile"
+        }
+      },
+      "required": [
+        "label",
+        "method",
+        "path",
+        "responseSchema",
+        "successStatuses",
+        "effectClass",
+        "maxTimeoutSeconds",
+        "testable"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effectClass": {
+                "const": "idempotentWithKey"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "idempotencyHeader"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "idempotencyHeader"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effectClass": {
+                "const": "idempotentByLookup"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reconcile"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "reconcile"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "testable": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "effectClass": {
+                "const": "readOnly"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "GET",
+                  "DELETE"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "binaryInput"
+                  ]
+                },
+                {
+                  "properties": {
+                    "contentType": {
+                      "enum": [
+                        "form",
+                        "multipart",
+                        "binary"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "contentType"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "GET"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "body"
+                  ]
+                },
+                {
+                  "required": [
+                    "contentType"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "maxTimeoutSeconds": {
+                "minimum": 31
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "long": {
+                "const": true
+              }
+            },
+            "required": [
+              "long"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "pagination"
+            ]
+          },
+          "then": {
+            "properties": {
+              "method": {
+                "const": "GET"
+              },
+              "effectClass": {
+                "const": "readOnly"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "pathParam": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "integer"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "const": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "queryParam": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "required": [
+            "const"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/fieldKey"
+            }
+          },
+          "required": [
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "template": {
+              "description": "Fixed text with {input} placeholders. The encoder escapes each substituted value for the target syntax, then the whole value is percent-encoded.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "encoder": {
+              "enum": [
+                "rfc3986",
+                "servicenowEncodedQuery"
+              ]
+            }
+          },
+          "required": [
+            "template",
+            "encoder"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "headerValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^[\\x20-\\x7E]*$"
+            }
+          },
+          "required": [
+            "const"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/fieldKey"
+            }
+          },
+          "required": [
+            "input"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "templateValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/fieldKey"
+            }
+          },
+          "required": [
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "type": [
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "const"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/templateObject"
+            }
+          },
+          "required": [
+            "object"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "array": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "#/$defs/templateValue"
+              }
+            }
+          },
+          "required": [
+            "array"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "templateObject": {
+      "description": "Body member name (the remote system's own spelling) to value.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 100,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.$@-]{1,100}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/templateValue"
+      }
+    },
+    "scalarField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean"
+          ]
+        },
+        "format": {
+          "description": "date: YYYY-MM-DD. attachment: the ID of a file of the request; only for multipart or binary bodies.",
+          "enum": [
+            "date",
+            "attachment"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "requestObject": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 60,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarField"
+          }
+        },
+        "additionalProperties": {
+          "const": false
+        }
+      },
+      "required": [
+        "type",
+        "properties",
+        "additionalProperties"
+      ],
+      "additionalProperties": false
+    },
+    "responseValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/scalarField"
+        },
+        {
+          "$ref": "#/$defs/responseObject"
+        },
+        {
+          "$ref": "#/$defs/responseArray"
+        }
+      ]
+    },
+    "responseObject": {
+      "description": "Remote APIs may add fields; unknown fields are ignored unless additionalProperties is false. Nesting is limited to five levels (CONN_V1_RESPONSE_DEPTH).",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 80,
+          "additionalProperties": {
+            "$ref": "#/$defs/responseValue"
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "responseArray": {
+      "description": "A list in the response. A result pointer ending in /[*] projects it into a list of rows (items with scalar columns) or, with /[*]/<column>, a list of single values; at most 100 items are mapped and the rest are truncated (visible on the run timeline).",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "array"
+        },
+        "items": {
+          "$ref": "#/$defs/responseValue"
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "type",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "errorMapping": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 499
+        },
+        "code": {
+          "description": "Business error code, e.g. INCIDENT_NOT_FOUND.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        },
+        "bodyPointer": {
+          "description": "Where the remote system's message is in the error body; it becomes failureMessage (truncated to 200 characters, never logged).",
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "description": "Fixed business message used when there is no bodyPointer or it does not resolve to text.",
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "status",
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "pagination": {
+      "description": "Bounded reads over several pages; each page is its own journaled read. Results that project a list (/[*]) collect rows from every page; other results come from the first page.",
+      "type": "object",
+      "properties": {
+        "style": {
+          "enum": [
+            "offset",
+            "cursor",
+            "pageToken",
+            "linkHeader"
+          ]
+        },
+        "itemsPointer": {
+          "description": "The list counted per page; must be an array in responseSchema.",
+          "$ref": "#/$defs/pointer"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "offsetParam": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.\\-]{1,64}$"
+        },
+        "limitParam": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.\\-]{1,64}$"
+        },
+        "cursorPointer": {
+          "description": "cursor and pageToken: where the next cursor is in the response body.",
+          "$ref": "#/$defs/pointer"
+        },
+        "cursorParam": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.\\-]{1,64}$"
+        },
+        "maxPages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "style",
+        "itemsPointer",
+        "maxPages",
+        "maxItems"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "style": {
+                "const": "offset"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pageSize",
+              "offsetParam",
+              "limitParam"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "style": {
+                "enum": [
+                  "cursor",
+                  "pageToken"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "cursorPointer",
+              "cursorParam"
+            ]
+          }
+        }
+      ]
+    },
+    "async": {
+      "description": "Start and follow up (CG-W02, docs/build/S133): the remote system answers with an accepted status and a status location (a header or a body value). Accepted statuses count as success. The location must have the binding's scheme, host, port and base path (else STATUS_URL_OUTSIDE_BINDING) and match the status operation's path template; its path parameters become the results /@async/<name>, which a Check until done on statusOperation maps in.",
+      "type": "object",
+      "properties": {
+        "acceptedStatuses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 299
+          }
+        },
+        "statusFrom": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "header": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+                }
+              },
+              "required": [
+                "header"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "bodyPointer": {
+                  "$ref": "#/$defs/pointer"
+                }
+              },
+              "required": [
+                "bodyPointer"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "statusOperation": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "pollIntervalSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 86400
+        },
+        "maxWaitSeconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 2592000
+        }
+      },
+      "required": [
+        "acceptedStatuses",
+        "statusFrom",
+        "statusOperation"
+      ],
+      "additionalProperties": false
+    },
+    "reconcile": {
+      "description": "idempotentByLookup (CG-C02): Orqix sets keyField to a stable key on every send. When the outcome is uncertain (timeout, reset, 5xx or a crashed attempt) the readOnly lookup operation is called with that key: found records success with the found record and nothing is sent again; not found (after settling) allows a resend with the same key; a failed lookup leaves the outcome unknown.",
+      "type": "object",
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/fieldKey"
+        },
+        "keyField": {
+          "description": "requestSchema field (string) that receives the key. Workflows cannot map it.",
+          "$ref": "#/$defs/fieldKey"
+        },
+        "keyFrom": {
+          "description": "request.reference: <request reference>-<step id>-<occurrence>, e.g. ORQ-1042-raise-1. effectKey: the 64-character effect key.",
+          "enum": [
+            "request.reference",
+            "effectKey"
+          ]
+        },
+        "lookupField": {
+          "description": "requestSchema field of the lookup operation that receives the key (default keyField).",
+          "$ref": "#/$defs/fieldKey"
+        },
+        "found": {
+          "description": "Pointer into the lookup response; the record is found when it resolves to a non-null value.",
+          "$ref": "#/$defs/pointer"
+        },
+        "resultFrom": {
+          "description": "found: the step's results are read from the found record placed at foundAs, so the same result pointers work for a send and a reconciliation.",
+          "const": "found"
+        },
+        "foundAs": {
+          "description": "Where the found record sits in this operation's own response (default: the whole response).",
+          "$ref": "#/$defs/pointer"
+        },
+        "lookupSettleSeconds": {
+          "description": "The lookup is tried up to three times over this many seconds before deciding not found (default 30).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60
+        }
+      },
+      "required": [
+        "operation",
+        "keyField",
+        "keyFrom",
+        "found"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

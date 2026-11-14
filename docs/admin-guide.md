@@ -39,6 +39,7 @@ The `prod` profile refuses to start when any required value is missing or unsafe
 | Bootstrap administrators | `ORQIX_IDENTITY_BOOTSTRAP_PLATFORM_ADMIN_GROUPS` | IdP group values that receive Platform Admin at startup — keep this group small |
 | Egress allowlist | `ORQIX_EGRESS_ALLOWED_HOSTS` (`host:port` list), `ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS` | Connection bindings to any other host are refused; `ORQIX_EGRESS_PLAIN_HTTP_HOSTS` must be empty in production |
 | Connection secrets | Files in `ORQIX_SECRETS_DIR` (default `/var/run/secrets/orqix`) | One file per `secretRef`, read on every call (rotation needs no restart) |
+| Secret stores (optional) | `ORQIX_VAULT_*`, `ORQIX_AWS_SECRETS_ENABLED`, `ORQIX_AZURE_KEYVAULT_ENABLED`, `ORQIX_GCP_SECRETS_ENABLED` | Off by default. A binding's `secretRef` may name a secret in HashiCorp Vault, AWS Secrets Manager, Azure Key Vault or Google Secret Manager; see [Secret providers](#secret-providers-and-secret-access-audit---5-november-2026) |
 | AI assistance (optional) | `OPENROUTER_API_KEY` | Read unprefixed on purpose. Empty means AI is off and Orqix runs rules-only. OpenShift: optional Secret `orqix-ai`, key `openrouter-api-key`. See section 7 |
 
 All other `orqix.*` settings have safe defaults ([S1 §5](build/S1-engineering-baseline.md#5-configuration-catalog)).
@@ -55,7 +56,7 @@ Workspace administrators manage access in **Settings → Members and groups** or
 
 Prefer **sign-in groups** (the identity provider's `groups` claim, for example Active Directory groups) over individual people: then joining or leaving an AD group is all it takes, and Orqix follows at the person's next sign-in. A person can be chosen once they have signed in and hold access in the workspace.
 
-1. **Platform admin:** `POST /admin/organizations`, then `POST /admin/workspaces` with `initialAdmins` (principals of type `idpGroup` or `subject`). Mark test workspaces with `isTest: true`; only they may allow self-approval workflows.
+1. **Platform admin:** open **Platform administration** (account menu, or `/admin`; a platform admin who is in no workspace yet gets **Create a workspace** on the first screen) and choose **New workspace**. Pick or create the organization, name the workspace (the key is filled in from the name and cannot be changed later), tick **This is a test workspace** where it applies (only test workspaces may allow self-approval workflows) and name the first workspace administrators: yourself (**Make me a workspace administrator**, on by default) and/or sign-in groups. The page lists all organizations and workspaces (metadata only) and opens those you belong to. The same is available through the API: `POST /admin/organizations`, then `POST /admin/workspaces` with `initialAdmins` (principals of type `idpGroup` or `subject`). Workspaces cannot be renamed or deleted yet.
 2. **Workspace admin:** map IdP groups to roles (Settings → Members and groups → **Add role**, or `POST /workspaces/{id}/access/role-bindings`) — `WORKFLOW_DESIGNER`, `PUBLISHER`, `OPERATOR`, `VIEWER`, `APPROVER`, `WORKSPACE_ADMIN`.
 3. Grant `workflow.start` (the requester capability) with `POST /workspaces/{id}/access/grants`, workspace-wide or for one workflow, and `connection.manage` to integration administrators. Other grant-only permissions are listed under [Grant-only permissions](#grant-only-permissions---19-october-2026).
 4. Create approval groups, the work queues (Settings → Members and groups → **New approval group**, or `PUT /workspaces/{id}/groups/{key}`), for example `managers` or `finance-approvers`, listing IdP groups or people. A group belongs to the workspace and is shared by every workflow and case type in it; steps are assigned to its key, and members see those tasks as claimable. Members also need the Approver role to decide. Publishing fails while a referenced group is missing.
@@ -336,3 +337,157 @@ Workspace administrators (`workspace.manage-access`) can download the whole work
 **Re-import.** A `releases/n/workflow.json` file can be imported into Orqix again: create a workflow with the same key, save the file as its draft and publish (the round trip is covered by an automated test). Another BPMN engine can open `process.bpmn20.xml`, but service steps are Flowable delegate expressions (`${orqix...}`) that need their own implementation there.
 
 **Limits.** With a workflow selection, shared forms, decision tables and connections are still exported in full and the audit log holds only entries about the selected workflows, their releases and runs. A workspace administrator who cannot also read workflows exports the whole workspace (picking single workflows needs `workflow.read`). Not exported: request file attachments, generated documents, case instances, application pages and views, and the engine's own `ACT_*` tables. At most 500 workflows can be selected in one request.
+
+## Connection health, circuit breaker and request limits - 5 November 2026
+
+Settings → Connections shows each connection's health for the last hour and day (calls, success rate, p50/p95
+latency, 429 answers, token refresh failures, calls that waited, last error) and operator notices above the list. After
+10 retryable failures in a row within 5 minutes a binding pauses calls for 1 minute (doubling to 15 minutes); requests
+wait without using their attempts and one trial call decides. Tune with `orqix.integration.circuit.failure-threshold`,
+`window`, `cooldown` and `max-cooldown`. People with `connection.manage` can set a request limit a minute per binding;
+it is split across the running servers. Details: [S131](build/S131-retry-and-circuit-breaker.md).
+
+## Secret providers and secret-access audit - 5 November 2026
+
+Connection bindings name their credential with `secretRef`; the value never passes through the API. Besides mounted files (a plain name such as `crm-token`, one file in `ORQIX_SECRETS_DIR`), a reference can name a secret in an external store by its scheme ([S132](build/S132-secret-providers-and-worker-errors.md)):
+
+| Reference | Store | Example |
+|---|---|---|
+| `crm-token` | Mounted file (Kubernetes/OpenShift Secret volume) | `crm-token` |
+| `vault:<mount>/<path>#<key>` | HashiCorp Vault, KV version 2 | `vault:kv/apps/crm#token` |
+| `aws-sm:<secret id or ARN>#<json key>` | AWS Secrets Manager | `aws-sm:prod/crm#token` |
+| `azure-kv:<vault>/<secret>[/<version>]#<json key>` | Azure Key Vault | `azure-kv:orqix-prod/crm-token` |
+| `gcp-sm:<project>/<secret>[/<version>]#<json key>` | Google Secret Manager | `gcp-sm:my-project/crm-token` |
+
+The `#key` part is optional: with it, Orqix reads one field of a JSON secret; without it the whole value is used (a Vault secret with a single field gives that field). Store paths may not contain `..`, `//` or end with `/`.
+
+**Enabling a store** (all are off by default; a reference to a store that is off resolves to nothing and the connection is unavailable):
+
+- **Vault:** `ORQIX_VAULT_ENABLED=true`, `ORQIX_VAULT_ADDR=https://vault.example:8200`, optional `ORQIX_VAULT_NAMESPACE`. Authentication `ORQIX_VAULT_AUTH=token` reads `ORQIX_VAULT_TOKEN_FILE` (for example the sink file of a Vault Agent sidecar; the file is read again at each login so a renewed token is picked up). `ORQIX_VAULT_AUTH=kubernetes` logs in at `auth/<ORQIX_VAULT_K8S_MOUNT>/login` with role `ORQIX_VAULT_K8S_ROLE` and the pod's service-account token, keeps the Vault token for 80 % of its lease and logs in again on a 403. Grant the role read on the KV paths it needs (`path "kv/data/apps/*" { capabilities = ["read"] }`).
+- **AWS Secrets Manager:** `ORQIX_AWS_SECRETS_ENABLED=true` and `AWS_REGION`. Credentials come from the environment: EKS IAM roles for service accounts (`AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, set by EKS) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`. The role needs `secretsmanager:GetSecretValue` (and `kms:Decrypt` for a customer key). A VPC endpoint can be set with `orqix.secrets.aws.endpoint`.
+- **Azure Key Vault:** `ORQIX_AZURE_KEYVAULT_ENABLED=true`. With AKS workload identity (`AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, set by the webhook) Orqix exchanges the federated token; otherwise it uses the managed identity endpoint (`ORQIX_AZURE_CLIENT_ID` selects a user-assigned identity). Give the identity the *Key Vault Secrets User* role.
+- **Google Secret Manager:** `ORQIX_GCP_SECRETS_ENABLED=true`. Orqix uses the workload identity of the pod or VM through the metadata server. Give the service account *Secret Manager Secret Accessor* on the secrets.
+
+**Caching and rotation.** Values from a store are resolved when a call is dispatched and kept in memory for `ORQIX_SECRETS_CACHE_TTL` (default `30s`; `0s` turns the cache off), so a rotated secret is used within that time without restart. Mounted files are read on every call. Missing values and store failures are never cached. Store calls time out after `ORQIX_SECRETS_TIMEOUT` (default `5s`). Store addresses are operator configuration and are not checked against the connection egress allowlist; allow them in your network policy.
+
+**Secret-access audit.** Every resolution is counted per workspace, reference, store and UTC day: resolutions (cache hits included), cache hits, not found and failures, with the times of the last resolution and the last failure. `GET /workspaces/{id}/secret-access?days=7` (permission `connection.manage`, 1-90 days) lists them with the bindings that use each reference. Counts are written every 5 seconds; no value, hash or length of a secret is ever recorded, logged or exported. Logs name only the reference, the store and an HTTP status.
+
+**Scope.** Store references are accepted on connection bindings (including OAuth client-credential configuration stored as a JSON secret). Adapters, inbound triggers, Kafka clusters and outbound webhooks still name mounted files. Vault dynamic database credentials are not supported yet.
+
+## External worker business errors - 5 November 2026
+
+A worker can end a job with a business error: `POST /workspaces/{id}/external-jobs/{jobId}/fail` with `"errorCode": "SUPPLIER_BLOCKED"` and `"retryable": false` (the Python SDK raises `BusinessError` or calls `fail_with_error`). The step then takes its **Failed** route, where its outputs `failureKind` (`workerError`), `failureCode` and `failureMessage` are available, or, when the step is set to raise an error for its section, the section's error route. Without either the request needs attention as before, and the code is shown with the job's last error. Retryable failures and lost leases are unchanged. A business error with `retryable: true`, or a code starting with `ORQIX_`, is refused with 422. When the engine stops a worker step (a section's time limit, another step's error, the request ending), its open job is cancelled and a late completion gets 409.
+
+## AI assistants through MCP - 5 November 2026
+
+People can use Orqix from an AI assistant that supports the Model Context Protocol (Claude, VS Code and other MCP hosts) once a workspace administrator (`workspace.manage-access`) switches it on in **Settings → AI assistants** ([S136](build/S136-orqix-mcp-server.md)). It is off in every workspace until then. The panel shows the server address to give the assistant (`https://<orqix>/mcp`) and the sign-in metadata URL; the assistant signs the person in through the identity provider (authorization code with PKCE) and receives a token for the Orqix MCP resource (audience `orqix-mcp` or the `/mcp` address). The assistant can then do only what the person can do in Orqix: list the workflows they may start, find requests and tasks, explain where a request is, and prepare a start, a task decision or a message. Nothing is changed until the person confirms the summary (in the assistant's own confirmation dialog, or by telling the assistant to confirm within 5 minutes). Only workflows marked **Offer to AI assistants** in Studio (workflow settings) can be started this way, and not if their form needs a file. Every call is audited (`mcp.tool-called`: tool, step, outcome and IDs, never values) and listed under **Recent calls**; each person may make 60 calls a minute. Switching off cuts assistants off at once and lapses pending confirmations.
+
+**Identity provider.** Register a client for the assistant host (public, authorization code with PKCE S256), map the audience `orqix-mcp` into its access tokens and include the groups claim, as for the browser client. The local Keycloak realm has this as `orqix-mcp-client`. Server settings: `ORQIX_MCP_RESOURCE_URI` (the public `/mcp` address behind a proxy), `ORQIX_MCP_AUDIENCES`, `ORQIX_MCP_ISSUER` and `ORQIX_MCP_JWK_SET_URI` (default: the API's issuer and keys), `ORQIX_MCP_ALLOWED_ORIGINS` (browser origins allowed to call `/mcp`).
+
+## Actionable tasks in email, Teams and Slack - 6 November 2026
+
+Settings → Actionable tasks (`workspace.manage-access`) switches on messages for new approval tasks. Off until
+switched on. Email needs a sender and exact recipient domains (people outside them get no email); Teams and Slack need
+only the reference of the secret that signs their interactions (Teams outgoing-webhook HMAC key, Slack signing
+secret). Link Teams (AAD object id) and Slack (member id) accounts to Orqix people under Linked chat accounts: a press
+from an unlinked account does nothing. Point Slack interactivity at `/api/v1/workspaces/<id>/task-actions/slack/interactions`
+and the Teams outgoing webhook at `/api/v1/workspaces/<id>/task-actions/teams/interactions`. Recent messages show
+who was sent what channel, or why nothing was sent. In this build messages go to local stubs only; live mail servers
+and tenants are an external step. Details: [S141](build/S141-escalation-actionable-tasks-templates.md).
+
+## Bulk operations and the operations dashboard - 8 November 2026
+
+`run.bulk-operate` is grant-only and workspace-wide (Settings → Members and groups → Grants); bulk operations also need
+the operator role (`run.operate`), and each request is changed with the confirmer's own permissions at that moment, so
+revoking either stops a running batch. Limits: `orqix.bulk.max-items` (default 1,000, at most 10,000 per operation),
+`orqix.bulk.default-rate-per-minute` (60), `orqix.bulk.poll-delay` (2 s). Every dry run, start, pause, resume, cancel
+and end is audited (`run.bulk-*`), and each changed request keeps its usual audit record and timeline entry with the
+reason. Settings → Operations (`run.operate`) reads counts only; connection call figures need `connection.read`.
+Details: [S142](build/S142-bulk-search-job-dashboard.md).
+
+## Moving requests between versions and steps - 8 November 2026
+
+Operators (`run.operate`) can move a suspended request to another version of its workflow with a **step mapping**
+(Run detail → Move with step mapping): a waiting approval may continue under a renamed step, and the version may
+change steps the request already passed as long as every step ahead still finds its data. The dialog shows the plan
+and every reason a move is refused before anything changes, and can preview and move up to 100 requests of the same
+version at once (each suspended and resumed around its move). **Move to another step** skips the current step, runs
+a step again or moves the request to another step; calls recorded in the effect journal are never sent twice, and
+steps with other effects (notices, documents, child requests) are not run again. In a production workspace (any
+workspace without an explicit non-production stage) or a regulated one, a second operator must approve each move;
+the move lapses if the request changes first or nobody approves it within 24 hours. Details:
+[S143](build/S143-instance-migration-and-move.md).
+
+## Alert rules - 8 November 2026
+
+Settings → Alerts needs the grant-only `alert.manage` permission (grant it under Members and groups → Extra
+permissions; it is workspace-wide). Add destinations first: email or Teams through an existing adapter (its recipient
+domains apply), Slack or PagerDuty by naming the secret that holds the incoming webhook address or routing key, or an
+outbound webhook subscription. Then add rules on requests needing attention, SLA breaches, paused connections,
+credential failures, dead letters, failing poll checks or AI drift fallback, with a threshold, a window for counted
+signals, a quiet period and the destinations. A rule notifies once when it fires and once when it resolves; Silence
+stops notifications for a while. In this build Slack, PagerDuty, email and Teams go to local stubs. Details:
+[S144](build/S144-alerts-retention-archiving.md).
+
+## Run retention, archives and legal holds - 8 November 2026
+
+Settings → Run retention (`workspace.manage-access` to change, `audit.read` to read and download). A policy keeps a
+workflow's ended requests for a number of days; then the nightly sweep archives each one (evidence pack, its rows in
+the exit-export layout and optionally its files), reads the archive back to check it, and purges the request with its
+engine history. The audit log is kept. Run a dry run before the first purge. A legal hold on a request or a workflow
+stops all of this until released. Configure the archive store with `orqix.retention.store` (`filesystem` with
+`orqix.retention.filesystem.root` on a persistent volume, or `s3` with `orqix.retention.s3.*` from the secret mount;
+enable object lock on the bucket if your records policy requires it). The engine-history runbook is in
+[S144](build/S144-alerts-retention-archiving.md#runbook-engine-history-growth).
+
+## Observability, backups, scale and admission control - 9 November 2026
+
+[S150](build/S150-observability-scale-backups-admission.md).
+
+**Traces.** Every pod makes OpenTelemetry spans: the HTTP request, each engine job (under the request that started the
+run), each connector and model call. The trace id is in the log line, on every timeline event (`run_event.trace_id`)
+and on each effect attempt (`effect_journal.trace_id`). Export is off until you set `ORQIX_TRACING_OTLP_ENABLED=true`
+and `ORQIX_TRACING_OTLP_ENDPOINT` (an OpenTelemetry Collector, Jaeger or Tempo). Lower `ORQIX_TRACING_SAMPLING` (default
+1.0) at high volume. No trace headers are sent to connected systems.
+
+**Dashboards, alerts and SLOs.** `deploy/observability` holds three Grafana dashboards, the Prometheus rules (also as
+`deploy/openshift/optional/prometheusrule.yaml`) and the SLO definitions: API availability 99.5 %, start p95 under 1 s,
+read p95 under 500 ms, engine jobs older than 60 s less than 1 % of the time, analytics lag under 5 minutes. These
+replace the "suggested alerts" of section 8.
+
+**Backups and restore drills.** `deploy/backup` (runbook in its README): daily consistent `pg_dump` with a MANIFEST of
+row counts, WAL archiving and base backups for point-in-time restore on Compose, CronJobs `orqix-backup` and
+`orqix-restore-drill` on OpenShift. Run the drill every quarter and after every PostgreSQL major upgrade; it restores the
+newest set into a scratch database, verifies it and records the restore time. After any real restore, reconcile effects
+in state *unknown* or *in flight* before users resume (section 8, "Restore from backup").
+
+**Admission control.** A platform administrator can limit how many requests a workspace may start and how many
+messages it may receive per minute (`PUT /api/v1/admin/workspaces/{workspaceId}/admission`; defaults
+`ORQIX_ADMISSION_STARTS_PER_MINUTE` and `ORQIX_ADMISSION_MESSAGES_PER_MINUTE`, 0 = no limit). Above the limit every
+channel answers 429 with `Retry-After`: the API, MCP, Kafka triggers (the partition waits, records are never
+dead-lettered for it), package triggers and webhooks, schedules (the fire is recorded as failed). Refusals are counted
+in `orqix_admission_rejected_total` and audited once per minute and workspace (`admission.limit-exceeded`).
+
+**Scale qualification with roles.** `tools/perf/multipod.py` runs against one API pod and two worker pods
+(`deploy/compose/docker-compose.roles.yml`); see S150 section 5 for the numbers measured on one machine.
+
+## The orqix command line tool and test runs in CI - 9 November 2026
+
+People sign in to the `orqix` tool (`tools/orqix-cli`) with a device code; their access token must carry the audience
+`orqix-cli` and the groups claim, like the browser sign-in. The development realm has the public client `orqix-cli`
+(device grant only). For another identity provider, add such a client with an audience mapper, or set
+`ORQIX_CLI_AUDIENCES`; `ORQIX_CLI_ISSUER` and `ORQIX_CLI_JWK_SET_URI` default to the REST API's resource server
+settings, and `ORQIX_CLI_ENABLED=false` refuses all CLI tokens. A CLI token reaches only the routes the tool uses, with
+the person's own permissions. CI jobs pass a token file (`orqix login --token-file`). Test files, coverage minimums and
+package contract tests: [S148](build/S148-test-as-code-coverage-cli.md).
+
+## AI reviewer on approval steps - 14 November 2026
+
+An approval step can have an AI reviewer ([S152](build/S152-ai-reviewer.md)). Reviews run on the AI task workers
+(`orqix.ai.tasks.*`, S134) and follow the workspace AI policy: `allowAutoWithReview=false` turns every deciding reviewer
+into a suggestion, `lowRiskLabels` must list `skillKey:approve` or `skillKey:reject` for autonomy `auto`, and in a
+`regulated` workspace a rejection always goes to a person. Retiring a skill version stops its reviews at once (the
+tasks stay with people). Decisions by the AI reviewer are audited as `task.decided-by-ai` with actor type `agent` and no
+subject (the audit hash chain covers them as any other event); `autoWithReview` decisions are sampled into the AI review
+queue. Migration V460 makes `task_decision.actor_subject_id` nullable for AI reviewer decisions; reports that join
+decisions to people should use `actor_kind` (`person` or `aiReviewer`).

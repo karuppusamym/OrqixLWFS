@@ -22,7 +22,8 @@ import { generateCases, type GeneratedCase, type GenerationReport } from './case
 import { DecisionGrid } from './DecisionGrid'
 import { Playback } from './Playback'
 import { playbackAt, NO_PLAYBACK, useSetPlayback } from './PlaybackContext'
-import { CASE_VERSION, exportCases, importCases, loadCases, MAX_CASES, MAX_IMPORT_BYTES, storeCases, upsertCase, type SavedCase } from './savedCases'
+import { CASE_VERSION, exportTestFile, importCases, loadCases, MAX_CASES, MAX_IMPORT_BYTES, storeCases, TEST_FILE_FORMAT, upsertCase, type SavedCase, type ServerCase } from './savedCases'
+import { CoverageMinimumEditor, minimumFrom, SuiteCoverageView, type MinimumDraft } from './SuiteCoverage'
 import { countAssertions, emptyAssertions, emptySettings, expectationLabel, finishOutcomes, NEEDS_ATTENTION, stepControls, toAssertions, toScenario, type CallControl, type CaseAssertions, type TestSettings } from './scenarioModel'
 import { sampleValues } from './sampleValues'
 import { StepSettings } from './StepSettings'
@@ -81,12 +82,16 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
   const [caseName, setCaseName] = useState('')
   const [caseNotice, setCaseNotice] = useState<string | null>(null)
   const [caseRuns, setCaseRuns] = useState<CaseRun[] | null>(null)
+  const [suiteCoverage, setSuiteCoverage] = useState<NonNullable<Awaited<ReturnType<typeof endpoints.simulateWorkflowCases>>['coverage']> | null>(null)
+  const [editedMinimum, setMinimum] = useState<MinimumDraft | null>(null)
   const [runningAll, setRunningAll] = useState(false)
   const [generated, setGenerated] = useState<GenerationReport | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const summary = useQuery({ queryKey: ['ws', wsId, 'workflow', workflowId, 'test-summary'], queryFn: () => endpoints.getWorkflowTestSummary(wsId, workflowId), staleTime: 10_000, retry: false })
+  // S148: the coverage minimum of the shared suite; what the designer types replaces it until the next share.
+  const minimum = editedMinimum ?? (summary.data ? minimumFrom(summary.data.coverageMinimum) : null)
 
   // The canvas follows the playback while the Test tab is shown; leaving clears it.
   useEffect(() => {
@@ -195,6 +200,7 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
   const runAll = async () => {
     setRunningAll(true)
     setCaseRuns(null)
+    setSuiteCoverage(null)
     setProblem(null)
     const done = new Map<string, CaseRun>()
     const send: Array<{ c: SavedCase; payload: Record<string, unknown> }> = []
@@ -214,6 +220,7 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
             return { id: c.id, input: payload, scenario: toScenario(current.definition, c.settings), ...(assertions ? { assertions } : {}) }
           }),
         })
+        setSuiteCoverage(report.coverage ?? null)
         for (const r of report.results) {
           const c = cases.find((x) => x.id === r.id)
           if (!c) continue
@@ -316,10 +323,13 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
         return { id: c.id, name: c.name, input: check.payload, scenario: toScenario(def, c.settings), expect: c.expect, ...(assertions ? { assertions } : {}) }
       })
       if (!(await saver.flush())) throw new Error('Save the draft before sharing its tests.')
-      const suite = await shareTests(wsId, workflowId, prepared)
+      const least = minimum ? minimum.parsed : undefined
+      if (minimum && minimum.error) throw new Error(minimum.error)
+      const suite = await shareTests(wsId, workflowId, prepared, least)
       const report = await runSharedTests(wsId, workflowId, store.getState().revision, suite.version)
       const failures = report.results.flatMap((r) => (r.failures ?? []).map((f) => `${cases.find((c) => c.id === r.id)?.name ?? r.id}: ${f.label} expected ${f.expected}, got ${f.actual}`))
-      setCaseNotice(`Shared suite ${report.suiteVersion}: ${report.results.filter((r) => r.passed).length} of ${report.results.length} passed. ${report.passed ? 'This exact draft satisfies the publication test gate.' : 'Publication is blocked until the shared tests pass.'}${failures.length > 0 ? ` ${failures.slice(0, 3).join('; ')}.` : ''}`)
+      const short = (report.coverageShortfalls ?? []).map((f) => `${f.kind} ${f.percent}% (at least ${f.minimum}%)`)
+      setCaseNotice(`Shared suite ${report.suiteVersion}: ${report.results.filter((r) => r.passed).length} of ${report.results.length} passed.${short.length > 0 ? ` Coverage is below the minimum: ${short.join(', ')}.` : ''} ${report.passed ? 'This exact draft satisfies the publication test gate.' : 'Publication is blocked until the shared tests pass and cover enough.'}${failures.length > 0 ? ` ${failures.slice(0, 3).join('; ')}.` : ''}`)
       void summary.refetch()
     } catch (cause) {
       setProblem(cause)
@@ -338,9 +348,27 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
     if (merged.error) setCaseNotice(merged.error)
     else {
       updateCases(merged.cases)
-      setCaseNotice(merged.skipped > 0 ? `Imported. ${merged.skipped} could not be added (not valid, or the list is full).` : 'Imported.')
+      const notes = [merged.skipped > 0 ? `${merged.skipped} could not be added (not valid, or the list is full).` : '', merged.withoutStudio ? `${merged.withoutStudio} have no Test tab settings (written by hand or with the orqix CLI): run them with orqix test run, or share them with orqix test push.` : '']
+      setCaseNotice(`Imported. ${notes.filter(Boolean).join(' ')}`.trim())
     }
     if (fileInput.current) fileInput.current.value = ''
+  }
+
+  /** CG-Q01 (S148): the saved cases as a test file for CI and the shared suite; cases that cannot run are left out. */
+  const exportFile = () => {
+    const entries: Array<{ saved: SavedCase; server: ServerCase }> = []
+    let left = 0
+    for (const c of cases) {
+      const check = validateForm(schema, ui, carryOverValues(c.values, fields))
+      if (!check.valid || !c.expect) {
+        left++
+        continue
+      }
+      const assertions = toAssertions(c.assertions, null)
+      entries.push({ saved: c, server: { id: c.id, name: c.name, input: check.payload, scenario: toScenario(def, c.settings), expect: c.expect, ...(assertions ? { assertions } : {}) } })
+    }
+    downloadJson(JSON.parse(exportTestFile(def.workflowKey, entries, minimum?.parsed)), `${def.workflowKey || 'workflow'}.tests.json`)
+    setCaseNotice(`Exported ${entries.length} case${entries.length === 1 ? '' : 's'} as a test file (${TEST_FILE_FORMAT}) for orqix test run.${left > 0 ? ` ${left} left out: a case needs an expected outcome and answers that fit the request form.` : ''}`)
   }
 
   const routes = result?.coverage.routes
@@ -616,7 +644,7 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
                 Share and test for publication
               </Button>
             ) : null}
-            <Button variant="secondary" onClick={() => downloadJson(JSON.parse(exportCases(def.workflowKey, cases)), `${def.workflowKey || 'workflow'}-test-cases.json`)} disabled={cases.length === 0}>
+            <Button variant="secondary" onClick={exportFile} disabled={cases.length === 0}>
               Export
             </Button>
             {canEdit ? (
@@ -633,6 +661,7 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
               {caseRuns.filter((r) => r.pass).length} of {caseRuns.length} passed
             </p>
           ) : null}
+          {suiteCoverage ? <SuiteCoverageView coverage={suiteCoverage} onGoToStep={onGoToStep} /> : null}
         </section>
 
         <section aria-labelledby="test-shared-title" className="border-t border-border pt-3" data-testid="shared-summary">
@@ -650,6 +679,12 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
                   ? `${s.lastRun.passedCases} of ${s.lastRun.totalCases} shared tests passed on draft revision ${s.lastRun.revision}${s.lastRun.revision === store.getState().revision ? ' (this draft)' : ''}.`
                   : `${s.cases} shared tests, not run yet.`}
           </p>
+          {s?.lastRun?.coverage ? (
+            <p className="text-sm" data-testid="shared-coverage">
+              Coverage of that run: {s.lastRun.coverage.steps.covered} of {s.lastRun.coverage.steps.total} steps, {s.lastRun.coverage.routes.covered} of {s.lastRun.coverage.routes.total} routes, {s.lastRun.coverage.rules.covered} of {s.lastRun.coverage.rules.total} decision rules, {s.lastRun.coverage.formRules.covered} of {s.lastRun.coverage.formRules.total} form rules.
+            </p>
+          ) : null}
+          {minimum ? <CoverageMinimumEditor value={minimum} onChange={setMinimum} canEdit={canEdit} /> : null}
         </section>
 
         <section aria-labelledby="test-grid-title" className="border-t border-border pt-3">

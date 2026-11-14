@@ -32,9 +32,16 @@ public enum ProblemCode {
     RUN_NOT_SUSPENDABLE(409, "The run cannot be suspended in its current state"),
     RUN_NOT_REPAIRABLE(409, "The run has nothing that can be repaired safely"),
     RUN_NOT_MIGRATABLE(409, "The run cannot move to that release"),
+    RUN_NOT_MOVABLE(409, "The run cannot be moved to that step"),
+    MOVE_NOT_PENDING(409, "The move is no longer waiting for approval"),
+    MOVE_SAME_OPERATOR(403, "A second operator must approve this move"),
     SIGNAL_NOT_AWAITED(409, "Nothing in the request is waiting for that signal"),
     CALLBACK_ALREADY_RESUMED(409, "The wait was already resumed with another request"),
     CALLBACK_NOT_WAITING(409, "The wait is no longer open for this token"),
+    /** S140 (CG-F05): the guest link expired, was revoked or its wait closed. */
+    GUEST_RESPONSE_CLOSED(409, "This response link is no longer open"),
+    /** S140: the guest form was already answered with another request. */
+    GUEST_RESPONSE_SUBMITTED(409, "This response was already sent"),
     JOB_LEASE_LOST(409, "You no longer hold this job"),
     JOB_NOT_OPEN(409, "The job has ended"),
     EFFECT_NOT_RECONCILED(409, "The outcome of the external call must be reconciled first"),
@@ -67,6 +74,22 @@ public enum ProblemCode {
     ATTACHMENT_LIMIT_REACHED(409, "The request has reached its file limit"),
     /** S127: the module named in {@code feature} is switched off in this workspace by an administrator. */
     FEATURE_DISABLED(409, "This part of Orqix is switched off in this workspace"),
+    /** S134: the AI skill version, promotion or evaluation is not in a state that allows this. */
+    AI_SKILL_STATE_CONFLICT(409, "The AI skill is not in a state that allows this"),
+    /** S142 (CG-O01): the confirmed count differs from the count the dry run showed. */
+    BULK_COUNT_MISMATCH(409, "The confirmed count does not match the dry run"),
+    /** S142: the dry run is older than its validity; run it again. */
+    BULK_PREVIEW_EXPIRED(409, "The dry run has expired; run it again"),
+    /** S142: the bulk operation is not in a state that allows this (or changed since it was loaded). */
+    BULK_OPERATION_STATE_CONFLICT(409, "The bulk operation is not in a state that allows this"),
+    /** S142: the filter matches more requests than one bulk operation may change. */
+    BULK_LIMIT_EXCEEDED(422, "The filter matches more requests than one bulk operation may change"),
+    /** S147: the files at the Git commit do not have the content hash of the draft being published. */
+    GIT_CONTENT_MISMATCH(409, "The Git commit does not match the draft"),
+    /** S147: the commit is not the approved head or merge commit of its pull request. */
+    GIT_REVIEW_REQUIRED(422, "The Git commit has not been reviewed and approved"),
+    /** S147: the review branch moved while Orqix was writing to it. */
+    GIT_BRANCH_MOVED(409, "The Git branch changed while Orqix was writing to it"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

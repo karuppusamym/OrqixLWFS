@@ -32,10 +32,13 @@ public class ChildRuns {
     private final Json json;
     private final Clock clock;
     private final RunQuota quota;
+    private final org.springframework.beans.factory.ObjectProvider<AgentLoops> agentLoops;
 
     public ChildRuns(RunStore runs, TaskStore tasks, RunEvents events, ReleaseQueries releases,
-            EngineCommands engine, FormValidator forms, JdbcClient jdbc, Json json, Clock clock, RunQuota quota) {
+            EngineCommands engine, FormValidator forms, JdbcClient jdbc, Json json, Clock clock, RunQuota quota,
+            org.springframework.beans.factory.ObjectProvider<AgentLoops> agentLoops) {
         this.quota = quota;
+        this.agentLoops = agentLoops;
         this.runs = runs;
         this.tasks = tasks;
         this.events = events;
@@ -120,13 +123,61 @@ public class ChildRuns {
                 .param("ws", workspaceId).query(String.class).single();
         String pid = engine.startProcess(child.processDefinitionId(), tenant, id.toString(), Map.of(
                 ProcessData.RUN_ID, id.toString(), ProcessData.WORKSPACE_ID, workspaceId.toString(),
-                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT, json.write(input)), parent.initiator());
+                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT,
+                runs.engineInput(workspaceId, child.id(), input)), parent.initiator());
         runs.setEngineProcessInstance(workspaceId, id, pid);
+    }
+
+    /**
+     * CG-M02 (S135): starts a pinned child release for a workflow tool of a durable agent step. The child is linked to
+     * the agent step with {@code occurrence} (100 + the loop's tool call number), validated like any child start, and
+     * its end is reported to the agent loop instead of resuming the step.
+     *
+     * @return the child run id
+     * @throws IllegalStateException when the child cannot start (the agent is told why)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID startForAgent(UUID workspaceId, UUID parentId, String nodeId, int occurrence, UUID releaseId,
+            JsonNode input) {
+        RunStore.RunRow parent = runs.lock(workspaceId, parentId).orElseThrow();
+        if (!parent.isActive()) throw new IllegalStateException("The request has ended");
+        if (parent.callDepth() >= 3) throw new IllegalStateException("Child workflow depth limit exceeded");
+        var existing = runs.findChild(workspaceId, parentId, nodeId, occurrence);
+        if (existing.isPresent()) return existing.get().id();
+        ReleaseQueries.ReleaseView child = releases.require(workspaceId, releaseId);
+        if (!forms.validate(json.write(child.inputSchema()), json.write(input), json.write(child.inputUi())).isEmpty()) {
+            throw new IllegalStateException("The input does not satisfy the request form of the child workflow");
+        }
+        if (releases.workflow(workspaceId, child.workflowId()).isEmpty()) {
+            throw new IllegalStateException("The child workflow has been archived");
+        }
+        if (!quota.hasRoom(workspaceId, child.workflowId(), child.maxConcurrentRuns())) {
+            throw new IllegalStateException("The child workflow has reached its concurrent run limit");
+        }
+        UUID id = Ids.newId();
+        runs.insertChild(id, workspaceId, child.workflowId(), child.id(), null, parent.initiator(), input,
+                parent, nodeId, occurrence);
+        events.append(workspaceId, parentId, "CHILD_STARTED", nodeId, null,
+                Map.of("childRunId", id.toString(), "iteration", occurrence,
+                        "childReference", runs.find(workspaceId, id).orElseThrow().reference(),
+                        "workflowName", child.workflowName(), "releaseNumber", child.releaseNumber(), "agentTool", true));
+        events.append(workspaceId, id, "RUN_STARTED", null, parent.initiator(),
+                Map.of("releaseNumber", child.releaseNumber(), "parentRunId", parentId.toString()));
+        String tenant = jdbc.sql("SELECT engine_tenant_id FROM workspace WHERE id = :ws")
+                .param("ws", workspaceId).query(String.class).single();
+        String pid = engine.startProcess(child.processDefinitionId(), tenant, id.toString(), Map.of(
+                ProcessData.RUN_ID, id.toString(), ProcessData.WORKSPACE_ID, workspaceId.toString(),
+                ProcessData.INITIATOR, parent.initiator().toString(), ProcessData.INPUT,
+                runs.engineInput(workspaceId, child.id(), input)), parent.initiator());
+        runs.setEngineProcessInstance(workspaceId, id, pid);
+        return id;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void onRunEnded(RunStore.RunRow child) {
         if (!child.isChild()) return;
+        AgentLoops loops = agentLoops.getIfAvailable();
+        if (loops != null && loops.childEnded(child)) return;
         RunStore.RunRow parent = runs.lock(child.workspaceId(), child.parentRunId()).orElseThrow();
         if (!parent.isActive()) return;
         JsonNode node = releases.require(parent.workspaceId(), parent.releaseId()).node(child.parentNodeId());

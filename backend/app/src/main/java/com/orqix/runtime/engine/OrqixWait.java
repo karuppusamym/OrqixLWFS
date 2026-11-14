@@ -27,9 +27,35 @@ public class OrqixWait {
     public static final int HORIZON_DAYS = 366;
 
     private final Json json;
+    private final com.orqix.runtime.internal.WorkingCalendars calendars;
 
-    public OrqixWait(Json json) {
+    public OrqixWait(Json json, @org.springframework.context.annotation.Lazy
+            com.orqix.runtime.internal.WorkingCalendars calendars) {
         this.json = json;
+        this.calendars = calendars;
+    }
+
+    /**
+     * S139 (CG-W05): the end of a working-time wait or of a message wait's working-time limit, from now, in the
+     * calendar version pinned on the element ({@code orqix:wait workingDuration} or {@code orqix:messageTimeout after},
+     * with {@code calendarKey} and {@code calendarVersion}).
+     */
+    public Date working(DelegateExecution execution, String elementId) {
+        org.flowable.bpmn.model.FlowElement element = OrqixModel.flowElement(execution.getProcessDefinitionId(), elementId);
+        ExtensionElement wait = OrqixModel.extension(element, "wait")
+                .orElseGet(() -> OrqixModel.requireExtension(element, "messageTimeout"));
+        String duration = OrqixModel.attribute(wait, "workingDuration");
+        if (duration == null) {
+            duration = OrqixModel.attribute(wait, "after");
+        }
+        String key = OrqixModel.attribute(wait, "calendarKey");
+        String version = OrqixModel.attribute(wait, "calendarVersion");
+        if (duration == null || key == null || version == null) {
+            throw new IllegalStateException(elementId + " has no working time to wait for");
+        }
+        Instant now = Context.getProcessEngineConfiguration().getClock().getCurrentTime().toInstant();
+        var calendar = calendars.pinned(ProcessData.workspaceId(execution), key, Integer.parseInt(version));
+        return Date.from(com.orqix.runtime.internal.WorkingCalendars.due(calendar, now, duration));
     }
 
     public Date until(DelegateExecution execution, String nodeId) {

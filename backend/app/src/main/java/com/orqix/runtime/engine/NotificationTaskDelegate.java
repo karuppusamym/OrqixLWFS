@@ -41,7 +41,8 @@ public class NotificationTaskDelegate implements JavaDelegate {
         UUID workspaceId = ProcessData.workspaceId(execution);
         UUID runId = ProcessData.runId(execution);
         UUID initiator = ProcessData.initiator(execution);
-        String dedupKey = runId + ":" + element.getId() + ":" + OCCURRENCE + ":" + initiator;
+        // S138: each visit of a notification inside a bounded loop notifies again.
+        String dedupKey = runId + ":" + element.getId() + ":" + ProcessData.occurrence(execution, element.getId()) + ":" + initiator;
         boolean created = notifications.create(workspaceId, initiator, runId, NotificationService.Kind.WORKFLOW_MESSAGE,
                 dedupKey, OrqixModel.attribute(config, "message"));
         if (created) {

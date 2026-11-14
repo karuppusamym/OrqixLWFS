@@ -46,9 +46,11 @@ public class MessageService {
     private final AuditWriter audit;
     private final Json json;
     private final Clock clock;
+    private final AdmissionControl admission;
 
     public MessageService(PolicyService policy, MessageStore store, MessageDelivery delivery, MessageSettings settings,
-            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock) {
+            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, AdmissionControl admission) {
+        this.admission = admission;
         this.policy = policy;
         this.store = store;
         this.delivery = delivery;
@@ -64,6 +66,13 @@ public class MessageService {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         policy.require(access, Permission.MESSAGE_SEND, "sendMessage", true);
         String key = IdempotencyService.requireKey(idempotencyKey);
+        if (request.name() != null && request.name().startsWith("orqix-")) {
+            // S139: names starting with orqix- are Orqix's own deliveries (callback and check branches of "Wait for the
+            // first"); nobody outside can send them.
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The message name is not valid.").withFieldErrors(
+                    List.of(new ApiException.FieldError("/name", "reserved", "Names starting with orqix- are"
+                            + " reserved.")));
+        }
         JsonNode payload = request.payload() == null || request.payload().isNull() ? json.object() : request.payload();
         List<ApiException.FieldError> shape = MessagePayloads.shape(payload);
         if (!shape.isEmpty()) {
@@ -79,6 +88,8 @@ public class MessageService {
         if (claim.isReplay()) {
             return new Sent(view(workspaceId, UUID.fromString(claim.replay().resourceId())), true);
         }
+        // CG-P05 (S150): the workspace's inbound message limit; a replay above is always answered.
+        admission.admitMessage(workspaceId, caller.subjectId());
 
         Instant now = clock.instant();
         UUID messageId = Ids.newId();

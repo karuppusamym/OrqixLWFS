@@ -4,7 +4,14 @@ import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { RESERVED_CAPTURE_KEYS, captureOf, changeable } from '@/features/studio/model/stepForms'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { conditionTerms, isAtomicCondition, isRangeValue, type AtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { check as checkExpr, describeType, type ExprType } from '@/lib/expr'
+import { literalType } from '@/lib/expr/decision'
+import { declaredType } from '@/lib/expr/calculate'
+import { studioScope } from '@/features/studio/model/expressionScope'
+import {
+  comparisonCondition, conditionTerms, decisionTerms, isAtomicCondition, isExpressionCondition, isExpressionTerm, isOutputExpression, isRangeValue, tableUsesExpressions,
+  type AtomicCondition, type Condition, type DecisionCondition, type Definition, type DecisionTable, type Literal, type OutputEntry, type WorkflowNode,
+} from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -96,8 +103,9 @@ function overlaps(a: Condition, b: Condition): boolean {
   return true
 }
 
-const sameOutputs = (a: Record<string, Literal>, b: Record<string, Literal>) =>
-  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v)
+/** Equal literal results; a formula result (S146) is never known to be equal. */
+const sameOutputs = (a: Record<string, OutputEntry>, b: Record<string, OutputEntry>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => !isOutputExpression(v) && b[k] === v)
 
 /** Settings of the hit policy (docs/build/S121), the same codes as the compiler. */
 function policyIssues(d: DecisionTable, di: number, nodeId: string | undefined): Issue[] {
@@ -107,7 +115,7 @@ function policyIssues(d: DecisionTable, di: number, nodeId: string | undefined):
   if (d.priority && d.hitPolicy !== 'PRIORITY') out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Only the hit policy PRIORITY uses a priority order, so remove it from "${d.key}".`, `${at}/priority`, nodeId))
   if (d.hitPolicy === 'COLLECT') {
     if (!d.aggregation) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose how "${d.key}" combines the matching rows: sum, smallest, largest or count.`, `${at}/aggregation`, nodeId))
-    const numbers = Object.keys(d.default).length === 1 && [d.default, ...d.rows.map(r => r.then)].every(o => Object.values(o).every(v => typeof v === 'number'))
+    const numbers = Object.keys(d.default).length === 1 && typeof Object.values(d.default)[0] === 'number' && [d.default, ...d.rows.map(r => r.then)].every(o => Object.values(o).every(v => typeof v === 'number' || isOutputExpression(v)))
     if (!numbers) out.push(issue('WF_DECISION_COLLECT_OUTPUT', 'blocker', `"${d.key}" combines the results of all matching rows, so it must have exactly one result field and every row and the default must set it to a number.`, `${at}/default`, nodeId))
   }
   if (d.hitPolicy === 'PRIORITY') {
@@ -115,7 +123,7 @@ function policyIssues(d: DecisionTable, di: number, nodeId: string | undefined):
     if (!p) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose the result field that decides between matching rows of "${d.key}" and list its values from the most to the least important.`, `${at}/priority`, nodeId))
     else if (!(p.output in d.default)) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority result field "${p.output}" is not a result of "${d.key}".`, `${at}/priority/output`, nodeId))
     else {
-      const missing = [d.default[p.output], ...d.rows.map(r => r.then[p.output])].find(v => v !== undefined && !p.order.includes(v))
+      const missing = [d.default[p.output], ...d.rows.map(r => r.then[p.output])].find(v => v !== undefined && !isOutputExpression(v) && !p.order.includes(v)) as Literal | undefined
       if (p.order.length < 2 || p.order.length > 20) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', 'The priority order must list 2 to 20 values.', `${at}/priority/order`, nodeId))
       else if (missing !== undefined) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority order of "${d.key}" does not list "${String(missing)}", which a row or the default gives as "${p.output}".`, `${at}/priority/order`, nodeId))
     }
@@ -290,6 +298,22 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         else if (!(ctx.publishedWorkflows ?? []).includes(ref)) issues.push(issue('WF_CHILD_NOT_PUBLISHED', 'blocker', `"${ref}" is not a published workflow of this workspace.`, nodePath(n, '/config/workflowRef'), n.id))
         break
       }
+      case 'calculate': {
+        // S137: every output is type checked against what is known here and the outputs above it.
+        const outputs = (Array.isArray(c.outputs) ? c.outputs : []) as Array<{ key: string; expression: string; type: string; scale?: number; rounding?: string }>
+        const locals: Record<string, ExprType> = {}
+        outputs.forEach((o, oi) => {
+          const base = nodePath(n, `/config/outputs/${oi}`)
+          if (o.key in locals) issues.push(issue('WF_CALCULATE_OUTPUT_DUPLICATE', 'blocker', `"${n.label}" has two outputs named "${o.key}".`, `${base}/key`, n.id))
+          const numeric = o.type === 'number' || o.type === 'integer'
+          if (!numeric && (o.scale !== undefined || o.rounding !== undefined)) issues.push(issue('WF_CALCULATE_ROUNDING', 'blocker', `Only a number output can be rounded; "${o.key}" is ${describeType(declaredType(o.type))}.`, base, n.id))
+          const t = checkExpression(def, n, o.expression, `${base}/expression`, issues, null, undefined, locals)
+          const wanted = declaredType(o.type)
+          if (t !== null && t !== wanted && t !== 'null' && t !== 'any') issues.push(issue('WF_CALCULATE_TYPE', 'blocker', `The output "${o.key}" is declared as ${describeType(wanted)}, but its expression gives ${describeType(t)}.`, `${base}/expression`, n.id))
+          locals[o.key] = wanted
+        })
+        break
+      }
       case 'decision': {
         const ref = c.decisionRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a rule table.`, nodePath(n, '/config/decisionRef'), n.id))
@@ -347,7 +371,11 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
 
   // Routes and conditions -------------------------------------------------------------------------------
   for (const n of def.nodes.filter((x) => x.type === 'branch')) {
-    const conds = outgoing(def, n.id).filter((t) => t.on === 'condition' && t.condition)
+    const all = outgoing(def, n.id).filter((t) => t.on === 'condition' && t.condition)
+    // S137: expression conditions cannot be proven exclusive; the paths are tried in order (a warning, as the compiler says).
+    const withExpressions = all.some((t) => isExpressionCondition(t.condition))
+    if (withExpressions) issues.push(issue('WF_BRANCH_EXPRESSION_ORDER', 'warning', `"${n.label}" has conditions written as expressions, which cannot be checked for overlap. Its paths are tried in the order they are listed and the first whose condition is true is taken.`, nodePath(n), n.id))
+    const conds = withExpressions ? [] : all
     const fields = new Set(conds.map((t) => t.condition?.fieldRef))
     if (fields.size > 1) issues.push(issue('WF_BRANCH_MIXED_FIELDS', 'blocker', `All conditions of "${n.label}" must test the same value.`, nodePath(n), n.id))
     for (const t of outgoing(def, n.id).filter((x) => x.on === 'condition')) {
@@ -369,12 +397,22 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
     const node = def.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === d.key)
     if (!decisionsUsed.has(d.key)) issues.push(issue('WF_DECISION_UNUSED', 'warning', `The rule table "${d.key}" is not used by any step.`, `/decisions/${di}`))
     const fields = new Set(d.rows.map((r) => r.when.fieldRef))
-    if (fields.size > 1 && d.rows.every(r => isAtomicCondition(r.when))) issues.push(issue('WF_DECISION_MIXED_FIELDS', 'blocker', `All rows of "${d.key}" must test the same value.`, `/decisions/${di}`, node?.id))
-    const shape = (o: Record<string, Literal>) => Object.keys(o).sort().join(',') + '|' + Object.keys(o).sort().map((k) => typeof o[k]).join(',')
+    if (fields.size > 1 && d.rows.every(r => !isExpressionTerm(r.when) && isAtomicCondition(r.when as Condition))) issues.push(issue('WF_DECISION_MIXED_FIELDS', 'blocker', `All rows of "${d.key}" must test the same value.`, `/decisions/${di}`, node?.id))
+    // A formula result (S146) has the type of the default's value; the compiler checks the formula itself.
+    const shape = (o: Record<string, OutputEntry>) => Object.keys(o).sort().join(',') + '|' + Object.keys(o).sort().map((k) => (isOutputExpression(o[k]) ? typeof d.default?.[k] : typeof o[k])).join(',')
     const defaultShape = shape(d.default ?? {})
     if (d.rows.some((r) => shape(r.then) !== defaultShape)) issues.push(issue('WF_DECISION_OUTPUT_SHAPE', 'blocker', `Every row and the Otherwise result of "${d.key}" must give the same result fields.`, `/decisions/${di}`, node?.id))
     d.rows.forEach((r, ri) => {
-      if (node) checkCondition(def, node, r.when, `/decisions/${di}/rows/${ri}/when`, issues)
+      if (node) checkDecisionCondition(def, node, r.when, `/decisions/${di}/rows/${ri}/when`, issues)
+      for (const [k, v] of Object.entries(r.then)) {
+        if (!isOutputExpression(v)) continue
+        const path = `/decisions/${di}/rows/${ri}/then/${k}/expression`
+        if (d.hitPolicy === 'PRIORITY' && d.priority?.output === k) {
+          issues.push(issue('WF_DECISION_EXPRESSION_UNSUPPORTED', 'blocker', `The priority result "${k}" decides between rows, so it must be a plain value, not a formula.`, path, node?.id))
+          continue
+        }
+        if (node && checkExpression(def, node, v.expression, path, issues, literalType(d.default?.[k])) !== null) scalarFieldsOnly(def, node, v.expression, path, issues)
+      }
       for (const [k, v] of Object.entries(r.then)) if (typeof v === 'string' && !/^[A-Za-z0-9 _.,:/-]{0,100}$/.test(v)) issues.push(issue('WF_LITERAL_UNSAFE', 'blocker', `The value "${k}" contains characters that are not allowed.`, `/decisions/${di}/rows/${ri}/then/${k}`, node?.id))
     })
     // FIRST is ordered on purpose: the first match wins, so overlapping rows are allowed (S40).
@@ -391,6 +429,20 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       return !beforeOther && !afterOther
     }
     issues.push(...policyIssues(d, di, node?.id))
+    const formulas = tableUsesExpressions(d)
+    if (formulas && def.acceptanceProfile === 'tier1') {
+      d.rows.forEach((r, ri) => {
+        const group = 'all' in r.when && r.when.all ? 'all' : 'any' in r.when && r.when.any ? 'any' : null
+        decisionTerms(r.when).forEach((t, k) => { if (isExpressionTerm(t)) issues.push(issue('WF_TIER1_RULE_EXPRESSION', 'blocker', 'Tier-1 workflows keep decision rows to plain comparisons and values: replace this formula.', `/decisions/${di}/rows/${ri}/when${group ? `/${group}/${k}` : ''}/expression`, node?.id)) })
+        for (const [k, v] of Object.entries(r.then)) if (isOutputExpression(v)) issues.push(issue('WF_TIER1_RULE_EXPRESSION', 'blocker', 'Tier-1 workflows keep decision rows to plain comparisons and values: replace this formula.', `/decisions/${di}/rows/${ri}/then/${k}/expression`, node?.id))
+      })
+    }
+    // S146: rows with formulas cannot be proven exclusive; the engine stops when two of them apply (a warning).
+    if (formulas && (d.hitPolicy === 'UNIQUE' || d.hitPolicy === 'ANY')) {
+      issues.push(issue('WF_DECISION_EXPRESSION_OVERLAP', 'warning', d.hitPolicy === 'UNIQUE'
+        ? `Rows of "${d.key}" with formulas cannot be checked for overlap. If two rows apply to a request, the decision stops with an error.`
+        : `Rows of "${d.key}" with formulas cannot be checked for overlap. If rows with different results apply to a request, the decision stops with an error.`, `/decisions/${di}`, node?.id))
+    }
     // Only UNIQUE and ANY forbid overlaps; ANY allows them when the rows give the same results (S121).
     const checked = d.hitPolicy === 'UNIQUE' || d.hitPolicy === 'ANY'
     for (let a = 0; a < d.rows.length && checked; a++) {
@@ -398,7 +450,9 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         const x = d.rows[a] as DecisionTable['rows'][number]
         const y = d.rows[b] as DecisionTable['rows'][number]
         if (d.hitPolicy === 'ANY' && sameOutputs(x.then, y.then)) continue
-        if (windowsOverlap(x, y) && overlaps(x.when, y.when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', d.hitPolicy === 'ANY' ? `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match but give different results.` : `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
+        // Rows with a formula test are skipped conservatively (WF_DECISION_EXPRESSION_OVERLAP warns instead).
+        if ([x, y].some(r => decisionTerms(r.when).some(isExpressionTerm)) || (d.hitPolicy === 'ANY' && [x, y].some(r => Object.values(r.then).some(isOutputExpression)))) continue
+        if (windowsOverlap(x, y) && overlaps(comparisonCondition(x.when), comparisonCondition(y.when))) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', d.hitPolicy === 'ANY' ? `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match but give different results.` : `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
       }
     }
   })
@@ -492,7 +546,67 @@ function checkRef(def: Definition, at: WorkflowNode, ref: string, path: string, 
   }
 }
 
+/** An Orqix expression (S137) checked like the compiler does: syntax, types and the type it must give. */
+function checkExpression(def: Definition, at: WorkflowNode | null, source: string, path: string, issues: Issue[], expected: ExprType | null, transitionId?: string, locals: Record<string, ExprType> = {}): ExprType | null {
+  if (/[$#]\{/.test(source)) {
+    issues.push(issue('WF_EXPRESSION_INVALID', 'blocker', 'An expression cannot contain the characters ${ or #{, even inside text.', path, at?.id, transitionId))
+    return null
+  }
+  const result = checkExpr(source, studioScope(def, at?.id ?? null, undefined, locals).scope)
+  if (!result.ok) {
+    issues.push(issue('WF_EXPRESSION_INVALID', 'blocker', `${result.error.message} (at character ${result.error.position + 1})`, path, at?.id, transitionId))
+    return null
+  }
+  const t = result.expression.type
+  if (expected && t !== expected && t !== 'null' && t !== 'any') {
+    issues.push(issue('WF_EXPRESSION_TYPE', 'blocker', `This expression must give ${describeType(expected)}, but it gives ${describeType(t)}.`, path, at?.id, transitionId))
+    return null
+  }
+  return t
+}
+
+/** The fields an expression names must be single values (S146): number, text, true/false or date, not lists or rows. */
+function scalarFieldsOnly(def: Definition, at: WorkflowNode, source: string, path: string, issues: Issue[]): string[] | null {
+  const result = checkExpr(source, studioScope(def, at.id).scope)
+  if (!result.ok) return null
+  const scope = studioScope(def, at.id).scope
+  for (const ref of result.expression.fieldRefs) {
+    const [, root, a, b] = ref.split('/')
+    const t = root === 'input' ? scope.input(a!) : scope.step(a!, b!)
+    if (t && typeof t !== 'string') {
+      issues.push(issue('WF_DECISION_EXPRESSION_FIELD', 'blocker', `A decision formula can use single values only (number, text, true/false or date), but ${ref} is a list.`, path, at.id))
+      return null
+    }
+  }
+  return result.expression.fieldRefs
+}
+
+/** A decision row condition (S146): comparisons as before, formula tests of their column. */
+function checkDecisionCondition(def: Definition, at: WorkflowNode, c: DecisionCondition, path: string, issues: Issue[]): void {
+  const group = 'all' in c && c.all ? 'all' : 'any' in c && c.any ? 'any' : null
+  const terms = decisionTerms(c)
+  terms.forEach((term, k) => {
+    const where = group ? `${path}/${group}/${k}` : path
+    if (!isExpressionTerm(term)) {
+      checkCondition(def, at, term, where, issues)
+      return
+    }
+    const at2 = `${where}/expression`
+    if (checkExpression(def, at, term.expression, at2, issues, 'boolean') === null) return
+    const refs = scalarFieldsOnly(def, at, term.expression, at2, issues)
+    if (refs && !refs.includes(term.fieldRef)) {
+      issues.push(issue('WF_DECISION_EXPRESSION_COLUMN', 'blocker', `The formula of this test must use its column ${term.fieldRef}.`, at2, at.id))
+    }
+  })
+  if (!group && !terms.length) checkCondition(def, at, c as Condition, path, issues)
+}
+
 function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: string, issues: Issue[], transitionId?: string): void {
+  if (isExpressionCondition(c)) {
+    if (path.startsWith('/decisions/')) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'A decision row cannot be an expression.', path, at.id, transitionId))
+    else checkExpression(def, at, c.expression, `${path}/expression`, issues, 'boolean', transitionId)
+    return
+  }
   if (!isAtomicCondition(c)) {
     const group = 'all' in c ? 'all' : 'any'
     for (const [index, term] of (c[group] ?? []).entries()) {

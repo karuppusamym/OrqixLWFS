@@ -55,6 +55,10 @@ class DatabaseTest {
             for (String sql : List.of(
                     "UPDATE audit_event SET outcome = 'failed'",
                     "DELETE FROM audit_event",
+                    // CG-I06 (S151): the chain heads are written only by the audit trigger.
+                    "UPDATE audit_chain_head SET seq = 0",
+                    "DELETE FROM audit_chain_head",
+                    "INSERT INTO audit_chain_head (chain_key, seq, hash) VALUES ('x', 1, repeat('0', 64))",
                     "UPDATE run_event SET type = 'X_X_X'",
                     "DELETE FROM task_decision",
                     "UPDATE workflow_release SET release_note = 'x'",

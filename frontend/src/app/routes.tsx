@@ -16,6 +16,8 @@ import { RunDetailPage } from '@/features/runs/RunDetailPage'
  */
 export const routes: RouteObject[] = [
   { path: '/', element: <RootRedirect />, errorElement: <RouteErrorPage /> },
+  // Platform administration lives outside any workspace: a platform administrator may not belong to one yet.
+  { path: '/admin', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/admin/PlatformAdminPage')).PlatformAdminPage }) },
   {
     path: '/w/:workspaceId',
     element: <WorkspaceRoute />,
@@ -31,11 +33,17 @@ export const routes: RouteObject[] = [
           { path: 'tasks/:taskId', element: <TasksPage /> },
           { path: 'runs', element: <RunsPage /> },
           { path: 'runs/:runId', element: <RunDetailPage /> },
+          { path: 'runs/:runId/verifications/:verificationId', lazy: async () => ({ Component: (await import('@/features/verification/VerificationPage')).VerificationPage }) },
           { path: 'settings/connections/:connectionKey/oauth/callback', lazy: async () => ({ Component: (await import('@/features/settings/OAuthCallbackPage')).OAuthCallbackPage }) },
           { path: 'cases', lazy: async () => ({ Component: (await import('@/features/cases/CasesPage')).CasesPage }) },
           { path: 'cases/:instanceId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDetailPage')).CaseDetailPage }) },
           { path: 'case-designs', lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignsPage')).CaseDesignsPage }) },
           { path: 'case-designs/:draftId', handle: { fullBleed: true }, lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignerPage')).CaseDesignerPage }) },
+          // S146 part D: the AI skills Studio over the S134 AiSkills API.
+          { path: 'ai-skills', lazy: async () => ({ Component: (await import('@/features/aiskills/AiSkillsPage')).AiSkillsPage }) },
+          { path: 'ai-skills/:skillKey', lazy: async () => ({ Component: (await import('@/features/aiskills/AiSkillDetailPage')).AiSkillDetailPage }) },
+          { path: 'ai-review', lazy: async () => ({ Component: (await import('@/features/aiskills/AiReviewPage')).AiReviewPage }) },
+          { path: 'ai-policy', lazy: async () => ({ Component: (await import('@/features/aiskills/AiPolicyPage')).AiPolicyPage }) },
           { path: 'decisions', lazy: async () => ({ Component: (await import('@/features/decisions/DecisionsPage')).DecisionsPage }) },
           { path: 'views', lazy: async () => ({ Component: (await import('@/features/views/ViewLibraryPage')).ViewLibraryPage }) },
           { path: 'views/:viewId', lazy: async () => ({ Component: (await import('@/features/views/ViewEditorPage')).ViewEditorPage }) },
@@ -79,6 +87,10 @@ export const routes: RouteObject[] = [
             lazy: async () => ({ Component: (await import('@/features/promotion/PromotePage')).PromotePage }),
           },
           {
+            path: 'agents',
+            lazy: async () => ({ Component: (await import('@/features/agenttools/AgentToolsPage')).AgentToolsPage }),
+          },
+          {
             path: 'agent-writes',
             lazy: async () => ({ Component: (await import('@/features/agentwrites/AgentWriteToolsPage')).AgentWriteToolsPage }),
           },
@@ -95,6 +107,10 @@ export const routes: RouteObject[] = [
       },
     ],
   },
+  // CG-F05 (docs/build/S140): the guest response page; no sign-in, the link token is in the URL fragment.
+  { path: '/guest/:workspaceId', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/guest/GuestResponsePage')).GuestResponsePage }) },
+  // S141 (CG-T01): the signed action link of an actionable task email; no workspace shell and no sign-in.
+  { path: '/act/:token', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/tasks/TaskActionLinkPage')).TaskActionLinkPage }) },
   { path: '/forbidden', element: <ForbiddenPage />, errorElement: <RouteErrorPage /> },
   { path: '/not-found', element: <NotFoundPage /> },
   { path: '*', element: <NotFoundPage /> },

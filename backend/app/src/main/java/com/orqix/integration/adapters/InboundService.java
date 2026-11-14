@@ -323,7 +323,7 @@ public class InboundService implements InboundEvents {
         if (bytes.length > MAX_BODY_BYTES) {
             throw new ApiException(ProblemCode.PAYLOAD_TOO_LARGE, "The event is larger than 64 KiB.");
         }
-        verifySignature(trigger, timestamp, signature, bytes);
+        verifySignature(workspaceId, trigger, timestamp, signature, bytes);
         // S127: only a signed sender learns that Kafka is switched off; it can retry once it is back on.
         requireKafkaWhenKafka(workspaceId, trigger.source());
         if (eventId == null || !EVENT_ID.matcher(eventId).matches()) {
@@ -387,7 +387,7 @@ public class InboundService implements InboundEvents {
         return jdbc.sql("SELECT status FROM inbound_event WHERE id = :id").param("id", eventKey).query(String.class).single();
     }
 
-    private void verifySignature(Trigger trigger, String timestamp, String signature, byte[] body) {
+    private void verifySignature(UUID workspaceId, Trigger trigger, String timestamp, String signature, byte[] body) {
         long seconds;
         try {
             seconds = Long.parseLong(timestamp == null ? "" : timestamp.trim());
@@ -397,7 +397,7 @@ public class InboundService implements InboundEvents {
         if (Math.abs(clock.instant().getEpochSecond() - seconds) > MAX_SKEW_SECONDS) {
             throw new ApiException(ProblemCode.UNAUTHENTICATED, "The event signature is missing or invalid.");
         }
-        String secret = secrets.read(trigger.secretRef()).orElseThrow(() -> new ApiException(
+        String secret = secrets.read(trigger.secretRef(), workspaceId).orElseThrow(() -> new ApiException(
                 ProblemCode.DEPENDENCY_UNAVAILABLE, "The trigger secret is not available."));
         String expected = "sha256=" + sign(secret, timestamp.trim(), body);
         if (signature == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),

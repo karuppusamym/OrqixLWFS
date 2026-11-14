@@ -33,6 +33,12 @@ public final class Enums {
         COMPENSATE("compensate", "Undo completed calls"),
         /** Send through a configured adapter (email, Teams, Kafka produce or database read; S73). */
         SEND_ADAPTER("sendAdapter", "Send through an adapter"),
+        /** Run an approved AI skill: classify, extract, score, recommend or summarize (CG-A01, S134). */
+        AI_TASK("aiTask", "AI task"),
+        /** Compute named outputs with Orqix expressions (CG-X01, S137). */
+        CALCULATE("calculate", "Calculate"),
+        /** Wait for the first of several events: message, signal, callback, time or check (CG-W07, S139). */
+        WAIT_FOR_FIRST("waitForFirst", "Wait for the first"),
         END("end", "Finish");
 
         private final String json;
@@ -65,7 +71,19 @@ public final class Enums {
     /** Transition {@code on} values. */
     public enum Route {
         NEXT("next"), APPROVED("approved"), REJECTED("rejected"), TIMED_OUT("timedOut"), FAILED("failed"), CONDITION("condition"),
-        DEFAULT("default");
+        DEFAULT("default"),
+        /** AI task (S134): the path for one label of a classify skill; the transition names it in {@code aiLabel}. */
+        AI_LABEL("aiLabel"),
+        /** AI task: the calibrated confidence is below the step's threshold. */
+        LOW_CONFIDENCE("lowConfidence"),
+        /** AI task: a person must look (suggest autonomy, policy, low field confidence, sampled review). */
+        NEEDS_REVIEW("needsReview"),
+        /** AI task: AI could not produce a valid answer (disabled, refused, failed, over budget, invalid twice). */
+        AI_UNAVAILABLE("aiUnavailable"),
+        /** CG-E01 (S138): the bounded loop path of the step is used up; the request continues here instead. */
+        LIMIT_REACHED("limitReached"),
+        /** Wait for the first (S139): the path of one branch; the transition names it in {@code branch}. */
+        BRANCH("branch");
 
         private final String json;
 
@@ -134,6 +152,10 @@ public final class Enums {
         STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list"),
         /** A calendar date: JSON {@code type: string, format: date}, written YYYY-MM-DD (S12 section 10). */
         DATE("a date"),
+        /** A time of day: JSON {@code type: string, format: time}, written HH:MM or HH:MM:SS (S140). */
+        TIME("a time of day"),
+        /** An instant with its offset: JSON {@code type: string, format: date-time}, RFC 3339 (S140). */
+        DATETIME("a date and time"),
         /** A file: JSON {@code type: string, format: attachment}; the value is the ID of an uploaded file (S17). */
         ATTACHMENT("a file"),
         /** One row of a list of rows (S35); only as the item type of an array. */
@@ -158,10 +180,21 @@ public final class Enums {
             return this == NUMBER || this == INTEGER;
         }
 
+        /** @return true for dates, times of day and date-times (text values with a fixed shape) */
+        public boolean temporal() {
+            return this == DATE || this == TIME || this == DATETIME;
+        }
+
         /** @return DATE for a string with {@code format: date}, otherwise as {@link #fromJson(String)} */
         public static FieldKind fromJson(String type, String format) {
             if ("string".equals(type) && "date".equals(format)) {
                 return DATE;
+            }
+            if ("string".equals(type) && "time".equals(format)) {
+                return TIME;
+            }
+            if ("string".equals(type) && "date-time".equals(format)) {
+                return DATETIME;
             }
             return "string".equals(type) && "attachment".equals(format) ? ATTACHMENT : fromJson(type);
         }

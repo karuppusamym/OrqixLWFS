@@ -35,7 +35,7 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
      * Semantic version of the generated output (S4 section 9): minor for new constructs, patch for formatting-only
      * changes. Changing it changes the golden files ({@code orqix:release compilerVersion}).
      */
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
 
     private final Pipeline pipeline;
 
@@ -55,6 +55,18 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
     @Override
     public ValidationReport validate(String definitionJson, CompileContext context) {
         return pipeline.run(definitionJson, context).report();
+    }
+
+    @Override
+    public String decisionTypes(String definitionJson, CompileContext context, String decisionKey) {
+        Pipeline.Outcome outcome = pipeline.run(definitionJson, context);
+        if (outcome.analysis() == null || outcome.definition() == null) {
+            return null;
+        }
+        return outcome.definition().decisions().stream()
+                .filter(t -> t.key().equals(decisionKey) && t.usesExpressions()).findFirst()
+                .map(t -> Jcs.canonicalize(com.orqix.compiler.internal.rules.ExpressionRules.decisionTypes(outcome.analysis(), t)))
+                .orElse(null);
     }
 
     @Override
@@ -110,13 +122,37 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
             }
         }
 
-        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts);
+        // S134: every AI task pins the approved skill version the rules checked (step pin or latest approved).
+        Map<String, com.orqix.compiler.CompileContext.AiSkillVersion> aiPins = new LinkedHashMap<>();
+        List<CompiledWorkflow.AiSkillRef> aiRefs = new ArrayList<>();
+        for (Node n : d.nodes()) {
+            if (n instanceof Node.AiTask ai) {
+                var pin = com.orqix.compiler.internal.rules.AiTaskRules.pinned(analysis.workspace(), ai);
+                aiPins.put(ai.id(), pin);
+                aiRefs.add(new CompiledWorkflow.AiSkillRef(ai.id(), ai.skillRef(), pin.version(), pin.contentHash(),
+                        pin.modelProfile(), ai.autonomy(), ai.shadow() ? null : pin.passingEvaluationId()));
+            } else if (n instanceof Node.Approval a && a.aiReviewer() != null) {
+                // S152: the AI reviewer of an approval pins its skill version in the release manifest too.
+                var reviewer = a.aiReviewer();
+                var pin = analysis.workspace().aiSkills().get(reviewer.skillKey()).versions().get(reviewer.skillVersion());
+                aiRefs.add(new CompiledWorkflow.AiSkillRef(a.id(), reviewer.skillKey(), pin.version(),
+                        pin.contentHash(), pin.modelProfile(), reviewer.autonomy(), pin.passingEvaluationId()));
+            }
+        }
+        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts,
+                aiPins, com.orqix.compiler.internal.rules.ExpressionRules.pinnedTypes(analysis));
 
         Set<String> usedConnections = new LinkedHashSet<>();
         Set<String> groups = new LinkedHashSet<>();
         for (Node n : d.nodes()) {
             if (n instanceof Node.Http h) {
                 usedConnections.add(h.connectionRef());
+            } else if (n instanceof Node.WaitForMessage m && m.fallbackCheck() != null) {
+                // S129: the safety-net check of a message wait calls its connection too.
+                usedConnections.add(m.fallbackCheck().connectionRef());
+            } else if (n instanceof Node.WaitForFirst w) {
+                // S139: check branches call their connections too.
+                w.branches().stream().filter(b -> b.check() != null).forEach(b -> usedConnections.add(b.check().connectionRef()));
             } else if (n instanceof Node.Approval a) {
                 groups.add(a.candidateGroupRef());
                 groups.addAll(a.requiredSkills());
@@ -146,7 +182,8 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 List.copyOf(groups),
                 List.copyOf(childRefs),
                 List.copyOf(closure),
-                height);
+                height,
+                List.copyOf(aiRefs));
     }
 
     private static FieldKind inputKind(RuleContext analysis, DecisionTable table) {

@@ -1,6 +1,10 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
 import { evaluateTable, inWindow, matchValue, rowMatches } from '@/features/studio/model/decisionLogic'
-import { conditionTerms, isAtomicCondition, type Condition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { decisionTerms, isAtomicCondition, isExpressionCondition, tableUsesExpressions, type Condition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { decisionTypes, studioScope } from '@/features/studio/model/expressionScope'
+import { decisionFields, evaluateExpressionTable, expressionEvidence } from '@/lib/expr/decision'
+import { compile } from '@/lib/expr'
+import { runCalculation, type CalculateConfig } from '@/lib/expr/calculate'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import { dateWaitDue } from './dateWait'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
@@ -71,7 +75,18 @@ export function evaluateCondition(c: Condition, value: Literal | undefined): boo
   }
 }
 
-function evaluateRunCondition(run: MockRun, c: Condition): boolean {
+/** An expression condition (S137) over the request and step results, as the engine evaluates it: true only. */
+function expressionHolds(run: MockRun, source: string, at: string): boolean {
+  try {
+    const { scope } = studioScope(currentRelease(run).definition, at)
+    return compile(source, scope).evaluate({ input: k => run.input[k], step: (id, k) => run.steps[id]?.[k], now: clock.iso() }) === true
+  } catch {
+    return false
+  }
+}
+
+function evaluateRunCondition(run: MockRun, c: Condition, at = ''): boolean {
+  if (isExpressionCondition(c)) return expressionHolds(run, c.expression, at)
   if (isAtomicCondition(c)) return evaluateCondition(c, resolveRef(run, c.fieldRef))
   if ('all' in c) return (c.all ?? []).length > 0 && (c.all ?? []).every((term) => evaluateRunCondition(run, term))
   if ('any' in c) return (c.any ?? []).some((term) => evaluateRunCondition(run, term))
@@ -246,6 +261,7 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
   run.waits = {}
   run.messageWaits = {}
   run.externalWaits = {}
+  run.signalWaits = {}
   for (const childId of Object.values(run.childWaits ?? {})) {
     const c = db.runs.get(childId)
     if (c && active(c)) cancelRun(c, userById(run.initiatorId) as MockUser, 'The request that started this one has ended.', true)
@@ -280,10 +296,38 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       case 'decision': {
         const table = def.decisions.find((d) => d.key === node.config.decisionRef)
         if (!table) return
-        const values: Record<string, Literal | undefined> = {}
-        for (const row of table.rows) for (const term of conditionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
         // Dated rows are judged by the day the request was submitted (S41).
         const asOf = table.rows.some(row => row.effective) ? run.createdAt.slice(0, 10) : undefined
+        if (tableUsesExpressions(table)) {
+          // S146: formulas as row tests and results, with the server's semantics and the pinned field types.
+          const values: Record<string, unknown> = { $now: clock.iso(), ...(asOf ? { $asOf: asOf } : {}) }
+          for (const ref of decisionFields(table)) { const v = resolveRef(run, ref); if (v !== undefined) values[ref] = v }
+          let result
+          try {
+            result = evaluateExpressionTable(table, values, decisionTypes(def, table, node.id))
+          } catch (e) {
+            const message = e instanceof Error ? e.message : 'The decision could not be evaluated.'
+            run.lifecycle = 'needsAttention'
+            run.attention = { reason: 'DECISION_FAILED', nodeId: node.id, effectId: null, message, since: clock.iso() }
+            addEvent(run, 'RUN_NEEDS_ATTENTION', { nodeId: node.id, data: { label: node.label, reason: 'DECISION_FAILED' } })
+            return
+          }
+          run.steps[node.id] = result.output as MockRun['steps'][string]
+          addEvent(run, 'DECISION_EVALUATED', {
+            nodeId: node.id,
+            data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : result.matchedRows.map(i => `r${i + 1}`).join(','), outputs: result.output, evidence: {
+              ...(asOf ? { asOf } : {}),
+              ...expressionEvidence(table, values, result, asOf),
+              hitPolicy: table.hitPolicy,
+              ...(table.aggregation ? { aggregation: table.aggregation } : {}),
+              defaultSelected: result.usedDefault,
+            } },
+          })
+          current = next('next')
+          break
+        }
+        const values: Record<string, Literal | undefined> = {}
+        for (const row of table.rows) for (const term of decisionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
         const result = evaluateTable(table, values, asOf)
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {
@@ -302,13 +346,30 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       }
       case 'branch': {
         const routes = outgoing(def, node.id)
-        const chosen = routes.find((t) => t.on === 'condition' && t.condition && evaluateRunCondition(run, t.condition)) ?? routes.find((t) => t.on === 'default')
+        const chosen = routes.find((t) => t.on === 'condition' && t.condition && evaluateRunCondition(run, t.condition, node.id)) ?? routes.find((t) => t.on === 'default')
         current = chosen?.to
         break
       }
       case 'http': {
         const outcome = performHttp(run, release, node, 1)
         if (outcome !== 'succeeded') return
+        current = next('next')
+        break
+      }
+      case 'calculate': {
+        // S137: the same expression engine and rounding as the server's Calculate step.
+        try {
+          const { scope } = studioScope(def, node.id)
+          const outputs = runCalculation(node.config as unknown as CalculateConfig, scope, k => run.input[k], (id, k) => run.steps[id]?.[k], clock.iso())
+          run.steps[node.id] = outputs as MockRun['steps'][string]
+          addEvent(run, 'STEP_CALCULATED', { nodeId: node.id, data: { label: node.label, outputs } })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'The calculation failed.'
+          run.lifecycle = 'needsAttention'
+          run.attention = { reason: 'CALCULATION_FAILED', nodeId: node.id, effectId: null, message, since: clock.iso() }
+          addEvent(run, 'RUN_NEEDS_ATTENTION', { nodeId: node.id, data: { label: node.label, reason: 'CALCULATION_FAILED' } })
+          return
+        }
         current = next('next')
         break
       }
@@ -347,6 +408,17 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       case 'externalTask':
         startExternal(run, node)
         return
+      case 'waitForSignal':
+        startSignalWait(run, node)
+        return
+      case 'sendSignal': {
+        const signal = String(node.config.signal ?? '')
+        addEvent(run, 'SIGNAL_SENT', { nodeId: node.id, data: { label: node.label, signal } })
+        deliverSignal(run, signal)
+        if (!active(run)) return
+        current = next('next')
+        break
+      }
       case 'startWorkflow':
         startChild(run, node)
         return
@@ -355,6 +427,36 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         return
     }
   }
+}
+
+/** A token reached "Wait for a signal": the request waits until the signal is sent in it (S59). */
+function startSignalWait(run: MockRun, node: WorkflowNode): void {
+  const signal = String(node.config.signal ?? '')
+  run.signalWaits = { ...(run.signalWaits ?? {}), [node.id]: { signal, since: clock.iso() } }
+  run.lifecycle = 'waiting'
+  addEvent(run, 'SIGNAL_WAIT_STARTED', { nodeId: node.id, data: { label: node.label, signal } })
+}
+
+/** Signal names the request waits for right now. */
+export function awaitedSignals(run: MockRun): string[] {
+  return [...new Set(Object.values(run.signalWaits ?? {}).map((w) => w.signal))]
+}
+
+/**
+ * Deliver a signal inside one request: every step that waits for it now continues, oldest first. A signal never
+ * reaches another request. Returns how many steps received it.
+ */
+export function deliverSignal(run: MockRun, signal: string): number {
+  const waiting = Object.entries(run.signalWaits ?? {}).filter(([, w]) => w.signal === signal).sort((a, b) => a[1].since.localeCompare(b[1].since))
+  const def = currentRelease(run).definition
+  for (const [nodeId] of waiting) {
+    if (!active(run) || !run.signalWaits?.[nodeId]) continue
+    delete run.signalWaits[nodeId]
+    addEvent(run, 'SIGNAL_RECEIVED', { nodeId, data: { label: nodeById(def, nodeId)?.label ?? nodeId, signal } })
+    const next = def.transitions.find((t) => t.from === nodeId && t.on === 'next')
+    if (next) advance(run, next.to)
+  }
+  return waiting.length
 }
 
 /** A token reached a worker step: publish the job and wait. The mock has no worker API; tests complete it with completeExternalJob. */
@@ -697,6 +799,7 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
   run.waits = {}
   run.messageWaits = {}
   run.externalWaits = {}
+  run.signalWaits = {}
   const succeeded = run.effects.filter((e) => e.state === 'succeeded')
   run.lifecycle = 'cancelled'
   run.endedAt = clock.iso()
@@ -724,9 +827,27 @@ export function requestTitleOf(run: MockRun): string | null {
   const order = [...preferred, ...Object.keys(properties).filter((k) => !preferred.includes(k))]
   for (const field of order) {
     const value = run.input[field]
-    if (properties[field]?.type === 'string' && !properties[field]?.enum && !properties[field]?.format && typeof value === 'string' && value.trim() !== '') return value.trim().slice(0, 120).trimEnd()
+    if (properties[field]?.type === 'string' && !properties[field]?.enum && !properties[field]?.format && typeof value === 'string' && value.trim() !== '') {
+      return isProtected(properties[field]?.classification) ? MASKED_VALUE : value.trim().slice(0, 120).trimEnd()
+    }
   }
   return null
+}
+
+/** CG-I05 (S151): how the server masks personal and sensitive answers (six bullet characters). */
+export const MASKED_VALUE = '•'.repeat(6)
+const isProtected = (classification: string | undefined) => classification === 'personal' || classification === 'sensitive'
+
+/** Request fields of the run's release whose answers are masked (classified personal or sensitive). */
+export function protectedFieldsOf(run: MockRun): string[] {
+  const properties = currentRelease(run).definition.inputSchema.properties
+  return Object.keys(properties).filter((k) => isProtected(properties[k]?.classification))
+}
+
+/** The request answers with personal and sensitive ones replaced by the mask, like every server response. */
+export function maskedInput(run: MockRun, input: Record<string, unknown> = run.input): Record<string, unknown> {
+  const masked = new Set(protectedFieldsOf(run))
+  return Object.fromEntries(Object.entries(input).map(([k, v]) => [k, masked.has(k) && v !== null && v !== undefined ? MASKED_VALUE : v]))
 }
 
 /** The rule for request data (docs/build/S3-api.md section 3 rule 4): the initiator, a task participant, or run.read-data. */
@@ -775,6 +896,9 @@ export function toRun(run: MockRun, user: MockUser): Run {
   }
   for (const [nodeId, w] of Object.entries(run.messageWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt, messageName: w.message })
+  }
+  for (const [nodeId, w] of Object.entries(run.signalWaits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'waitForSignal', since: w.since, candidateGroup: null, assignee: null, dueAt: null })
   }
   for (const nodeId of Object.keys(run.childWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'child', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
@@ -855,7 +979,8 @@ export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
   const attention = run.lifecycle === 'needsAttention'
   return {
     ...base,
-    input: (canSeeData ? run.input : null) as never,
+    input: (canSeeData ? maskedInput(run) : null) as never,
+    protectedFields: canSeeData ? protectedFieldsOf(run).filter((k) => run.input[k] !== null && run.input[k] !== undefined) : [],
     inputLabels: labels,
     output: (canSeeData ? run.output : null) as never,
     stages: stageProgress(run).stages,

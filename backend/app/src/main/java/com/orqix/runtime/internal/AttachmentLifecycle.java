@@ -225,7 +225,7 @@ public class AttachmentLifecycle {
                 VALUES (:id, :ws, :provider, :status, :text, :sha, :by, :now)
                 ON CONFLICT (attachment_id) DO UPDATE
                    SET provider = :provider, status = :status, content_text = :text, sha256 = :sha,
-                       requested_by = :by, created_at = :now
+                       requested_by = :by, created_at = :now, source = 'manual', layout = NULL
                 """).param("id", attachmentId).param("ws", ws).param("provider", ocr.id()).param("status", status)
                 .param("text", result.text()).param("sha", sha256(bytes)).param("by", caller.subjectId())
                 .param("now", Sql.ts(clock.instant())).update();

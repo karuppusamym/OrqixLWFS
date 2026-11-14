@@ -189,7 +189,10 @@ public class SendBacks {
         for (String key : row.fields()) {
             JsonNode schema = properties.path(key);
             fields.add(new RuntimeDtos.SendBackField(key, schema.path("title").asString(key), schema.isMissingNode() ? null : schema,
-                    data ? run.input().path(key).isMissingNode() ? null : run.input().get(key) : null));
+                    data ? run.input().path(key).isMissingNode() ? null
+                            : com.orqix.compiler.FieldClassification.isProtected(release.inputSchema(), key) && !run.input().get(key).isNull()
+                                    ? tools.jackson.databind.node.StringNode.valueOf(com.orqix.compiler.FieldClassification.MASK)
+                                    : run.input().get(key) : null));
         }
         TaskStore.TaskRow task = tasks.find(run.workspaceId(), row.taskId()).orElse(null);
         JsonNode node = release.node(row.nodeId());

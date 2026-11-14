@@ -10,7 +10,7 @@ const ALL_KINDS = Object.keys(KINDS) as NodeKind[]
 
 describe('BPMN notation mapping (STU01)', () => {
   it('maps every step kind to a shape, and nothing else', () => {
-    expect(ALL_KINDS).toHaveLength(19)
+    expect(ALL_KINDS).toHaveLength(22)
     expect(Object.keys(BPMN_NOTATION).sort()).toEqual([...ALL_KINDS].sort())
     for (const kind of [...ALL_KINDS, ...PALETTE_KINDS]) {
       const n = BPMN_NOTATION[kind]
@@ -32,10 +32,13 @@ describe('BPMN notation mapping (STU01)', () => {
       http: ['serviceTask', 'service task'],
       notification: ['sendTask', 'send task'],
       sendAdapter: ['sendTask', 'send task'],
+      aiTask: ['serviceTask', 'service task with a route gateway'],
+      calculate: ['serviceTask', 'service task'],
       generateDocument: ['documentTask', 'service task'],
       externalTask: ['externalServiceTask', 'external service task'],
       wait: ['timerCatchEvent', 'intermediate timer catch event'],
       waitForMessage: ['messageCatchEvent', 'intermediate message catch event'],
+      waitForFirst: ['eventBasedGateway', 'event-based gateway'],
       waitForSignal: ['signalCatchEvent', 'intermediate signal catch event'],
       sendSignal: ['signalThrowEvent', 'intermediate signal throw event'],
       raiseError: ['errorEndEvent', 'error end event'],
@@ -48,7 +51,7 @@ describe('BPMN notation mapping (STU01)', () => {
 
   it('uses the shared bounding boxes: events 48x48, gateways 64x64, tasks and call activities 200x80', () => {
     expect(SHAPE_SIZES).toEqual({ event: { width: 48, height: 48 }, gateway: { width: 64, height: 64 }, task: { width: 200, height: 80 } })
-    const expected = (kind: NodeKind) => (kind.endsWith('Split') || kind.endsWith('Join') || kind === 'branch' ? 64 : ['start', 'end', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'].includes(kind) ? 48 : 200)
+    const expected = (kind: NodeKind) => (kind.endsWith('Split') || kind.endsWith('Join') || kind === 'branch' || kind === 'waitForFirst' ? 64 : ['start', 'end', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'raiseError', 'compensate'].includes(kind) ? 48 : 200)
     for (const kind of ALL_KINDS) {
       expect(bpmnSize(kind).width, kind).toBe(expected(kind))
       expect(nodeSize(kind, 'bpmn'), kind).toEqual(bpmnSize(kind))

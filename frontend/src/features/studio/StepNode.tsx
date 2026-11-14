@@ -112,7 +112,7 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
           <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
           <Handle type="source" position={Position.Bottom} id="timedOut" title="Timed out route" aria-hidden="true" />
         </>
-      ) : data.kind === 'http' ? (
+      ) : data.kind === 'http' || data.kind === 'externalTask' ? (
         <>
           <Handle type="source" position={Position.Right} id="next" style={{ top: '38%' }} title="Next route" aria-hidden="true" />
           <Handle type="source" position={Position.Right} id="failed" style={{ top: '78%' }} title="Failed route" aria-hidden="true" />
@@ -120,6 +120,8 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
         </>
       ) : data.kind === 'branch' ? (
         <Handle type="source" position={Position.Right} id="route" aria-hidden="true" />
+      ) : data.kind === 'waitForFirst' ? (
+        <Handle type="source" position={Position.Right} id="branch" aria-hidden="true" />
       ) : data.kind !== 'end' && data.kind !== 'raiseError' ? (
         <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
       ) : null}

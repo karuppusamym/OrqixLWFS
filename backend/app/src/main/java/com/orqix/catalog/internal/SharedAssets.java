@@ -210,9 +210,20 @@ public class SharedAssets {
             throw ApiException.malformed("kind must be one of " + KINDS + ".");
         }
         List<String> kinds = new ArrayList<>();
+        List<String> fullKinds = new ArrayList<>();
+        // CG-I01 (S151): decision tables and connections readable through resource grants only.
+        java.util.Set<String> decisionKeys = new java.util.HashSet<>();
+        java.util.Set<String> connectionKeys = new java.util.HashSet<>();
         for (String k : kind == null ? KINDS : List.of(kind)) {
             if (access.has(readPermission(k))) {
                 kinds.add(k);
+                fullKinds.add(k);
+            } else if (DECISION.equals(k) && !access.resources().decisions(Permission.WORKFLOW_READ).isEmpty()) {
+                kinds.add(k);
+                decisionKeys.addAll(access.resources().decisions(Permission.WORKFLOW_READ));
+            } else if (CONNECTION.equals(k) && !access.resources().connections(Permission.CONNECTION_READ).isEmpty()) {
+                kinds.add(k);
+                connectionKeys.addAll(access.resources().connections(Permission.CONNECTION_READ));
             }
         }
         if (kinds.isEmpty()) {
@@ -222,7 +233,9 @@ public class SharedAssets {
         }
         String text = q == null || q.isBlank() ? null : q.trim().toLowerCase(Locale.ROOT);
         StringBuilder sql = new StringBuilder("SELECT x.* FROM (").append(INDEX).append(") x ")
-                .append("LEFT JOIN subject s ON s.id = x.owner WHERE x.kind IN (:kinds)");
+                .append("LEFT JOIN subject s ON s.id = x.owner WHERE x.kind IN (:kinds)")
+                .append(" AND (x.kind IN (:fullKinds) OR (x.kind = 'decision' AND x.key IN (:decisionKeys))")
+                .append(" OR (x.kind = 'connection' AND x.key IN (:connectionKeys)))");
         if (!includeArchived) {
             sql.append(" AND NOT x.archived");
         }
@@ -234,7 +247,10 @@ public class SharedAssets {
                     + " OR lower(s.display_name) LIKE :like ESCAPE '\\')");
         }
         sql.append(" ORDER BY lower(x.name), x.kind, x.key LIMIT ").append(SEARCH_LIMIT + 1);
-        var statement = jdbc.sql(sql.toString()).param("ws", ws).param("kinds", kinds);
+        var statement = jdbc.sql(sql.toString()).param("ws", ws).param("kinds", kinds)
+                .param("fullKinds", fullKinds.isEmpty() ? List.of("") : fullKinds)
+                .param("decisionKeys", decisionKeys.isEmpty() ? List.of("") : List.copyOf(decisionKeys))
+                .param("connectionKeys", connectionKeys.isEmpty() ? List.of("") : List.copyOf(connectionKeys));
         if (ownerId != null) {
             statement = statement.param("owner", ownerId);
         }
@@ -258,6 +274,20 @@ public class SharedAssets {
         return access;
     }
 
+    /** CG-I01 (S151): as {@link #reader}, also allowing a grant on this one decision table or connection. */
+    private void readerOf(Caller caller, UUID ws, String kind, String key, String operation) {
+        policy.require(scoped(policy.requireVisible(caller, ws), kind, key), readPermission(kind), operation, false);
+    }
+
+    /** CG-I01 (S151): as {@link #manager}, also allowing a grant on this one decision table or connection. */
+    private void managerOf(Caller caller, UUID ws, String kind, String key, String operation) {
+        policy.require(scoped(policy.requireVisible(caller, ws), kind, key), managePermission(kind), operation, true);
+    }
+
+    private static WorkspaceAccess scoped(WorkspaceAccess access, String kind, String key) {
+        return DECISION.equals(kind) ? access.onDecision(key) : CONNECTION.equals(kind) ? access.onConnection(key) : access;
+    }
+
     private WorkspaceAccess manager(Caller caller, UUID ws, String kind, String operation) {
         WorkspaceAccess access = policy.requireVisible(caller, ws);
         policy.require(access, managePermission(kind), operation, true);
@@ -267,7 +297,7 @@ public class SharedAssets {
     @Transactional(readOnly = true)
     public Detail get(Caller caller, UUID ws, String kindValue, String key) {
         String kind = kind(kindValue);
-        reader(caller, ws, kind, "getSharedAsset");
+        readerOf(caller, ws, kind, key, "getSharedAsset");
         return detail(ws, kind, key);
     }
 
@@ -369,7 +399,7 @@ public class SharedAssets {
 
     @Transactional
     public Detail addDecisionVersion(Caller caller, UUID ws, String key, DecisionVersionRequest request) {
-        manager(caller, ws, DECISION, "addDecisionAssetVersion");
+        managerOf(caller, ws, DECISION, key, "addDecisionAssetVersion");
         ObjectNode content = decisionContent(request.content());
         record Locked(UUID id, int latest, boolean archived) {
         }

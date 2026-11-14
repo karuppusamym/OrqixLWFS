@@ -62,6 +62,10 @@ public final class BpmnReader {
     private static final JsonNodeFactory F = JsonNodeFactory.instance;
     private static final Pattern APPROVAL_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.(approved|rejected)\\(execution, '([^']*)'\\)\\}$");
+    private static final Pattern POLL_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.polled\\(execution, '([^']*)', '(met|failed|timedOut)'\\)\\}$");
+    private static final Pattern AI_ROUTE = Pattern.compile(
+            "^\\$\\{orqixRoute\\.ai\\(execution, '([^']*)', '(next|lowConfidence|needsReview|aiUnavailable|label:[a-z][A-Za-z0-9]{0,39})'\\)\\}$");
     private static final Pattern CONDITION_ROUTE = Pattern.compile(
             "^\\$\\{orqixRoute\\.condition\\(execution, '([^']*)'\\)\\}$");
     private static final Set<String> FLOW_ELEMENTS = Set.of("startEvent", "userTask", "serviceTask",
@@ -188,6 +192,21 @@ public final class BpmnReader {
                 continue;
             }
             String id = el.attr("id");
+            if (el.is(BPMN_NS, "multiInstanceLoopCharacteristics") && container.attr("id") != null
+                    && container.attr("id").endsWith(BpmnGenerator.BATCHES)) {
+                continue; // the batches of a parallel for-each (S138); regenerated from orqix:forEach
+            }
+            if (el.is(BPMN_NS, "subProcess") && id != null && id.endsWith(BpmnGenerator.BATCHES)
+                    && ext(el, "scope") == null) {
+                // CG-E06 (S138): the generated subprocess of a parallel for-each in batches holds the step itself.
+                if (byId.putIfAbsent(id, el) != null) {
+                    unsupported(id, "The id '" + id + "' is used by more than one element.");
+                    continue;
+                }
+                containerOf.put(id, scopeId);
+                walk(el, scopeId, flows, helpers);
+                continue;
+            }
             if (el.is(BPMN_NS, "subProcess") && ext(el, "scope") != null) {
                 if (!PROCESS.equals(scopeId)) {
                     unsupported(id, "'" + id + "': sections and handlers cannot be nested; a step belongs to at most one.");
@@ -366,7 +385,24 @@ public final class BpmnReader {
                     trigger.put("after", duration.text());
                 }
             }
-            default -> unsupported(id, "The trigger '" + type + "' of '" + id + "' is not error, signal or timer.");
+            case "message" -> {
+                // S139 (CG-E08): a message handler; the orqix:message of the start event names the message.
+                El def = start.child(BPMN_NS, "messageEventDefinition");
+                El message = ext(start, "message");
+                if (def == null || message == null) {
+                    unsupported(id, "Handler '" + id + "' is started by a message; its start event needs a "
+                            + "messageEventDefinition and orqix:message.");
+                } else {
+                    putText(trigger, "message", message.attr("name"));
+                    putText(trigger, "correlationField", message.attr("correlationField"));
+                    ArrayNode payload = fields(id, message);
+                    if (!payload.isEmpty()) {
+                        trigger.set("payload", payload);
+                    }
+                }
+            }
+            default -> unsupported(id, "The trigger '" + type + "' of '" + id + "' is not error, signal, timer or"
+                    + " message.");
         }
     }
 
@@ -484,7 +520,8 @@ public final class BpmnReader {
                     putText(config, "signal", signal.attr("name"));
                 }
             }
-            case "eventBasedGateway" -> type = messageWithLimit(el, config);
+            case "eventBasedGateway" -> type = ext != null && ext.child(ORQIX_NS, "waitForFirst") != null
+                    ? waitForFirst(el, ext.child(ORQIX_NS, "waitForFirst"), config) : messageWithLimit(el, config);
             case "endEvent" -> {
                 El raise = ext == null ? null : ext.child(ORQIX_NS, "raise");
                 El outcome = ext == null ? null : ext.child(ORQIX_NS, "outcome");
@@ -553,6 +590,8 @@ public final class BpmnReader {
         }
         jsonAttribute(id, a, "calendar", config);
         jsonAttribute(id, a, "escalation", config);
+        jsonAttribute(id, a, "escalationPolicy", config);
+        jsonAttribute(id, a, "aiReviewer", config);
         El loop = el.child(BPMN_NS, "multiInstanceLoopCharacteristics");
         El perItem = ext == null ? null : ext.child(ORQIX_NS, "perItem");
         if (perItem != null) {
@@ -603,13 +642,15 @@ public final class BpmnReader {
         String delegate = el.attr(FLOWABLE_NS, "delegateExpression");
         String kind = delegate == null ? null : switch (delegate) {
             case "${orqixDecisionTask}" -> "decision";
-            case "${orqixHttpTask}" -> "http";
+            case "${orqixHttpTask}", "${orqixPollTask}" -> "http";
             case "${orqixGenerateDocumentTask}" -> "generateDocument";
             case "${orqixExternalTask}" -> "externalTask";
             case "${orqixNotificationTask}" -> "notification";
             case "${orqixChildTask}" -> "startWorkflow";
             case "${orqixCompensationTask}" -> "compensate";
             case "${orqixAdapterTask}" -> "sendAdapter";
+            case "${orqixAiTask}" -> "aiTask";
+            case "${orqixCalculate}" -> "calculate";
             default -> null;
         };
         if (kind == null) {
@@ -627,6 +668,8 @@ public final class BpmnReader {
             case "notification" -> "notification";
             case "compensate" -> "compensation";
             case "sendAdapter" -> "adapter";
+            case "aiTask" -> "aiTask";
+            case "calculate" -> "calculate";
             default -> "child";
         };
         El x = ext == null ? null : ext.child(ORQIX_NS, extension);
@@ -652,6 +695,52 @@ public final class BpmnReader {
                 }
                 // Opt-in (S71): a known failure raises this business error for the section's error route.
                 putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
+                // S129: "Keep checking until..." travels as canonical JSON.
+                El poll = ext.child(ORQIX_NS, "poll");
+                if (poll != null) {
+                    JsonNode settings = base64Json(id, poll.attr("configBase64"));
+                    if (settings == null) {
+                        return null;
+                    }
+                    config.set("poll", settings);
+                }
+            }
+            case "aiTask" -> {
+                // S134: the pinned version is kept only when the designer pinned it; otherwise publishing pins again.
+                putText(config, "skillRef", x.attr("skill"));
+                if ("true".equals(x.attr("pinnedByDesigner"))) {
+                    Integer version = integer(id, "skillVersion", x.attr("skillVersion"));
+                    if (version != null) {
+                        config.put("skillVersion", version);
+                    }
+                }
+                putText(config, "mode", x.attr("mode"));
+                config.set("inputMapping", pairs(id, x, "input", "fieldRef"));
+                if (x.attr("autonomy") != null && !"suggest".equals(x.attr("autonomy"))) {
+                    config.put("autonomy", x.attr("autonomy"));
+                }
+                if (x.attr("minConfidence") != null
+                        && new java.math.BigDecimal(x.attr("minConfidence")).compareTo(new java.math.BigDecimal("0.8")) != 0) {
+                    config.put("minConfidence", new java.math.BigDecimal(x.attr("minConfidence")));
+                }
+                Integer sample = x.attr("reviewSamplePercent") == null ? null
+                        : integer(id, "reviewSamplePercent", x.attr("reviewSamplePercent"));
+                if (sample != null && sample != 10) {
+                    config.put("reviewSamplePercent", sample);
+                }
+                ObjectNode redaction = pairs(id, x, "redaction", "rule");
+                if (redaction != null && !redaction.isEmpty()) {
+                    config.set("redaction", redaction);
+                }
+            }
+            case "calculate" -> {
+                // S137: the outputs and calendar travel as canonical JSON.
+                JsonNode settings = base64Json(id, x.attr("configBase64"));
+                if (settings == null || !settings.isObject()) {
+                    unsupported(id, "Calculate step '" + id + "' needs its orqix:calculate settings.");
+                    return null;
+                }
+                ((ObjectNode) config).setAll((ObjectNode) settings);
             }
             case "compensate" -> {
                 // Nothing to read: the undo entries are recomputed from the calls marked as automatic undo calls.
@@ -698,6 +787,8 @@ public final class BpmnReader {
                 if (lease != null && lease != 120) {
                     config.put("leaseSeconds", lease);
                 }
+                // S132 (CG-E10): a worker business error raises this error for the section's error route.
+                putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
             }
             case "notification" -> {
                 putText(config, "channel", x.attr("channel"));
@@ -710,7 +801,100 @@ public final class BpmnReader {
                 config.set("resultMapping", pairs(id, x, "result", "output"));
             }
         }
+        if (List.of("http", "externalTask", "sendAdapter").contains(kind)) {
+            stepRetry(id, ext.child(ORQIX_NS, "retry"), config);
+        }
+        if (List.of("http", "externalTask", "aiTask").contains(kind) && ext.child(ORQIX_NS, "forEach") != null) {
+            forEach(id, ext.child(ORQIX_NS, "forEach"), config);
+        }
         return kind;
+    }
+
+    /**
+     * {@code <orqix:forEach>} back to {@code config.forEach} (CG-E06, S138). The generator wrote the item inputs as
+     * {@code /input/<list>/*} mappings; they become itemInput or itemMapping again. Defaults are left out.
+     */
+    private void forEach(String id, El x, ObjectNode config) {
+        ObjectNode f = F.objectNode();
+        String itemsRef = x.attr("itemsRef");
+        putText(f, "itemsRef", itemsRef);
+        JsonNode inputs = config.get("inputMapping");
+        if (inputs instanceof ObjectNode mapping && itemsRef != null) {
+            String item = itemsRef + "/*";
+            ObjectNode columns = F.objectNode();
+            for (Map.Entry<String, JsonNode> e : new ArrayList<>(mapping.properties())) {
+                String name = e.getKey();
+                String ref = e.getValue().asString("");
+                if (ref.equals(item)) {
+                    f.put("itemInput", name);
+                    mapping.remove(name);
+                } else if (ref.startsWith(item + "/")) {
+                    columns.put(name, ref.substring(item.length() + 1));
+                    mapping.remove(name);
+                }
+            }
+            if (!columns.isEmpty()) {
+                f.set("itemMapping", columns);
+            }
+        }
+        Integer max = integer(id, "maxItems", x.attr("maxItems"));
+        if (max != null) {
+            f.put("maxItems", max);
+        }
+        if ("parallel".equals(x.attr("mode"))) {
+            f.put("mode", "parallel");
+            Integer batch = integer(id, "batchSize", x.attr("batchSize"));
+            if (batch != null && batch != 25) {
+                f.put("batchSize", batch);
+            }
+        }
+        String when = x.attr("when");
+        if (when != null && !"all".equals(when)) {
+            ObjectNode completion = f.putObject("completion");
+            completion.put("when", when);
+            Integer count = x.attr("count") == null ? null : integer(id, "count", x.attr("count"));
+            if (count != null) {
+                completion.put("count", count);
+            }
+        }
+        ObjectNode collect = pairs(id, x, "collect", "result");
+        if (collect != null && !collect.isEmpty()) {
+            f.set("collect", collect);
+        }
+        config.set("forEach", f);
+    }
+
+    /** {@code <orqix:retry>} back to {@code config.retry} (CG-W04, S131); the compiler checks the bounds. */
+    private void stepRetry(String id, El retry, ObjectNode config) {
+        if (retry == null) {
+            return;
+        }
+        ObjectNode policy = config.putObject("retry");
+        Integer attempts = integer(id, "maxAttempts", retry.attr("maxAttempts"));
+        if (attempts != null) {
+            policy.put("maxAttempts", attempts);
+        }
+        putText(policy, "delay", retry.attr("delay"));
+        // Defaults (multiplier 1, honorRetryAfter true) are read as omitted; BpmnDefaults keeps the draft's spelling.
+        String multiplier = retry.attr("multiplier");
+        if (multiplier != null) {
+            try {
+                BigDecimal value = new BigDecimal(multiplier);
+                if (value.compareTo(BigDecimal.ONE) != 0) {
+                    if (value.stripTrailingZeros().scale() <= 0) {
+                        policy.put("multiplier", value.intValueExact());
+                    } else {
+                        policy.put("multiplier", value);
+                    }
+                }
+            } catch (NumberFormatException | ArithmeticException e) {
+                unsupported(id, "The retry multiplier of '" + id + "' is not a number.");
+            }
+        }
+        putText(policy, "maxDelay", retry.attr("maxDelay"));
+        if ("false".equals(retry.attr("honorRetryAfter"))) {
+            policy.put("honorRetryAfter", false);
+        }
     }
 
     private String catchEvent(El el, El ext, ObjectNode config) {
@@ -718,7 +902,11 @@ public final class BpmnReader {
         El wait = ext == null ? null : ext.child(ORQIX_NS, "wait");
         El message = ext == null ? null : ext.child(ORQIX_NS, "message");
         if (wait != null) {
-            if (wait.attr("duration") != null) {
+            if (wait.attr("workingDuration") != null) {
+                // S139: working time of a shared calendar (the pinned version lives in dependencies.assets).
+                putText(config, "workingDuration", wait.attr("workingDuration"));
+                putText(config, "calendarRef", wait.attr("calendarKey"));
+            } else if (wait.attr("duration") != null) {
                 config.put("duration", wait.attr("duration"));
             } else {
                 putText(config, "untilField", wait.attr("untilField"));
@@ -757,6 +945,85 @@ public final class BpmnReader {
         }
     }
 
+    /** S139: "Wait for the first": the gateway lists its branches; each is the catch event {@code <id>__<branch>}. */
+    private String waitForFirst(El el, El first, ObjectNode config) {
+        String id = el.attr("id");
+        ArrayNode branches = config.putArray("branches");
+        String list = first.attr("branches");
+        for (String branchId : list == null ? new String[0] : list.split(",")) {
+            El catching = byId.get(id + "__" + branchId);
+            if (catching == null) {
+                for (El sibling : el.parent().children()) {
+                    if ((id + "__" + branchId).equals(sibling.attr("id"))) {
+                        catching = sibling;
+                    }
+                }
+            }
+            El marker = ext(catching, "first");
+            if (marker == null) {
+                unsupported(id, "The branch '" + branchId + "' of '" + id + "' needs its catch event '" + id + "__"
+                        + branchId + "' with orqix:first.");
+                return null;
+            }
+            ObjectNode b = branches.addObject();
+            b.put("id", branchId);
+            String name = catching.attr("name");
+            putText(b, "label", name != null && name.startsWith(el.attr("name") + ": ")
+                    ? name.substring(el.attr("name").length() + 2) : name);
+            String kind = marker.attr("kind");
+            putText(b, "kind", kind);
+            switch (kind == null ? "" : kind) {
+                case "signal" -> putText(b, "signal", ext(catching, "signal") == null ? null
+                        : ext(catching, "signal").attr("name"));
+                case "timer" -> {
+                    El wait = ext(catching, "wait");
+                    if (wait == null) {
+                        unsupported(id, "The time branch '" + branchId + "' of '" + id + "' needs orqix:wait.");
+                    } else if (wait.attr("duration") != null) {
+                        b.put("after", wait.attr("duration"));
+                    } else if (wait.attr("untilField") != null) {
+                        b.put("untilField", wait.attr("untilField"));
+                        if (wait.attr("atTime") != null && !"09:00".equals(wait.attr("atTime"))) {
+                            b.put("atTime", wait.attr("atTime"));
+                        }
+                    } else {
+                        putText(b, "workingDuration", wait.attr("workingDuration"));
+                        putText(b, "calendarRef", wait.attr("calendarKey"));
+                    }
+                }
+                default -> {
+                    El message = ext(catching, "message");
+                    if (message == null) {
+                        unsupported(id, "The branch '" + branchId + "' of '" + id + "' needs orqix:message.");
+                        continue;
+                    }
+                    if ("message".equals(kind)) {
+                        putText(b, "message", message.attr("name"));
+                        putText(b, "correlationField", message.attr("correlationField"));
+                    }
+                    if (message.attr("callbackTokenValidFor") != null) {
+                        b.put("tokenValidFor", message.attr("callbackTokenValidFor"));
+                    }
+                    ArrayNode payload = fields(id, message);
+                    if (!payload.isEmpty()) {
+                        b.set("payload", payload);
+                    }
+                    if (message.attr("fallbackCheckBase64") != null) {
+                        JsonNode check = base64Json(id, message.attr("fallbackCheckBase64"));
+                        if (check != null) {
+                            b.set("check", check);
+                        }
+                    }
+                }
+            }
+            firstBranches.computeIfAbsent(id, k -> new java.util.HashSet<>()).add(branchId);
+        }
+        return "waitForFirst";
+    }
+
+    /** S139: branch ids of each "Wait for the first" step. */
+    private final Map<String, java.util.Set<String>> firstBranches = new LinkedHashMap<>();
+
     private String messageWithLimit(El el, ObjectNode config) {
         String id = el.attr("id");
         El catching = byId.get(id + BpmnGenerator.MESSAGE_CATCH);
@@ -781,6 +1048,9 @@ public final class BpmnReader {
         }
         readMessage(id, message, config);
         putText(config, "timeoutAfter", limit.attr("after"));
+        if (limit.attr("calendarKey") != null) {
+            putText(config, "timeoutCalendarRef", limit.attr("calendarKey"));
+        }
         return "waitForMessage";
     }
 
@@ -791,6 +1061,31 @@ public final class BpmnReader {
         String callback = message.attr("callbackTokenValidFor");
         if (callback != null) {
             config.putObject("externalCallback").put("tokenValidFor", callback);
+        }
+        String guest = message.attr("guestResponseBase64");
+        if (guest != null) {
+            JsonNode settings = base64Json(id, guest);
+            if (settings != null) {
+                config.set("guestResponse", settings);
+            }
+        }
+        String fallback = message.attr("fallbackCheckBase64");
+        if (fallback != null) {
+            JsonNode settings = base64Json(id, fallback);
+            if (settings != null) {
+                config.set("fallbackCheck", settings);
+            }
+        }
+    }
+
+    /** S129: settings written as Base64 canonical JSON; null (and reported) when they cannot be read. */
+    private JsonNode base64Json(String id, String text) {
+        try {
+            return com.orqix.compiler.internal.json.StrictJson.parse(new String(java.util.Base64.getDecoder()
+                    .decode(text == null ? "" : text), java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            unsupported(id, "The checking settings of '" + id + "' are not readable Base64 JSON.");
+            return null;
         }
     }
 
@@ -826,12 +1121,25 @@ public final class BpmnReader {
             }
             return;
         }
+        El ownerEl = byId.get(owner);
+        if (ownerEl != null && ownerEl.is(BPMN_NS, "sequenceFlow")
+                && (com.orqix.compiler.internal.model.Loops.GUARD.equals(suffix)
+                || com.orqix.compiler.internal.model.Loops.AGAIN.equals(suffix))) {
+            return; // the guard of a bounded loop path and its flow back (S138), checked on regeneration
+        }
+        if (suffix.startsWith(BpmnGenerator.BATCHES) && type != null
+                && List.of("http", "externalTask", "aiTask").contains(type)) {
+            return; // start, end and flows inside the batches of a parallel for-each (S138)
+        }
         boolean known = type != null && switch (suffix) {
             case BpmnGenerator.APPROVAL_OUT, BpmnGenerator.APPROVAL_ROUTE -> type.equals("approval");
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
             case BpmnGenerator.FAILED_BOUNDARY -> type.equals("http") || type.equals("startWorkflow");
+            case BpmnGenerator.POLL_ROUTE, "__toPollRoute" -> type.equals("http");
+            case BpmnGenerator.AI_ROUTE, "__toAiRoute" -> type.equals("aiTask");
             case BpmnGenerator.MESSAGE_CATCH, "__toMessage", "__toTimeout" -> type.equals("waitForMessage");
-            default -> false;
+            default -> type.equals("waitForFirst") && firstBranches.getOrDefault(owner, java.util.Set.of())
+                    .contains(suffix.startsWith("__to__") ? suffix.substring("__to__".length()) : suffix.substring(2));
         };
         if (!known) {
             unsupported(id, "'" + id + "' uses the reserved '__' in its id but is not a generated part of a step "
@@ -850,6 +1158,22 @@ public final class BpmnReader {
             return null;
         }
         String container = containerOf.get(id);
+        Integer maxTraversals = null;
+        if (target.endsWith(com.orqix.compiler.internal.model.Loops.GUARD) && byId.get(target) != null) {
+            // CG-E01 (S138): a bounded path ends at its guard; the guard's "again" flow goes back to the step.
+            El guard = byId.get(target);
+            El loop = ext(guard, "loop");
+            El again = byId.get(id + com.orqix.compiler.internal.model.Loops.AGAIN);
+            if (loop == null || again == null || !id.equals(loop.attr("path"))) {
+                unsupported(id, "Sequence flow '" + id + "' goes to '" + target + "', which is not its loop guard.");
+                return null;
+            }
+            maxTraversals = integer(id, "maxTraversals", loop.attr("maxTraversals"));
+            target = again.attr("targetRef");
+        }
+        if (target != null && target.endsWith(BpmnGenerator.BATCHES)) {
+            target = target.substring(0, target.length() - BpmnGenerator.BATCHES.length());
+        }
         if (target.contains("__")) {
             // A path leaving a section ends at the generated end event <section>__end__<step> inside it (S59).
             int at = target.indexOf("__");
@@ -877,16 +1201,33 @@ public final class BpmnReader {
         String expression = expressionEl == null ? null : expressionEl.text();
         String from;
         String on;
+        String aiLabel = null;
+        String branch = null;
         if (source.contains("__")) {
             int at = source.indexOf("__");
             from = source.substring(0, at);
             String suffix = source.substring(at);
             String type = types.get(from);
+            if (com.orqix.compiler.internal.model.Loops.GUARD.equals(suffix) && byId.get(from) != null
+                    && byId.get(from).is(BPMN_NS, "sequenceFlow")) {
+                // CG-E01 (S138): the guard's default flow is the step's limitReached path.
+                String back = byId.get(from).attr("sourceRef");
+                from = back == null ? null : back.contains("__") ? back.substring(0, back.indexOf("__")) : back;
+                type = from == null ? null : types.get(from);
+                suffix = "__limitReached";
+            } else if (BpmnGenerator.BATCHES.equals(suffix)) {
+                suffix = "__forEach";
+            }
             if (type == null) {
                 unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which is not part of a step.");
                 return null;
             }
             switch (suffix) {
+                case "__limitReached" -> on = "limitReached";
+                case "__forEach" -> {
+                    Matcher m = expression == null ? null : CONDITION_ROUTE.matcher(expression);
+                    on = m != null && m.matches() ? "condition" : "next";
+                }
                 case BpmnGenerator.APPROVAL_ROUTE -> {
                     Matcher m = expression == null ? null : APPROVAL_ROUTE.matcher(expression);
                     if (m == null || !m.matches() || !m.group(2).equals(from)) {
@@ -898,8 +1239,37 @@ public final class BpmnReader {
                 }
                 case "__timeout" -> on = "timedOut";
                 case BpmnGenerator.FAILED_BOUNDARY -> on = "failed";
+                case BpmnGenerator.POLL_ROUTE -> {
+                    Matcher m = expression == null ? null : POLL_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the checks of '" + from + "' must carry the generated "
+                                + "met/failed/timedOut condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = switch (m.group(2)) {
+                        case "met" -> "next";
+                        default -> m.group(2);
+                    };
+                }
+                case BpmnGenerator.AI_ROUTE -> {
+                    Matcher m = expression == null ? null : AI_ROUTE.matcher(expression);
+                    if (m == null || !m.matches() || !m.group(1).equals(from)) {
+                        unsupported(id, "A path out of the AI task '" + from + "' must carry the generated AI route "
+                                + "condition for that step; other expressions are not supported.");
+                        return null;
+                    }
+                    on = m.group(2).startsWith("label:") ? "aiLabel" : m.group(2);
+                    aiLabel = m.group(2).startsWith("label:") ? m.group(2).substring("label:".length()) : null;
+                }
                 case BpmnGenerator.MESSAGE_CATCH -> on = "next";
                 default -> {
+                    if ("waitForFirst".equals(type)
+                            && firstBranches.getOrDefault(from, java.util.Set.of()).contains(suffix.substring(2))) {
+                        on = "branch";
+                        aiLabel = null;
+                        branch = suffix.substring(2);
+                        break;
+                    }
                     unsupported(id, "Sequence flow '" + id + "' starts at '" + source + "', which no connection can "
                             + "start from.");
                     return null;
@@ -931,6 +1301,15 @@ public final class BpmnReader {
         t.put("from", from);
         t.put("to", target);
         t.put("on", on);
+        if (aiLabel != null) {
+            t.put("aiLabel", aiLabel);
+        }
+        if (maxTraversals != null) {
+            t.put("maxTraversals", maxTraversals);
+        }
+        if (branch != null) {
+            t.put("branch", branch);
+        }
         if (flow.attr("name") != null) {
             t.put("label", flow.attr("name"));
         }
@@ -951,6 +1330,11 @@ public final class BpmnReader {
     }
 
     private JsonNode condition(String id, El c) {
+        if (c.attr("expression") != null) {
+            ObjectNode expression = F.objectNode();
+            expression.put("expression", c.attr("expression"));
+            return expression;
+        }
         if (c.attr("group") != null) {
             ArrayNode terms = F.arrayNode();
             for (El term : c.all(ORQIX_NS, "term")) {
@@ -1117,7 +1501,7 @@ public final class BpmnReader {
         return switch (node.get("type").stringValue()) {
             case "start", "end", "wait", "raiseError", "sendSignal", "waitForSignal" -> new int[] {36, 36};
             case "waitForMessage" -> node.get("config").has("timeoutAfter") ? new int[] {40, 40} : new int[] {36, 36};
-            case "branch", "parallelSplit", "parallelJoin" -> new int[] {40, 40};
+            case "branch", "parallelSplit", "parallelJoin", "waitForFirst" -> new int[] {40, 40};
             default -> new int[] {100, 80};
         };
     }

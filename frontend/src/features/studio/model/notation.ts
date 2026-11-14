@@ -19,6 +19,7 @@ export type BpmnShape =
   | 'compensationThrowEvent'
   | 'exclusiveGateway'
   | 'parallelGateway'
+  | 'eventBasedGateway'
   | 'userTask'
   | 'businessRuleTask'
   | 'serviceTask'
@@ -47,9 +48,12 @@ export const BPMN_NOTATION: Record<NodeKind, BpmnNotation> = {
   http: { shape: 'serviceTask', sizeClass: 'task', element: 'service task', symbol: 'Rounded rectangle with a gear' },
   notification: { shape: 'sendTask', sizeClass: 'task', element: 'send task', symbol: 'Rounded rectangle with an envelope' },
   sendAdapter: { shape: 'sendTask', sizeClass: 'task', element: 'send task', symbol: 'Rounded rectangle with an envelope' },
+  aiTask: { shape: 'serviceTask', sizeClass: 'task', element: 'service task with a route gateway', symbol: 'Rounded rectangle with a gear' },
+  calculate: { shape: 'serviceTask', sizeClass: 'task', element: 'service task', symbol: 'Rounded rectangle with a gear' },
   generateDocument: { shape: 'documentTask', sizeClass: 'task', element: 'service task', symbol: 'Rounded rectangle with a page icon' },
   externalTask: { shape: 'externalServiceTask', sizeClass: 'task', element: 'external service task', symbol: 'Rounded rectangle with a gear and arrows' },
   wait: { shape: 'timerCatchEvent', sizeClass: 'event', element: 'intermediate timer catch event', symbol: 'Double circle with a clock' },
+  waitForFirst: { shape: 'eventBasedGateway', sizeClass: 'gateway', element: 'event-based gateway', symbol: 'Diamond with a pentagon in a double circle' },
   waitForMessage: { shape: 'messageCatchEvent', sizeClass: 'event', element: 'intermediate message catch event', symbol: 'Double circle with an envelope' },
   waitForSignal: { shape: 'signalCatchEvent', sizeClass: 'event', element: 'intermediate signal catch event', symbol: 'Double circle with an outlined triangle' },
   sendSignal: { shape: 'signalThrowEvent', sizeClass: 'event', element: 'intermediate signal throw event', symbol: 'Double circle with a filled triangle' },

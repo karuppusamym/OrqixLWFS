@@ -2,6 +2,7 @@ import { BaseEdge, EdgeLabelRenderer, useNodes, type Edge, type EdgeProps } from
 import { cn } from '@/lib/cn'
 import { fallbackNodeSize, routeGeometry } from '@/features/studio/RouteEdge'
 import { LABEL_MAX_WIDTH } from '@/features/studio/model/layout'
+import { RouteHeatLabel, useRouteHeat } from '@/features/analytics/HeatmapOverlay'
 
 export interface RunEdgeData extends Record<string, unknown> {
   /** The request used this route: drawn thick. Routes not used are thin and dashed. */
@@ -18,6 +19,7 @@ export type RunFlowEdge = Edge<RunEdgeData, 'runRoute'>
  */
 export function RunEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<RunFlowEdge>) {
   const nodes = useNodes()
+  const heat = useRouteHeat(id)
   const text = data?.text ?? ''
   const others = nodes
     .filter((n) => n.id !== source && n.id !== target)
@@ -33,9 +35,10 @@ export function RunEdge({ id, source, target, sourceX, sourceY, targetX, targetY
   return (
     <>
       <BaseEdge id={id} path={geometry.path} markerEnd={markerEnd} style={style} interactionWidth={0} />
-      {text ? (
+      {text || heat ? (
         <EdgeLabelRenderer>
-          <span
+          {heat ? <RouteHeatLabel transitionId={id} x={geometry.label.x} y={geometry.label.y} /> : null}
+          {text ? <span
             aria-hidden="true"
             className={cn(
               'pointer-events-none absolute max-w-48 truncate rounded-full border bg-surface px-2.5 py-0.5 text-sm leading-5 font-semibold shadow-card',
@@ -44,7 +47,7 @@ export function RunEdge({ id, source, target, sourceX, sourceY, targetX, targetY
             style={{ transform: `translate(-50%, -50%) translate(${geometry.label.x}px, ${geometry.label.y}px)` }}
           >
             {text}
-          </span>
+          </span> : null}
         </EdgeLabelRenderer>
       ) : null}
     </>

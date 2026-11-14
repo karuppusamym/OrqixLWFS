@@ -60,6 +60,8 @@ public class OperatorService {
     private final RunSuspensions suspensions;
     private final RunMigrations migrations;
     private final ExternalJobService externalJobs;
+    private final PollWaits polls;
+    private final WaitStates waitStates;
     private final RunRepair repairs;
     private final ConsistencyFindings consistency;
     private final RunConsistencyScan scan;
@@ -69,7 +71,10 @@ public class OperatorService {
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
             IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
             RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs, RunRepair repairs,
-            ConsistencyFindings consistency, java.util.Optional<RunConsistencyScan> scan) {
+            ConsistencyFindings consistency, java.util.Optional<RunConsistencyScan> scan,
+            @org.springframework.context.annotation.Lazy PollWaits polls, WaitStates waitStates) {
+        this.polls = polls;
+        this.waitStates = waitStates;
         this.repairs = repairs;
         this.consistency = consistency;
         this.scan = scan.orElse(null);
@@ -120,7 +125,7 @@ public class OperatorService {
             throw new ApiException(ProblemCode.EFFECT_NOT_RECONCILED,
                     "Check the external system and reconcile the step before retrying.");
         }
-        if (externalJobs.retryFailed(workspaceId, runId)) {
+        if (externalJobs.retryFailed(workspaceId, runId) || polls.retryAttention(workspaceId, runId)) {
             // A worker job ran out of attempts: offer it to the workers again from the first attempt.
             runs.mutate(workspaceId, runId, m -> {
                 m.lifecycle = RunStore.RUNNING;
@@ -336,6 +341,8 @@ public class OperatorService {
         }
         Instant now = clock.instant();
         suspensions.remove(workspaceId, runId);
+        // S129: checks of the request stop in the same transaction as the cancellation.
+        polls.runEnded(workspaceId, runId);
         tasks.cancelOpenForRun(workspaceId, runId, now);
         runs.mutate(workspaceId, runId, m -> {
             m.lifecycle = RunStore.CANCELLED;
@@ -540,7 +547,12 @@ public class OperatorService {
             throw new ApiException(ProblemCode.RUN_NOT_REPAIRABLE, verdict.diagnosis().message())
                     .with("currentVersion", run.version()).with("state", verdict.diagnosis().state());
         }
-        runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        if (verdict.rebuild() == null) {
+            // S129: only the "Waiting for" rows drifted; they are derived again from the unchanged steps.
+            waitStates.resync(workspaceId, runId, run.currentSteps());
+        } else {
+            runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        }
         consistency.forget(workspaceId, runId);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("reason", request.reason());

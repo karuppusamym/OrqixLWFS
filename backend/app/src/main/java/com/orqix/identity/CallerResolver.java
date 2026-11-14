@@ -55,7 +55,10 @@ public class CallerResolver {
             throw new ApiException(ProblemCode.UNAUTHENTICATED);
         }
         Caller caller;
-        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+        if (authentication instanceof com.orqix.identity.cli.CliAuthentication cli) {
+            // S148: a person signed in through the command line tool, resolved from their verified token.
+            caller = cli.caller();
+        } else if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
             caller = fromJwt(jwtAuthentication.getToken());
         } else if (authentication.getPrincipal() instanceof OAuth2User user) {
             caller = fromSession(user);
@@ -111,8 +114,31 @@ public class CallerResolver {
         return new Caller(subject.id(), subject.displayName(), null, issuer, sub, List.of(), true);
     }
 
+    /**
+     * CG-M04 (S136): a person acting through an MCP client with an access token issued to them by the identity
+     * provider. Same subject as their browser sign-in (issuer, sub), IdP groups from the same groups claim, so the
+     * same roles, grants and task groups apply. Never a machine caller.
+     */
+    public Caller fromDelegatedToken(Jwt jwt) {
+        String issuer = jwt.getIssuer() == null ? "urn:orqix:unknown-issuer" : jwt.getIssuer().toString();
+        String sub = jwt.getSubject();
+        if (sub == null || sub.isBlank()) {
+            throw new ApiException(ProblemCode.UNAUTHENTICATED);
+        }
+        String name = firstNonBlank(jwt.getClaimAsString("name"), jwt.getClaimAsString("preferred_username"), sub);
+        SubjectService.Subject subject = subjects.upsert(issuer, sub, name, jwt.getClaimAsString("email"), false);
+        if (subject.disabled()) {
+            throw new ApiException(ProblemCode.FORBIDDEN, "This account is disabled.");
+        }
+        List<String> groups = groups(jwt.getClaims().get(properties.identity().groupsClaim()));
+        return new Caller(subject.id(), subject.displayName(), subject.email(), issuer, sub, groups, false);
+    }
+
     private List<String> groups(OAuth2User user) {
-        Object claim = user.getAttributes().get(properties.identity().groupsClaim());
+        return groups(user.getAttributes().get(properties.identity().groupsClaim()));
+    }
+
+    private static List<String> groups(Object claim) {
         List<String> groups = new ArrayList<>();
         if (claim instanceof Collection<?> values) {
             for (Object value : values) {

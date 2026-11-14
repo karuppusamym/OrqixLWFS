@@ -1,14 +1,22 @@
 import { formatCalendarDate } from '../dates'
 import { formatNumber, formatUsd } from '../money'
 import type { FieldDef } from './schema'
+import { formatZoned } from './values'
+
+/** How the server masks personal and sensitive answers (CG-I05, docs/build/S151): six bullet characters. */
+export const MASKED_VALUE = '•'.repeat(6)
+export const isMaskedValue = (value: unknown) => value === MASKED_VALUE
 
 /** Human display of a JSON value of a form field: money as USD, booleans as Yes/No, empty as an em dash. */
 export function displayJsonValue(field: FieldDef | undefined, value: unknown): string {
   if (value === undefined || value === null || value === '') return '—'
+  if (value === MASKED_VALUE) return MASKED_VALUE
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'number') return field?.isMoney ? formatUsd(value) : formatNumber(value)
   if (typeof value === 'string' && field?.schema.format === 'attachment') return 'File attached (see Files below)'
   if (typeof value === 'string' && field?.schema.format === 'date') return formatCalendarDate(value)
+  if (typeof value === 'string' && field?.schema.format === 'date-time') return formatZoned(value, field.schema.timeZone)
+  if (Array.isArray(value) && field?.schema.items?.type === 'string') return value.map((v) => (typeof v === 'string' ? field.optionLabels?.[v] ?? v : String(v))).join(', ') || '—'
   if (typeof value === 'string') return field?.isMoney ? formatUsd(value) : value
   if (Array.isArray(value) && field?.schema.items?.type === 'object') return value.map((row, i) => `Row ${i + 1}: ${Object.entries(field.schema.items?.properties ?? {}).map(([key, column]) => `${column.title}: ${displayJsonValue({ ...field, schema: column, isMoney: false }, typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[key] : undefined)}`).join('; ')}`).join('\n') || '—'
   return JSON.stringify(value)

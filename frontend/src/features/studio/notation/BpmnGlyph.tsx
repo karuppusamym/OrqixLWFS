@@ -103,6 +103,16 @@ function body(shape: BpmnShape, w: number, h: number, c: GlyphColors, extra: num
           )}
         </>
       )
+    case 'eventBasedGateway':
+      // S139: an event-based gateway: a diamond with a pentagon inside a double circle.
+      return (
+        <>
+          <polygon {...outline} points={`${cx},2 ${w - 2},${cy} ${cx},${h - 2} 2,${cy}`} strokeWidth={2 + extra} strokeLinejoin="round" />
+          <circle cx={cx} cy={cy} r={12} fill="none" stroke={c.marker} strokeWidth={1.5} />
+          <circle cx={cx} cy={cy} r={9.5} fill="none" stroke={c.marker} strokeWidth={1.5} />
+          <polygon points={`${cx},${cy - 6} ${cx + 5.7},${cy - 1.9} ${cx + 3.5},${cy + 4.9} ${cx - 3.5},${cy + 4.9} ${cx - 5.7},${cy - 1.9}`} fill="none" stroke={c.marker} strokeWidth={1.5} strokeLinejoin="round" />
+        </>
+      )
     case 'callActivity':
       return (
         <>

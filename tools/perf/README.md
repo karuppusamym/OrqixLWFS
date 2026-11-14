@@ -35,3 +35,27 @@ python tools/perf/probe_volume.py --base http://localhost:<port> --out evidence/
 ```
 
 `scale.py` reads container names and management ports from its options (defaults: the private `orqix-scale-1026` stack).
+
+## Runtime roles: API pod plus two worker pods (CG-P01, S150)
+
+`docs/build/S150-observability-scale-backups-admission.md`. One API pod (profile `api`) and two worker pods (profile
+`worker`) on one PostgreSQL, from `deploy/compose/docker-compose.roles.yml`:
+
+```bash
+cd deploy/compose
+docker compose -p orqix-roles -f docker-compose.yml -f docker-compose.roles.yml --profile app up -d --build
+cd ../..
+python tools/perf/multipod.py --smoke                                  # 3 users, 75 s; exit 1 when a check fails
+python tools/perf/multipod.py --users 30 --minutes 5 --out evidence/s150/run.json
+```
+
+The harness publishes a purchase approval and a variant that keeps checking the stub's health every 10 s after the
+order (a read-only connection `perf-health` it creates), then runs closed-loop virtual users that start, wait for the
+task, claim, approve and wait for completion (or for the watch step). It reports start throughput and latency, task
+latency (start answer to claimable task: includes a worker pod picking up the job), completion latency (approval to
+completed: worker job plus connector call), poll checks per second against the schedule, analytics lag sampled from
+the pods' metrics, connector calls and poll checks per pod, and dead-letter jobs. The checks: the API pod made no
+connector calls or poll checks, both workers did, all work finished, no dead-letter jobs.
+
+`--smoke` is short enough for a CI job that already has the stack up; nothing runs it automatically. Everything runs on
+one machine: the numbers are relative evidence for this topology, not capacity.

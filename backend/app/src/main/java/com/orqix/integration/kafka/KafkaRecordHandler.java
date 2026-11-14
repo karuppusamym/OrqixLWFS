@@ -149,7 +149,10 @@ public class KafkaRecordHandler {
         } catch (KafkaDispatch.Refused e) {
             return dead(trigger, in, dedupe, sha, value.length, attempt, instance, e.code());
         } catch (KafkaDispatch.Retry e) {
-            return lastAttempt ? dead(trigger, in, dedupe, sha, value.length, attempt, instance, "retries_exhausted")
+            // CG-P05 (S150): a workspace at its admission limit only slows the partition (paused, retried at most every
+            // 60 s); the record is never dead-lettered for it, however long the limit holds.
+            boolean give = lastAttempt && !"rate_limited".equals(e.code());
+            return give ? dead(trigger, in, dedupe, sha, value.length, attempt, instance, "retries_exhausted")
                     : new Result("retry", e.code(), null);
         } catch (RuntimeException e) {
             return lastAttempt ? dead(trigger, in, dedupe, sha, value.length, attempt, instance, "retries_exhausted")

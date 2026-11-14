@@ -46,12 +46,52 @@ class OpenApiConverterTest {
         assertThat(opWithKey.path("effectClass").asString()).isEqualTo("idempotentWithKey");assertThat(opWithKey.path("idempotencyHeader").asString()).isEqualTo("X-Request-Key");assertThat(opWithKey.path("testable").asBoolean()).isFalse();
         assertThat(OpenApiConverter.finish(template,"nonIdempotent",null).has("idempotencyHeader")).isFalse();assertThat(template.path("idempotencyHeader").asString()).isEqualTo("Idempotency-Key");assertThat(template.toString()).isEqualTo(beforeFinish);
     }
-    @Test void requiredQueryAndDynamicAddressesAreBlockedWithReasons() {
-        var root=base();operation(root,"/items/{id}","get","getItem");var query=operation(root,"/search","get","searchItems");
-        query.set("parameters",JSON.createArrayNode().add(object("{\"name\":\"query\",\"in\":\"query\",\"required\":true,\"schema\":{\"type\":\"string\"}}")));
-        var analysis=OpenApiConverter.analyze(root);assertThat(analysis.report().summary().blocked()).isEqualTo(2);assertThat(analysis.templates()).isEmpty();
-        assertThat(analysis.report().operations()).allSatisfy(op->{assertThat(op.disposition()).isEqualTo(ImportReport.BLOCKED);assertThat(op.blockers()).isNotEmpty();});
-        assertThat(analysis.report().operations().stream().flatMap(op->op.blockers().stream()).toList().toString()).contains("variable","query");
+    @Test void undescribedPathParameterIsBlockedWithAReason() {
+        var root=base();operation(root,"/items/{id}","get","getItem");
+        var analysis=OpenApiConverter.analyze(root);assertThat(analysis.report().summary().blocked()).isEqualTo(1);assertThat(analysis.templates()).isEmpty();
+        assertThat(analysis.report().operations().get(0).blockers().toString()).contains("does not describe that parameter");
+    }
+    @Test void pathQueryHeaderAndDeleteBecomeConnectionDefinitionV1() {
+        var root=base();
+        var get=operation(root,"/items/{item_id}","get","getItem");
+        get.set("parameters",object("{\"list\":[{\"name\":\"item_id\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\",\"pattern\":\"^[0-9]{1,10}$\"}},"
+                +"{\"name\":\"X-Tenant\",\"in\":\"header\",\"required\":true,\"schema\":{\"type\":\"string\"}}]}").path("list"));
+        var search=operation(root,"/search","get","searchItems");
+        search.set("parameters",object("{\"list\":[{\"name\":\"query\",\"in\":\"query\",\"required\":true,\"schema\":{\"type\":\"string\"}},"
+                +"{\"name\":\"max_results\",\"in\":\"query\",\"schema\":{\"type\":\"integer\"}}]}").path("list"));
+        var delete=operation(root,"/items/{item_id}","delete","deleteItem");
+        delete.set("parameters",get.get("parameters").deepCopy());((tools.jackson.databind.node.ArrayNode)delete.get("parameters")).remove(1);
+        var analysis=OpenApiConverter.analyze(root);
+        assertThat(analysis.report().summary().blocked()).as(analysis.report().operations().toString()).isZero();
+        var item=analysis.templates().get("getItem");
+        assertThat(item.path("path").asString()).isEqualTo("/items/{itemId}");
+        assertThat(item.at("/pathParams/itemId/pattern").asString()).isEqualTo("^[0-9]{1,10}$");
+        assertThat(item.at("/headers/X-Tenant/input").asString()).isEqualTo("xTenant");
+        assertThat(item.at("/requestSchema/required").toString()).contains("xTenant");
+        var query=analysis.templates().get("searchItems");
+        assertThat(query.at("/query/query/input").asString()).isEqualTo("query");
+        assertThat(query.at("/query/max_results/input").asString()).isEqualTo("maxResults");
+        assertThat(query.at("/requestSchema/required").toString()).isEqualTo("[\"query\"]");
+        var remove=analysis.templates().get("deleteItem");
+        assertThat(remove.path("method").asString()).isEqualTo("DELETE");assertThat(remove.path("suggestedEffectClass").asString()).isEqualTo("nonIdempotent");
+        assertThat(remove.has("requestSchema")).isFalse();
+        var definition=OpenApiConverter.definition("inventory",1,"Inventory",null,Map.of(
+                "getItem",OpenApiConverter.finish(item,"readOnly",null),"searchItems",OpenApiConverter.finish(query,"readOnly",null),
+                "deleteItem",OpenApiConverter.finish(remove,"idempotentNatural",null)));
+        assertThat(definition.path("schemaVersion").asString()).isEqualTo("1.0");
+        assertThat(new com.orqix.compiler.internal.schema.SchemaValidation().validateConnection(definition)).isEmpty();
+        assertThat(com.orqix.compiler.ConnectionContracts.check(definition)).isEmpty();
+        // A static-only import stays on schema 0.1.
+        var staticRoot=base();operation(staticRoot,"/health","get","getHealth");var health=OpenApiConverter.analyze(staticRoot).templates().get("getHealth");
+        assertThat(OpenApiConverter.definition("inv",1,"Inv",null,Map.of("getHealth",OpenApiConverter.finish(health,"readOnly",null))).path("schemaVersion").asString()).isEqualTo("0.1");
+    }
+    @Test void cookieAndControlledHeadersAreNotSent() {
+        var root=base();var op=operation(root,"/me","get","me");
+        op.set("parameters",object("{\"list\":[{\"name\":\"session\",\"in\":\"cookie\",\"required\":true,\"schema\":{\"type\":\"string\"}},"
+                +"{\"name\":\"Host\",\"in\":\"header\",\"schema\":{\"type\":\"string\"}}]}").path("list"));
+        var report=OpenApiConverter.analyze(root).report().operations().get(0);
+        assertThat(report.disposition()).isEqualTo(ImportReport.BLOCKED);assertThat(report.blockers().toString()).contains("cookie");
+        assertThat(report.notes().toString()).contains("Host");
     }
     @Test void optionalQueryAndUnsupportedArrayResultsAreReportedAsSimplifications() {
         var root=base();var op=operation(root,"/items","get","listItems");

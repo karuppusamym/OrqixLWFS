@@ -33,7 +33,10 @@ import { ScopeFrames, type FrameSpec } from '@/features/studio/ScopeFrames'
 import { labelOutside } from '@/features/studio/model/notation'
 import { NotationLegend, NotationToggle } from '@/features/studio/notation/NotationControls'
 import { useNotation } from '@/features/studio/notation/useNotation'
+import { useOptionalWorkspace } from '@/app/workspace'
 import { cn } from '@/lib/cn'
+import { HeatBadges, HeatmapControls, HeatmapProvider, HeatmapTable, useHeatIndex, useHeatmapSettings } from '@/features/analytics/HeatmapOverlay'
+import { ROUTE_WIDTH } from '@/features/analytics/heatmap'
 import { useRunPath, type PathNode, type RunPath } from './api'
 import { RunEdge, type RunFlowEdge } from './RunEdge'
 import { RunStepNode, type RunFlowNode } from './RunStepNode'
@@ -60,7 +63,7 @@ function toDefinition(path: RunPath): Definition {
   for (const n of path.diagram.nodes) if (n.position) positions[n.id] = { x: n.position.x, y: n.position.y }
   return normalizeDefinition({
     nodes: path.diagram.nodes.map((n) => ({ id: n.id, type: knownKind(n.kind), label: n.label, config: {} })),
-    transitions: path.diagram.transitions.map((t) => ({ id: t.id, from: t.from, to: t.to, on: t.on, ...(t.label ? { label: t.label } : {}) })),
+    transitions: path.diagram.transitions.map((t) => ({ id: t.id, from: t.from, to: t.to, on: t.on, ...(t.label ? { label: t.label } : {}), ...(t.maxTraversals ? { maxTraversals: t.maxTraversals } : {}) })),
     uiLayout: { positions },
   })
 }
@@ -171,6 +174,12 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const ctx = useMemo(() => ({ run, operator }), [run, operator])
+  // CG-N01 (docs/build/S145): figures of all requests of this release, overlaid on the steps and routes.
+  // Aggregates of all requests: only for people who may read every request (run.read), as Insights.
+  const canSeeHeat = useOptionalWorkspace()?.can('run.read') ?? false
+  const [heatSettings, setHeatSettings] = useHeatmapSettings(run.release.id)
+  const heat = useHeatIndex(ws, run.workflow.id, { ...heatSettings, on: heatSettings.on && canSeeHeat })
+  const heatIndex = heat.index
 
   const derivedNodes = useMemo<RunFlowNode[]>(() => {
     if (!positions) return []
@@ -206,6 +215,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
         const on = t.on as RouteKind
         const used = taken.has(t.id)
         const color = used ? routeColor(on) : 'var(--border)'
+        const routeHeat = heatIndex?.routes.get(t.id)
         return {
           id: t.id,
           source: t.from,
@@ -217,10 +227,10 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
           focusable: false,
           selectable: false,
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
-          style: { stroke: color, strokeWidth: used ? 5 : 2, ...(used ? {} : { strokeDasharray: '7 6' }) },
+          style: { stroke: color, strokeWidth: routeHeat ? ROUTE_WIDTH[routeHeat.level] : used ? 5 : 2, ...(used ? {} : { strokeDasharray: '7 6' }) },
         } satisfies RunFlowEdge
       }),
-    [path, taken, notation],
+    [path, taken, notation, heatIndex],
   )
 
   // React Flow keeps the measured sizes in its copy of the nodes; the derived list replaces it when the data changes.
@@ -306,6 +316,16 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
         {notation === 'bpmn' ? <NotationLegend className="min-w-0 flex-1 basis-72" /> : null}
       </div>
 
+      {canSeeHeat ? <HeatmapControls
+        settings={heatSettings}
+        onChange={setHeatSettings}
+        releases={[{ id: run.release.id, label: `Release ${run.release.releaseNumber} (this request's)` }]}
+        data={heat.result.data}
+        loading={heat.result.isPending}
+        error={heat.result.isError ? 'The heatmap could not be loaded.' : null}
+      /> : null}
+
+      <HeatmapProvider index={heatIndex}>
       <div
         ref={rootRef}
         className="orqix-flow orqix-flow-run relative h-[26rem] min-w-0 max-w-full overflow-hidden rounded-card border border-border"
@@ -335,6 +355,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--canvas-dot)" />
             <ScopeFrames frames={frames} />
+            {heatIndex ? <HeatBadges index={heatIndex} /> : null}
             <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ ...FIT, minZoom: 0.1, duration: prefersReducedMotion() ? 0 : 200 }} />
             {selected ? <StepPopover view={selected} run={run} operator={operator} below={notation === 'bpmn' && labelOutside(knownKind(selected.kind))} /> : null}
           </ReactFlow>
@@ -344,6 +365,19 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
           </p>
         )}
       </div>
+      </HeatmapProvider>
+
+      {heat.index && heat.result.data ? (
+        <HeatmapTable
+          data={heat.result.data}
+          stepLabel={(id) => path.diagram.nodes.find((n) => n.id === id)?.label ?? id}
+          routeLabel={(id) => {
+            const t = path.diagram.transitions.find((x) => x.id === id)
+            const label = (n: string) => path.diagram.nodes.find((x) => x.id === n)?.label ?? n
+            return t ? `${label(t.from)} to ${label(t.to)}${t.label ? ` (${t.label})` : ''}` : id
+          }}
+        />
+      ) : null}
 
       <ScopeList path={path} />
 

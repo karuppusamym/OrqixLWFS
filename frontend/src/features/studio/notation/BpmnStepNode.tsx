@@ -43,7 +43,7 @@ export function BpmnStepNode({ data, selected }: { data: StepNodeData; selected:
   const isEnd = data.kind === 'end'
   const rejectedEnd = isEnd && (data.outcomeKind === 'rejected' || data.outcomeKind === 'failed')
   const task = notation.sizeClass === 'task'
-  const twoRoutes = data.kind === 'approval' || data.kind === 'http'
+  const twoRoutes = data.kind === 'approval' || data.kind === 'http' || data.kind === 'externalTask'
   const labelAbove = !task && !!data.timeout
   const OutcomeIcon = rejectedEnd ? XCircle : CheckCircle2
   return (
@@ -125,7 +125,7 @@ export function BpmnStepNode({ data, selected }: { data: StepNodeData; selected:
           <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
           <Handle type="source" position={Position.Bottom} id="timedOut" title="Timed out route" aria-hidden="true" />
         </>
-      ) : data.kind === 'http' ? (
+      ) : data.kind === 'http' || data.kind === 'externalTask' ? (
         <>
           <Handle type="source" position={Position.Right} id="next" style={{ top: '30%' }} title="Next route" aria-hidden="true" />
           <Handle type="source" position={Position.Right} id="failed" style={{ top: '70%' }} title="Failed route" aria-hidden="true" />

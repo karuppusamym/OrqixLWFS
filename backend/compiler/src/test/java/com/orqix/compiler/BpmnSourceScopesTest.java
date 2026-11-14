@@ -345,9 +345,12 @@ class BpmnSourceScopesTest {
         assertThat(problem(check(hx.replace("<sequenceFlow id=\"t1\" sourceRef=\"start\" targetRef=\"manager\"/>",
                 "<sequenceFlow id=\"t1\" sourceRef=\"start\" targetRef=\"withdraw\"/>"), handlers), "t1"))
                 .contains("started by its trigger only");
-        // A trigger that is not error, signal or timer.
+        // A trigger that is not error, signal, timer or message (S139 added message handlers).
+        assertThat(problem(check(hx.replace("trigger=\"timer\"", "trigger=\"escalation\""), handlers), "reminder"))
+                .contains("not error, signal, timer or message");
+        // A message trigger without its message definition.
         assertThat(problem(check(hx.replace("trigger=\"timer\"", "trigger=\"message\""), handlers), "reminder"))
-                .contains("not error, signal or timer");
+                .contains("needs a messageEventDefinition and orqix:message");
     }
 
     // ---------------------------------------------------------------- helpers
